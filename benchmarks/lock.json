@@ -1,0 +1,10 @@
+{
+  "go-kit": "78fbbceece7bbcf073bee814a7772f4397ea756c",
+  "java-spring-petclinic": "818c4136ea971c21674525f9053de0d9c7ad8cfe",
+  "python-airflow": "144a87dfe94747f322e4ddcab476fb40dd1a24d4",
+  "python-httpx": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+  "realworld-conduit": "ebbcdeb8d55b42a3a613c787560498b8ef10003f",
+  "rust-ripgrep": "3fce3b5bb0236da2df6d99672afb8a719642eca7",
+  "slop-code-bench": "06b5c0687d4c05ee502e9696a4d0c22fc1eec5e0",
+  "typescript-nest": "24db9f733537903f373ba5e68260ce37ef259ce9"
+}

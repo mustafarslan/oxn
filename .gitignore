@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.tox/
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# OXN working state. The cache is a build artifact; the baseline/ratchet is NOT --
+# it belongs in version control so the "don't make it worse" gate is shared.
+.oxn/cache/
+.oxn/index/
+!.oxn/baseline.json
+
+# Benchmark corpora are fetched, never vendored (see benchmarks/manifest.yaml).
+benchmarks/corpora/
+
+# OS
+.DS_Store

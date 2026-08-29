@@ -1,0 +1,78 @@
+# OXN benchmark corpora
+#
+# Pins, not payloads. Nothing here is vendored into git -- corpora are fetched into
+# `benchmarks/corpora/` (gitignored) by `python scripts/fetch_corpora.py`, which records
+# resolved commit SHAs in `benchmarks/lock.json` so a run is reproducible.
+#
+# Three uses, and a corpus usually serves exactly one:
+#   fixture   -- small, hand-checkable; golden-file and differential-oracle tests (P2)
+#   threshold -- real code at scale; percentile calibration of metric thresholds (P10)
+#   eval      -- agent evaluation beds (P11)
+
+version: 1
+
+corpora:
+  # ---- eval beds -------------------------------------------------------------------
+  - name: slop-code-bench
+    use: eval
+    url: https://github.com/SprocketLab/slop-code-bench
+    ref: main
+    why: >
+      20 problems / 93 checkpoints, language-agnostic, measuring code erosion under
+      iterative specification refinement. Tracks verbosity and structural erosion --
+      exactly the Tier 1.5 signals OXN computes natively (docs/metrics.md section 3A),
+      which makes it the primary bed for P11. arXiv:2603.24755.
+
+  - name: realworld-conduit
+    use: eval
+    url: https://github.com/gothinkster/realworld
+    ref: main
+    why: >
+      The Conduit API specification (19 endpoints) used by the constraint-decay study
+      (arXiv:2605.06445) to layer architectural constraints L0..L3. Gives OXN a directly
+      comparable setup for the constraint-budgeting arm of P11.
+
+  # ---- threshold calibration + robustness ------------------------------------------
+  # Chosen for layered or explicitly modular architectures, since layer-conformance is
+  # what OXN gates on. Kept deliberately small in number; breadth matters more than size.
+  - name: python-httpx
+    use: threshold
+    language: python
+    url: https://github.com/encode/httpx
+    ref: master
+    why: Clean layered Python library; small enough to hand-audit findings.
+
+  - name: python-airflow
+    use: threshold
+    language: python
+    url: https://github.com/apache/airflow
+    ref: main
+    why: Large real-world Python monorepo; exercises the scale path and provider packages.
+
+  - name: typescript-nest
+    use: threshold
+    language: typescript
+    url: https://github.com/nestjs/nest
+    ref: master
+    why: Explicitly layered TS with DI; a good stress test for import resolution and DI-driven dead-code false positives.
+
+  - name: go-kit
+    use: threshold
+    language: go
+    url: https://github.com/go-kit/kit
+    ref: master
+    why: Idiomatic Go with declared layering (transport/endpoint/service).
+
+  - name: rust-ripgrep
+    use: threshold
+    language: rust
+    url: https://github.com/BurntSushi/ripgrep
+    ref: master
+    why: Multi-crate Rust workspace; exercises the `mod` tree and cross-crate resolution.
+
+  - name: java-spring-petclinic
+    use: threshold
+    language: java
+    url: https://github.com/spring-projects/spring-petclinic
+    ref: main
+    why: Small, canonical layered Java app; the standard teaching example for architecture conformance.
