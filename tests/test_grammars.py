@@ -24,24 +24,16 @@ SNIPPETS: dict[str, str] = {
 }
 
 
-def _has_error(node) -> bool:
-    """True if the subtree contains an ERROR or MISSING node.
-
-    docs/metrics.md section 9.4 makes this a hard rule: a tree with error nodes must
-    suppress the affected metrics rather than emit a silently wrong number.
-    """
-    if node.type == "ERROR" or node.is_missing:
-        return True
-    return any(_has_error(child) for child in node.children)
-
-
 @pytest.mark.parametrize("language", sorted(LAUNCH_LANGUAGES))
 def test_grammar_parses_clean_source(language: str) -> None:
     parser = get_parser(language)
     tree = parser.parse(SNIPPETS[language].encode())
 
+    # ``has_error`` covers ERROR and MISSING anywhere in the subtree. docs/metrics.md
+    # section 9.4 makes this a hard rule: a tree with error nodes suppresses the affected
+    # metrics rather than emitting a silently wrong number.
     assert tree.root_node.type not in {"ERROR", ""}
-    assert not _has_error(tree.root_node), f"{language} grammar produced error nodes"
+    assert not tree.root_node.has_error, f"{language} grammar produced error nodes"
     assert tree.root_node.end_byte == len(SNIPPETS[language].encode())
 
 

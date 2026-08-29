@@ -51,6 +51,29 @@ def check(
 
 
 @app.command()
+def parse(
+    paths: list[str] = typer.Argument(None, help="Files or directories to parse."),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    force: bool = typer.Option(False, "--force", help="Ignore the cache and re-parse."),
+    stats: bool = typer.Option(False, "--stats", help="Show cache totals instead of entities."),
+) -> None:
+    """Parse sources into the code graph and report what was built.
+
+    A debugging surface for the parse layer: it shows the containment skeleton the metric
+    engine will read, and whether a run hit the cache.
+    """
+    from oxn.report import run_parse
+
+    run_parse(
+        paths or ["."],
+        json_output=json_output,
+        force=force,
+        stats_only=stats,
+        console=None if json_output else _console(),
+    )
+
+
+@app.command()
 def doctor() -> None:
     """Report the environment OXN found: grammars, toolchains, and indexers."""
     from oxn.doctor import run_doctor

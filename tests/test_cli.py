@@ -50,3 +50,31 @@ def test_fast_path_detection(argv: list[str], expected: bool) -> None:
     from oxn.cli import _is_fast_path
 
     assert _is_fast_path(argv) is expected
+
+
+def test_parse_json_reports_the_skeleton(tmp_path) -> None:
+    source = tmp_path / "m.py"
+    source.write_text("class C:\n    def m(self, a):\n        pass\n")
+    result = subprocess.run(
+        [sys.executable, "-m", "oxn.cli", "parse", "--json", str(source)],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "OK"
+    kinds = [e["kind"] for f in payload["files"] for e in f["entities"]]
+    assert kinds == ["module", "class", "method"]
+
+
+def test_parse_reports_missing_paths_without_crashing(tmp_path) -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "oxn.cli", "parse", "--json", "nope.py"],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+    )
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ERROR"
+    assert "nope.py" in payload["errors"]

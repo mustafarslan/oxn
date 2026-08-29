@@ -326,12 +326,21 @@ Verified against the white paper:
 Increments apply to boolean sequences **anywhere** — assignments, arguments, return statements — not
 only in conditions.
 
-**`else if` detection (critical edge case).** Python: `elif_clause` is a direct child of
-`if_statement`, so it is trivial. TS/JS/Java/Go/Rust: `else if` appears as an `if_statement` in the
-`alternative`/`else` position *without* an intervening block. Recipe: if the else-branch node is
-itself an `if_statement`/`if_expression` and not a `block` wrapping one, treat it as a hybrid
-`else if` — **+1, no nesting increment, and its consequent nests at the same level as the original
-`if`.** Getting this wrong inflates the score on every `else if` chain.
+**`else if` detection (critical edge case).** *Verified against the actual grammars, 2026-08-29 —
+the shape is not what it is usually described as.*
+
+Python: an `if_statement` carries **multiple `alternative` fields**; `elif_clause` and `else_clause`
+are siblings, both under the field name `alternative`. So read them with
+`children_by_field_name("alternative")` (a list), not `child_by_field_name` (which returns only the
+first). Each `elif_clause` is a hybrid increment.
+
+TS/JS: the else-branch is **always an `else_clause`** — it is never an `if_statement` directly. An
+`else if` is an `else_clause` whose named child is an `if_statement` rather than a `statement_block`.
+The rule is therefore *look inside the `else_clause`*, not *test the alternative node's type*.
+
+In both cases the hybrid treatment is the same: **+1, no nesting increment, and the consequent nests
+at the same level as the original `if`.** Getting this wrong inflates the score on every `else if`
+chain.
 
 **Documented compensating exceptions (Appendix A) that OXN must implement:**
 - **Python decorators:** a function whose body is *only* a nested function definition plus a `return`
@@ -667,7 +676,7 @@ we would use for five functions. networkx is the **test oracle**, asserted equal
 | Language | A type counts as ABSTRACT if… |
 |---|---|
 | **Python** | inherits `abc.ABC` or has `ABCMeta` metaclass; **or** any method decorated `@abstractmethod`/`@abstractproperty`; **or** inherits `typing.Protocol`; **or** every method body is `pass` / `...` / `raise NotImplementedError`. `TypeVar`, `Protocol` and `TypedDict` definitions count as abstract declarations. |
-| **TS/JS** | `interface_declaration`; `abstract_class_declaration` (or `class_declaration` with `abstract`); `type_alias_declaration` (config-gated, default yes); ambient `declare` decls; **every type in a `.d.ts` file**. |
+| **TS/JS** | `interface_declaration`; `abstract_class_declaration` (verified: the TS grammar emits a **distinct node kind**, not `class_declaration` with a modifier); `type_alias_declaration` (config-gated, default yes); ambient `declare` decls; **every type in a `.d.ts` file**. |
 | **Go** | `type_spec` whose type is `interface_type`. Structs are concrete. |
 | **Rust** | `trait_item`. `struct_item`, `enum_item`, `impl_item` are concrete. |
 | **Java** | `interface_declaration`; `class_declaration` with `abstract`; `annotation_type_declaration` (config-gated); `record_declaration` is concrete. |
