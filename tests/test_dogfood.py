@@ -188,6 +188,7 @@ def gauntlet(harness, **kwargs):
         "functions_after": 5,
         "ceiling": 12.0,
         "target_present": True,
+        "new_helpers": {},
     }
     return harness.GauntletResult(**{**defaults, **kwargs})
 
@@ -199,22 +200,114 @@ def test_a_genuine_simplification_passes(harness) -> None:
     assert result.passed
 
 
-def test_shredding_is_rejected_even_though_the_score_fell(harness) -> None:
-    """The failure docs/metrics.md 10.5 predicts: complexity moved, not removed.
+#: Measured, not invented. Both are real rewrites of `_imported_names` (35, in
+#: `src/oxn/resolve/scopes.py`), scored by OXN after being spliced into the real file.
+#:
+#: The cohesive one is what `glm-5.3:cloud` produced when extraction was permitted: three
+#: helpers named for the three import syntax families. The shred is hand-written to game the
+#: same ceiling: sixteen helpers, each a line with a name.
+#:
+#: They are kept because they are the entire calibration set for `TRIVIAL_HELPER`, and
+#: because the previous rule -- mass-based -- got *both* of them backwards. The source of
+#: each is preserved beside this file, as `tests/fixtures/cohesive_extraction.py.txt` and
+#: `tests/fixtures/shred_control.py.txt`; they are `.txt` because they reference names from
+#: `scopes.py` and are provenance rather than importable modules.
+COHESIVE_HELPERS = {
+    "scopes._ecmascript_imported_names": 4.0,
+    "scopes._plain_import_names": 9.0,
+    "scopes._from_import_names": 11.0,
+}
+SHRED_HELPERS = {
+    "scopes._is_not_python": 0.0,
+    "scopes._is_plain_import": 0.0,
+    "scopes._spec": 0.0,
+    "scopes._ecma": 1.0,
+    "scopes._ecma_specifier": 1.0,
+    "scopes._ecma_clause": 1.0,
+    "scopes._plain": 1.0,
+    "scopes._plain_child": 1.0,
+    "scopes._is_alias": 0.0,
+    "scopes._plain_alias": 1.0,
+    "scopes._plain_dotted": 1.0,
+    "scopes._from_import": 1.0,
+    "scopes._from_specifier": 1.0,
+    "scopes._from_child": 1.0,
+    "scopes._from_alias": 1.0,
+    "scopes._from_plain": 2.0,
+}
 
-    One function's score drops because it was scattered across new helpers, while the
-    file's total complexity mass barely moves. A score-only gate would accept this.
+
+def test_a_hand_built_shred_is_rejected(harness) -> None:
+    """Sixteen helpers, each a line with a name, and the target down to 2.
+
+    This is the control the rule was validated against, written to game the ceiling on
+    purpose. Everything else about it is clean: behaviour preserved, target at 2, every
+    helper far under the ceiling.
     """
-    result = gauntlet(harness, functions_after=12, file_mass_after=99.0)
-    assert result.improved, "the target's own score did fall"
+    result = gauntlet(
+        harness,
+        score_before=35.0,
+        score_after=2.0,
+        file_mass_before=137.0,
+        file_mass_after=118.0,
+        functions_before=19,
+        functions_after=35,
+        new_helpers=SHRED_HELPERS,
+    )
+    assert result.improved and result.under_ceiling, "only shredding may reject this"
     assert result.shredded
     assert not result.passed
 
 
-def test_extracting_a_few_helpers_that_genuinely_reduce_mass_is_allowed(harness) -> None:
-    result = gauntlet(harness, functions_after=9, file_mass_after=70.0)
+def test_the_cohesive_extraction_a_model_actually_wrote_is_accepted(harness) -> None:
+    """Three helpers named for the three import syntax families, scoring 4, 9 and 11.
+
+    The old mass-based rule rejected exactly this while accepting the shred above, which
+    is what the rule change is for.
+    """
+    result = gauntlet(
+        harness,
+        score_before=35.0,
+        score_after=2.0,
+        file_mass_before=137.0,
+        file_mass_after=128.0,
+        functions_before=19,
+        functions_after=22,
+        new_helpers=COHESIVE_HELPERS,
+    )
     assert not result.shredded
     assert result.passed
+
+
+def test_mass_no_longer_decides_anything(harness) -> None:
+    """The finding that forced the change, stated as a test.
+
+    The shred reduces the file's total *more* than the cohesive extraction does -- 137->118
+    against 137->128 -- because every extracted helper restarts at nesting depth zero and
+    the nesting increments evaporate. Mass falls monotonically as a function is shredded
+    harder, so no threshold on it can separate these two.
+    """
+    shred = gauntlet(
+        harness, file_mass_before=137.0, file_mass_after=118.0, new_helpers=SHRED_HELPERS
+    )
+    cohesive = gauntlet(
+        harness, file_mass_before=137.0, file_mass_after=128.0, new_helpers=COHESIVE_HELPERS
+    )
+    assert shred.file_mass_after < cohesive.file_mass_after, "the shred looks better by mass"
+    assert shred.shredded and not cohesive.shredded, "and substance sees through it"
+
+
+def test_two_helpers_are_never_a_shred(harness) -> None:
+    """Below `MANY_HELPERS` the question is not asked; splitting in two is just splitting."""
+    result = gauntlet(harness, new_helpers={"m._a": 0.0, "m._b": 1.0})
+    assert not result.shredded
+
+
+def test_a_helper_over_the_ceiling_is_not_a_repair(harness) -> None:
+    """Clearing the ceiling here by writing the next run's violation is not converging."""
+    result = gauntlet(harness, score_after=4.0, new_helpers={"m._moved": 24.0})
+    assert not result.under_ceiling
+    assert not result.passed
 
 
 def test_a_failing_test_rejects_regardless_of_the_score(harness) -> None:
@@ -318,4 +411,27 @@ def test_the_two_arms_differ_only_in_whether_extraction_is_allowed(harness) -> N
 def test_permitting_extraction_does_not_disarm_the_shredding_gate(harness) -> None:
     """The gate is what makes the permissive arm safe to run at all."""
     assert "detected and rejected" in harness.ALLOW_EXTRACTION
-    assert gauntlet(harness, functions_after=12, file_mass_after=99.0).shredded
+    assert gauntlet(harness, new_helpers=SHRED_HELPERS).shredded
+
+
+def test_the_fixture_scores_match_the_preserved_sources(harness) -> None:
+    """The scores above are measurements, so the code they were measured from is kept.
+
+    This does not re-measure -- that needs the surrounding `scopes.py` and a subprocess --
+    but it does keep the two from drifting apart silently: the helper names in the table
+    must be the ones the preserved source actually defines.
+    """
+    root = Path(__file__).parent / "fixtures"
+    for source, expected in (
+        ("cohesive_extraction.py.txt", COHESIVE_HELPERS),
+        ("shred_control.py.txt", SHRED_HELPERS),
+    ):
+        text = (root / source).read_text()
+        defined = {
+            line.split("(")[0].removeprefix("def ").strip()
+            for line in text.splitlines()
+            if line.startswith("def ")
+        }
+        named = {name.rsplit(".", 1)[-1] for name in expected}
+        assert named <= defined, f"{source} no longer defines {sorted(named - defined)}"
+        assert "_imported_names" in defined, f"{source} must still define the target"

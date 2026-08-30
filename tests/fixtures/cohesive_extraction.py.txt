@@ -1,0 +1,70 @@
+def _imported_names(node: Node, profile: LanguageProfile) -> Iterator[tuple[str, str]]:
+    """``(name bound locally, source specifier)`` for each name an import introduces.
+
+    The *local* name is what matters for scoping and it is not always the source name:
+    ``import numpy as np`` puts ``np`` in scope and ``numpy`` nowhere, and
+    ``from a.b import c as d`` binds ``d``. Yielding the source name instead leaves every
+    aliased import unresolvable.
+    """
+    if profile.metrics.imports.style != "python":
+        yield from _ecmascript_imported_names(node, profile)
+        return
+    if node.type == "import_statement":
+        yield from _plain_import_names(node, profile)
+        return
+    yield from _from_import_names(node, profile)
+
+
+def _ecmascript_imported_names(
+    node: Node, profile: LanguageProfile
+) -> Iterator[tuple[str, str]]:
+    """``(name, source)`` for each name an ECMAScript import declaration binds."""
+    spec = profile.metrics.imports
+    # `import a from "./m"` binds `a`, which the clause holds rather than the specifier.
+    source = node.child_by_field_name(spec.module_field)
+    specifier = _strip_quotes(_text(source)) if source is not None else ""
+    for clause in node.named_children:
+        for name in _ecmascript_clause_names(clause):
+            yield name, specifier
+
+
+def _plain_import_names(node: Node, profile: LanguageProfile) -> Iterator[tuple[str, str]]:
+    """``(name, source)`` for each name a Python ``import`` statement binds.
+
+    ``import a.b`` binds ``a`` while ``import a.b as c`` binds ``c``; the source is the
+    full dotted path in both cases.
+    """
+    spec = profile.metrics.imports
+    for child in node.children_by_field_name(spec.name_field):
+        if child.type in spec.alias_kinds:
+            alias = child.child_by_field_name("alias")
+            target = child.child_by_field_name("name")
+            if alias is not None and target is not None:
+                yield _text(alias), _text(target)
+            continue
+        dotted = _text(child)
+        head = dotted.split(".")[0]
+        if head:
+            yield head, dotted
+
+
+def _from_import_names(node: Node, profile: LanguageProfile) -> Iterator[tuple[str, str]]:
+    """``(name, source)`` for each name a Python ``from`` import binds.
+
+    ``from a.b import c as d`` binds ``d``. A ``*`` clause binds nothing: which names it
+    imports is not written in the syntax.
+    """
+    spec = profile.metrics.imports
+    module = node.child_by_field_name(spec.module_field)
+    specifier = _text(module) if module is not None else ""
+    for child in node.children_by_field_name(spec.name_field):
+        if child.type in spec.alias_kinds:
+            alias = child.child_by_field_name("alias")
+            if alias is not None:
+                yield _text(alias), specifier
+            continue
+        if child.type in spec.wildcard_kinds:
+            continue
+        name = _text(child)
+        if name:
+            yield name, specifier

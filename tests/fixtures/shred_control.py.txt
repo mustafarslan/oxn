@@ -1,0 +1,99 @@
+def _imported_names(node, profile):
+    """A true shred: the same work, scattered across trivial single-use helpers."""
+    if _is_not_python(profile):
+        yield from _ecma(node, profile)
+        return
+    if _is_plain_import(node):
+        yield from _plain(node, profile)
+        return
+    yield from _from_import(node, profile)
+
+
+def _is_not_python(profile):
+    return profile.metrics.imports.style != "python"
+
+
+def _is_plain_import(node):
+    return node.type == "import_statement"
+
+
+def _spec(profile):
+    return profile.metrics.imports
+
+
+def _ecma(node, profile):
+    specifier = _ecma_specifier(node, profile)
+    for clause in node.named_children:
+        yield from _ecma_clause(clause, specifier)
+
+
+def _ecma_specifier(node, profile):
+    source = node.child_by_field_name(_spec(profile).module_field)
+    return _strip_quotes(_text(source)) if source is not None else ""
+
+
+def _ecma_clause(clause, specifier):
+    for name in _ecmascript_clause_names(clause):
+        yield name, specifier
+
+
+def _plain(node, profile):
+    for child in node.children_by_field_name(_spec(profile).name_field):
+        yield from _plain_child(child, profile)
+
+
+def _plain_child(child, profile):
+    if _is_alias(child, profile):
+        yield from _plain_alias(child)
+        return
+    yield from _plain_dotted(child)
+
+
+def _is_alias(child, profile):
+    return child.type in _spec(profile).alias_kinds
+
+
+def _plain_alias(child):
+    alias = child.child_by_field_name("alias")
+    target = child.child_by_field_name("name")
+    if alias is not None and target is not None:
+        yield _text(alias), _text(target)
+
+
+def _plain_dotted(child):
+    dotted = _text(child)
+    head = dotted.split(".")[0]
+    if head:
+        yield head, dotted
+
+
+def _from_import(node, profile):
+    specifier = _from_specifier(node, profile)
+    for child in node.children_by_field_name(_spec(profile).name_field):
+        yield from _from_child(child, profile, specifier)
+
+
+def _from_specifier(node, profile):
+    module = node.child_by_field_name(_spec(profile).module_field)
+    return _text(module) if module is not None else ""
+
+
+def _from_child(child, profile, specifier):
+    if _is_alias(child, profile):
+        yield from _from_alias(child, specifier)
+        return
+    yield from _from_plain(child, profile, specifier)
+
+
+def _from_alias(child, specifier):
+    alias = child.child_by_field_name("alias")
+    if alias is not None:
+        yield _text(alias), specifier
+
+
+def _from_plain(child, profile, specifier):
+    if child.type in _spec(profile).wildcard_kinds:
+        return
+    name = _text(child)
+    if name:
+        yield name, specifier

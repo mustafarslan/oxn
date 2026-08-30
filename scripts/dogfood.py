@@ -42,6 +42,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from statistics import median
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -214,6 +215,44 @@ class Sandbox:
 # ---- the gauntlet -------------------------------------------------------------------------
 
 
+#: Stands in for a score that could not be taken, and is deliberately enormous: every
+#: comparison in the gauntlet treats lower as better, so an unmeasurable file must never
+#: win one.
+UNMEASURABLE = 999.0
+
+#: A new helper at or below this scores as *trivial*. Shredding is many trivial helpers.
+#:
+#: Calibrated on n=2 -- the cohesive extraction a model produced for `_imported_names`
+#: (helpers scoring 4, 9, 11; median 9) and a hand-written shred of the same function
+#: (16 helpers, median 1). Both are kept as fixtures in `tests/test_dogfood.py`, and this
+#: number should be revisited as `benchmarks/dogfood-log.jsonl` accumulates real
+#: extractions. Two points is one `if`, or one loop: a helper worth that is a line with a
+#: name, not a unit of work.
+TRIVIAL_HELPER = 2.0
+
+#: How many new functions before the split is worth judging at all. Three is the smallest
+#: count that can express "many", and a three-way dispatch legitimately extracts three.
+MANY_HELPERS = 3
+
+
+@dataclass(frozen=True, slots=True)
+class Measurement:
+    """What one file's functions score, and what the target scores among them."""
+
+    scores: dict[str, float]
+    target: float
+    present: bool
+
+    @property
+    def mass(self) -> float:
+        """Total complexity in the file. Reported, never gated -- see `GauntletResult`."""
+        return sum(self.scores.values())
+
+    @property
+    def functions(self) -> int:
+        return len(self.scores)
+
+
 @dataclass
 class GauntletResult:
     """Deterministic verification. Nothing subjective reaches this."""
@@ -227,7 +266,9 @@ class GauntletResult:
     file_mass_after: float = 0.0
     functions_before: int = 0
     functions_after: int = 0
-    single_caller_helpers: int = 0
+    #: Qualified name -> score, for every function that exists after the repair and did not
+    #: exist before. The shredding test reads this and nothing else.
+    new_helpers: dict[str, float] = field(default_factory=dict)
     failures: list[str] = field(default_factory=list)
     #: Does the function the actor was asked to simplify still exist? A deleted function
     #: is not a simplified one, and it used to score zero -- see `measure`.
@@ -241,19 +282,38 @@ class GauntletResult:
 
     @property
     def under_ceiling(self) -> bool:
-        return self.score_after <= self.ceiling
+        """The target *and* every function the repair introduced.
+
+        Checking only the target lets a repair "converge" by pushing twenty points into a
+        new helper -- clearing the ceiling here by writing the next run's violation.
+        """
+        return self.score_after <= self.ceiling and all(
+            score <= self.ceiling for score in self.new_helpers.values()
+        )
 
     @property
     def shredded(self) -> bool:
-        """Did the model split the function up without making the file simpler?
+        """Many new helpers, each of them trivial.
 
-        The failure docs/metrics.md §10.5 predicts: a ceiling on one function, met by
-        scattering its complexity across twenty one-line helpers. Total complexity mass
-        staying put while function count jumps is that signature.
+        docs/metrics.md §10.5 predicted the signature would be *total complexity mass
+        staying put while function count jumps*, and this tested exactly that. A hand-built
+        control falsified it: a 16-helper shred of `_imported_names` took the file from 137
+        to **118**, while the cohesive three-helper extraction only reached 128 -- so the
+        old rule rejected the good refactoring and accepted the shred.
+
+        The cause is a property of the metric, not a badly chosen threshold. Fundamental
+        increments survive extraction -- an `if` is still an `if` wherever it lives -- but
+        **nesting increments evaporate, because every helper restarts at depth zero**. Mass
+        therefore falls monotonically as a function is shredded harder, with a floor at the
+        raw decision count. Mass cannot separate these two cases in any denominator, so it
+        is reported and never gated.
+
+        What does separate them is what the helpers are *worth*. A cohesive split yields
+        helpers with bodies; a shred yields lines with names.
         """
-        added = self.functions_after - self.functions_before
-        mass_kept = self.file_mass_after >= self.file_mass_before * 0.92
-        return added >= 3 and mass_kept
+        if len(self.new_helpers) < MANY_HELPERS:
+            return False
+        return median(self.new_helpers.values()) <= TRIVIAL_HELPER
 
     @property
     def passed(self) -> bool:
@@ -267,6 +327,11 @@ class GauntletResult:
         `under_ceiling` is the difference between progress and success. A 35 taken to 14 is
         real work, but OXN would still block it, and a harness that accepts what the tool
         rejects is measuring the wrong thing.
+
+        `shredded` is the deterministic half of the anti-gaming check. The other half is
+        cohesion -- twelve helpers of three points each would clear every test here -- and
+        cohesion is the judge's job. That makes judge/gauntlet agreement in `report` the
+        calibration signal for this whole design rather than a decoration.
         """
         return (
             self.tests_pass
@@ -280,13 +345,13 @@ class GauntletResult:
 
 
 def run_gauntlet(
-    sandbox: Sandbox, target: Target, before: dict[str, float], ceiling: int
+    sandbox: Sandbox, target: Target, before: Measurement, ceiling: int
 ) -> GauntletResult:
     """Verify a candidate deterministically, before any model is asked an opinion."""
     result = GauntletResult(
-        score_before=before["score"],
-        file_mass_before=before["mass"],
-        functions_before=int(before["functions"]),
+        score_before=before.target,
+        file_mass_before=before.mass,
+        functions_before=before.functions,
         ceiling=float(ceiling),
     )
 
@@ -306,11 +371,13 @@ def run_gauntlet(
         result.failures.append(_tail(types.stdout))
 
     after = measure(sandbox, target)
-    result.score_after = after["score"]
-    result.file_mass_after = after["mass"]
-    result.functions_after = int(after["functions"])
-    result.single_caller_helpers = int(after["single_caller"])
-    result.target_present = bool(after["present"])
+    result.score_after = after.target
+    result.file_mass_after = after.mass
+    result.functions_after = after.functions
+    result.new_helpers = {
+        name: score for name, score in after.scores.items() if name not in before.scores
+    }
+    result.target_present = after.present
     if not result.target_present:
         result.failures.append(
             f"{target.leaf} no longer exists in {target.path}. The task is to simplify it, "
@@ -319,34 +386,37 @@ def run_gauntlet(
     return result
 
 
-def measure(sandbox: Sandbox | None, target: Target) -> dict[str, float]:
-    """Score, total complexity mass and function count for the target's file."""
+def measure(sandbox: Sandbox | None, target: Target) -> Measurement:
+    """Per-entity cognitive complexity for the target's file.
+
+    Per-entity rather than aggregate because the shredding test needs to know *which*
+    functions are new and what each of them is worth -- a file total cannot answer either,
+    and a file total was the whole of the evidence when the detector was inverted.
+    """
     base = sandbox.path if sandbox else ROOT
     interpreter = str(sandbox.python) if sandbox else sys.executable
     result = subprocess.run(
-        [interpreter, "-m", "oxn", "metrics", "--json", "--limit", "300", target.path],
+        [interpreter, "-m", "oxn", "metrics", "--json", "--limit", "400", target.path],
         cwd=base,
         capture_output=True,
         text=True,
         check=False,
     )
     if result.returncode != 0:
-        # The file no longer parses. 999 keeps this out of every comparison that treats a
-        # lower score as better.
-        return {"score": 999.0, "mass": 0.0, "functions": 0.0, "single_caller": 0.0, "present": 0.0}
+        # The file no longer parses. `UNMEASURABLE` keeps this out of every comparison that
+        # treats a lower score as better.
+        return Measurement(scores={}, target=UNMEASURABLE, present=False)
     rows = json.loads(result.stdout).get("entities", [])
-    scores = [row["value"] for row in rows]
-    target_rows = [row for row in rows if row["qualified_name"].endswith(f".{target.leaf}")]
-    return {
-        # A missing function is reported as missing, never as a score. Returning 0.0 here --
-        # as this did until a live run deleted `_imported_names` outright -- makes deletion
-        # look like the strongest possible refactoring.
-        "score": float(target_rows[0]["value"]) if target_rows else 999.0,
-        "mass": float(sum(scores)),
-        "functions": float(len(rows)),
-        "single_caller": 0.0,
-        "present": 1.0 if target_rows else 0.0,
-    }
+    scores = {row["qualified_name"]: float(row["value"]) for row in rows}
+    hits = [name for name in scores if name.endswith(f".{target.leaf}") or name == target.leaf]
+    # A missing function is reported as missing, never as a score. Returning 0.0 here -- as
+    # this did until a live run deleted `_imported_names` outright -- makes deletion look
+    # like the strongest possible refactoring.
+    return Measurement(
+        scores=scores,
+        target=scores[hits[0]] if hits else UNMEASURABLE,
+        present=bool(hits),
+    )
 
 
 def _tail(text: str, lines: int = 12) -> str:
@@ -454,16 +524,28 @@ def _feedback(gauntlet: GauntletResult) -> str:
         reasons.append("- Lint failed.")
     if not gauntlet.types_pass:
         reasons.append("- Type checking failed.")
-    if gauntlet.target_present and not gauntlet.under_ceiling:
+    if gauntlet.target_present and gauntlet.score_after > gauntlet.ceiling:
         reasons.append(
             f"- It still scores {gauntlet.score_after:.0f}, above the ceiling of "
             f"{gauntlet.ceiling:.0f}. Reducing the score is not enough; it must reach the "
             f"ceiling."
         )
+    over = {
+        name.rsplit(".", 1)[-1]: score
+        for name, score in gauntlet.new_helpers.items()
+        if score > gauntlet.ceiling
+    }
+    if over:
+        listed = ", ".join(f"{name} ({score:.0f})" for name, score in sorted(over.items()))
+        reasons.append(
+            f"- A helper you added is itself over the ceiling of {gauntlet.ceiling:.0f}: "
+            f"{listed}. Moving the problem into a new function does not solve it."
+        )
     if gauntlet.shredded:
         reasons.append(
-            "- The complexity was scattered into new helpers rather than removed; the "
-            "file's total is unchanged."
+            f"- The function was scattered into {len(gauntlet.new_helpers)} helpers that "
+            f"do almost nothing individually. Extract units of work with names worth "
+            f"reading, not single lines."
         )
     detail = "\n".join(gauntlet.failures[:2])
     return "\n".join(reasons) + (f"\n\nTool output:\n{detail}" if detail else "")

@@ -1217,6 +1217,53 @@ function shredded into twenty one-line helpers with worse overall design — pre
 - Report the retry budget and *stop*. Convergence is not guaranteed; a bounded-retry design with
   honest convergence analysis is itself a paper contribution.
 
+#### Measured 2026-08-30: complexity mass is *anti-correlated* with shredding
+
+The first mitigation above was implemented in `scripts/dogfood.py` as **"total complexity mass
+stays put while function count jumps"**. A hand-built control falsified it, and in the worst
+possible direction. Three variants of the same function (`_imported_names`, 35, in
+`src/oxn/resolve/scopes.py`), each spliced into the real file and measured:
+
+| variant | target | file mass | functions | old rule said |
+|---|---|---|---|---|
+| original | 35 | 137 | 19 | — |
+| cohesive extraction — 3 helpers scoring 4, 9, 11 | 2 | **128** | +3 | **shredded** ✗ |
+| hand-built shred — 16 helpers, median 1 | 2 | **118** | +16 | **not shredded**, accepted ✗ |
+
+The rule rejected the good refactoring and accepted the shred. The cause is a property of
+cognitive complexity itself, not a mis-set threshold: **fundamental increments survive extraction
+— an `if` is still an `if` wherever it lives — but nesting increments evaporate, because every
+extracted helper restarts at depth zero.** Mass therefore falls *monotonically* as a function is
+shredded harder, with a floor at the raw decision count. No denominator repairs this; a
+subtree-scoped version of the same rule was tried and is backwards for the same reason.
+
+**The Modular Mirage signature is substance dilution, not mass conservation.** What separates the
+two cases is what the new helpers are individually worth:
+
+| | new helpers | their scores | median |
+|---|---|---|---|
+| cohesive | 3 | 4, 9, 11 | **9** |
+| shred | 16 | mostly 0–1 | **1** |
+
+So the deterministic rule is now *many new helpers, each of them trivial* — at least
+`MANY_HELPERS` (3) additions whose median score is at or below `TRIVIAL_HELPER` (2). Both figures
+are calibrated on this single pair and are expected to move as `benchmarks/dogfood-log.jsonl`
+accumulates real extractions; both live candidates are kept as regression fixtures in
+`tests/test_dogfood.py`.
+
+Two consequences worth stating plainly:
+
+* **Mass is reported and never gated.** It remains useful context and a trend signal; it is not
+  evidence of gaming in either direction.
+* **The judge becomes load-bearing.** Twelve helpers scoring 3 each would clear the deterministic
+  rule, and only *cohesion* rejects that — which is the neural layer's declared job. Judge/gauntlet
+  agreement in `dogfood.py report` is therefore the calibration signal for this whole design, not a
+  decoration.
+
+The third mitigation above (gate on the risk profile) is untouched by this and remains the right
+instrument at module scope; the second (helper proliferation by call-site count) is **not** a
+discriminator — the cohesive extraction's three helpers each have exactly one caller too.
+
 ---
 
 ## 11. Open decisions
