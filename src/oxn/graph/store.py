@@ -23,12 +23,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from oxn.graph.model import Edge, EdgeKind, Entity, EntityKind, ParsedFile, Provenance, Resolution
+from oxn.metrics.engine import EntityMetrics
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Iterable, Iterator
 
 #: Bump on any change to the statements below. A mismatch rebuilds the cache.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 DEFAULT_CACHE_PATH = Path(".oxn/cache/graph.db")
 
@@ -79,6 +80,22 @@ CREATE TABLE edges (
     attrs      TEXT NOT NULL DEFAULT '{}',
     file_path  TEXT NOT NULL REFERENCES files(path) ON DELETE CASCADE
 );
+
+-- Metric values carry their own exactness and provenance so the JSON handed to an agent
+-- can never present an approximation as exact (ADR-0002).
+CREATE TABLE metrics (
+    entity_id   TEXT NOT NULL,
+    metric_key  TEXT NOT NULL,
+    value       REAL NOT NULL,
+    exactness   TEXT NOT NULL DEFAULT 'EXACT',
+    resolution  TEXT NOT NULL DEFAULT 'L0',
+    explanation TEXT,
+    file_path   TEXT NOT NULL REFERENCES files(path) ON DELETE CASCADE,
+    PRIMARY KEY (entity_id, metric_key)
+);
+
+CREATE INDEX metrics_by_file ON metrics(file_path);
+CREATE INDEX metrics_by_key  ON metrics(metric_key, value);
 
 CREATE INDEX edges_by_src  ON edges(src_id, kind);
 CREATE INDEX edges_by_dst  ON edges(dst_id, kind);
@@ -205,6 +222,48 @@ class GraphStore:
                 ],
             )
 
+    def put_metrics(self, path: str, measured: list[EntityMetrics]) -> None:
+        """Replace this file's measurements."""
+        rows = [
+            (
+                entity.entity_id,
+                key,
+                float(value.value),
+                value.exactness,
+                value.resolution.value,
+                json.dumps(list(value.explanation)) if value.explanation else None,
+                path,
+            )
+            for entity in measured
+            for key, value in entity.values.items()
+        ]
+        with self._transaction() as conn:
+            conn.execute("DELETE FROM metrics WHERE file_path = ?", (path,))
+            conn.executemany(
+                "INSERT INTO metrics (entity_id, metric_key, value, exactness, resolution,"
+                " explanation, file_path) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                rows,
+            )
+
+    def metrics_for(self, path: str) -> dict[str, dict[str, float]]:
+        """entity_id -> {metric key: value} for one file."""
+        out: dict[str, dict[str, float]] = {}
+        for row in self._conn.execute(
+            "SELECT entity_id, metric_key, value FROM metrics WHERE file_path = ?", (path,)
+        ):
+            out.setdefault(row["entity_id"], {})[row["metric_key"]] = row["value"]
+        return out
+
+    def worst(self, metric_key: str, limit: int = 20) -> list[tuple[str, str, float]]:
+        """Highest values of one metric across the graph, as (qualified name, path, value)."""
+        rows = self._conn.execute(
+            "SELECT e.qualified_name, m.file_path, m.value FROM metrics m"
+            " JOIN entities e ON e.id = m.entity_id"
+            " WHERE m.metric_key = ? ORDER BY m.value DESC LIMIT ?",
+            (metric_key, limit),
+        ).fetchall()
+        return [(r["qualified_name"], r["file_path"], r["value"]) for r in rows]
+
     def entities_for(self, path: str) -> list[Entity]:
         rows = self._conn.execute(
             "SELECT * FROM entities WHERE file_path = ? ORDER BY start_byte, end_byte DESC",
@@ -233,6 +292,7 @@ class GraphStore:
             "files": count("files"),
             "entities": count("entities"),
             "edges": count("edges"),
+            "metrics": count("metrics"),
             "db_path": str(self.path),
         }
 

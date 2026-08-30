@@ -32,6 +32,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from oxn.profiles.spec import MetricSpec
+
 if TYPE_CHECKING:  # pragma: no cover
     from tree_sitter import Node
 
@@ -54,10 +56,9 @@ class Wrapper:
 class LanguageProfile:
     """Everything OXN knows about one language's syntax.
 
-    Only the structural layer is populated in P1. The metric tables (decision points,
-    cognitive-complexity increment classes, Halstead operator/operand classification,
-    abstractness markers) arrive in P2 and P4 as additional fields with defaults -- adding
-    them is not a breaking change, which is why they are absent rather than stubbed.
+    The structural layer feeds the graph builder; :attr:`metrics` feeds the metric engine.
+    Halstead classification tables and the semantic abstractness rules arrive later, as
+    further fields with defaults.
     """
 
     name: str
@@ -90,8 +91,11 @@ class LanguageProfile:
     #: Node kinds that are abstract types purely by virtue of their kind.
     abstract_kinds: frozenset[str] = frozenset()
 
+    #: Metric tables: decision points, cognitive increment classes, statement kinds.
+    metrics: MetricSpec = field(default_factory=MetricSpec)
+
     #: Reserved. Tree-sitter S-expression queries by purpose, e.g. ``{"imports": "..."}``.
-    #: Empty in P1; see the module docstring.
+    #: Empty so far; see the module docstring.
     queries: Mapping[str, str] = field(default_factory=dict)
 
     # ---- helpers -------------------------------------------------------------------

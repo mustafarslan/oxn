@@ -286,11 +286,20 @@ structures are nested. Four increment types: **Nesting**, **Structural** (nestin
 raises nesting count), **Fundamental** (no nesting increment), **Hybrid** (no nesting increment, but
 raises nesting count).
 
+**Correction, verified against the primary source (v1.7, 29 Aug 2023).** "Ignore shorthand" concerns
+**null-coalescing operators** and the method structure itself — *not* comprehensions. `idea.md`'s
+paraphrase ("list comprehensions without filters") does not appear in the specification, which is
+silent on comprehensions entirely. OXN's comprehension rules are therefore derived empirically
+against complexipy (§3.2.1) rather than claimed from the spec.
+
 **Appendix B spec:**
 
 - **B1 — increments (+1 each):** `if`, `else if`, `else`, ternary · `switch` · `for`, `foreach` ·
   `while`, `do while` · `catch` · `goto LABEL`, `break LABEL`, `continue LABEL`, `break NUMBER`,
   `continue NUMBER` · sequences of binary logical operators · **each method in a recursion cycle**.
+  Note the jump rule precisely: only *labelled* and *multi-level* jumps increment. A plain `break`,
+  `continue` or early `return` does not — "because an early `return` can often make code much
+  clearer". Python has no labelled break, so Python never receives a jump increment.
 - **B2 — increments the nesting level:** `if`, `else if`, `else`, ternary · `switch` · `for`,
   `foreach` · `while`, `do while` · `catch` · **nested methods and method-like structures such as
   lambdas**.
@@ -341,6 +350,18 @@ The rule is therefore *look inside the `else_clause`*, not *test the alternative
 In both cases the hybrid treatment is the same: **+1, no nesting increment, and the consequent nests
 at the same level as the original `if`.** Getting this wrong inflates the score on every `else if`
 chain.
+
+**Python comprehensions — derived, not specified.** The white paper says nothing about
+comprehensions, so OXN's rules were established by characterising complexipy (a faithful MIT
+implementation) across the clause combinations, and they are stated here as OXN's own:
+
+| construct | rule | evidence |
+|---|---|---|
+| `for_in_clause` | **structural** — `+1 + nesting`, and raises the nesting level | `[x for x in a]` = 1; `[[y for y in x] for x in a]` = 3 (inner `for` is nested) |
+| `if_clause` (filter) | **fundamental** — `+1`, no nesting increment | `[x for x in a if x]` = 2; `[x for x in a for y in b if x if y]` = 4 |
+| comprehension under an `if` | inherits the outer nesting | `if a: [x for x in a if x]` = 4 (`if` 1 + `for` 2 + filter 1) |
+
+Dict comprehensions and generator expressions follow the same rules.
 
 **Documented compensating exceptions (Appendix A) that OXN must implement:**
 - **Python decorators:** a function whose body is *only* a nested function definition plus a `return`
@@ -462,8 +483,19 @@ languages, tree-sitter based — *the closest prior art for exactly this problem
 its per-grammar operator tables as a design reference). **Verdict: SELF-IMPLEMENT (HYBRID)** — the
 classification table must be *ours and uniform* for cross-language comparability, which is the whole
 point of the polyglot engine; adopting radon would give Python-only numbers incomparable with our Go
-numbers. rust-code-analysis is the multi-language oracle, radon the Python oracle, and assertions are
-**Spearman ρ ≥ 0.95 plus bounded relative error**, never equality.
+numbers. rust-code-analysis is the multi-language oracle and radon the Python oracle, but assertions are
+**rank correlation only**, never equality.
+
+**Measured, 2026-08-30 — radon is a weak Halstead oracle, and the reason matters.** On
+`def f(a, b): return a + b * 2`, radon reports `n1=2, N1=2` (only `+` and `*`); OXN reports
+`n1=6, N1=6` (`def`, `(`, `,`, `return`, `+`, `*`). radon classifies only *arithmetic and logical
+AST operator nodes*, ignoring punctuation, keywords and declarations entirely. Across httpx the
+Spearman correlation of volume is **ρ ≈ 0.82**, and radon's per-file volume tops out around 2,500
+where OXN's reaches 64,000. That gap is two different definitions, not an error in either. The CI
+assertion is therefore `ρ ≥ 0.75` against radon — a sanity check that the two move together, not
+evidence of agreement. **rust-code-analysis, being tree-sitter-based, is the oracle worth adding**
+when a Rust CLI is acceptable in the oracle lane; correctness rests meanwhile on the property tests
+of §9.3 and hand-computed goldens.
 
 **Effort/Risk.** M (4–6 d) / **High** — the highest-risk Tier 1 item, entirely because of
 classification ambiguity. Mitigation: ship the table as a documented, versioned artifact
@@ -1085,7 +1117,7 @@ disagree with each other is red forever.
 | Cognitive / Go | **gocognit** | MIT | equality |
 | Cognitive / JS-TS | **eslint-plugin-sonarjs** | **LGPL-3.0**, CI subprocess only | equality |
 | Cognitive / Halstead / MI, multi-lang | **rust-code-analysis** | MPL-2.0 | cognitive: equality; Halstead: correlation |
-| Halstead + MI / Python | **radon** | MIT | **Spearman ρ ≥ 0.95 + bounded relative error** |
+| Halstead + MI / Python | **radon** | MIT | **Spearman ρ ≥ 0.75** only — radon counts a strictly narrower operator set (§3.6); this checks the metrics move together, nothing more |
 | Param count, NLOC | **lizard** | MIT | equality |
 | Import graph / Python | **grimp / import-linter** | BSD-2 | **graph-equality** (node and edge sets) |
 | Import graph / JS-TS | **dependency-cruiser** | MIT | graph-equality + cycle-set equality |

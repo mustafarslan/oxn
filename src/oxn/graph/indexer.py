@@ -102,9 +102,16 @@ def iter_source_files(
 class Indexer:
     """Keeps a :class:`~oxn.graph.store.GraphStore` in step with the working tree."""
 
-    def __init__(self, root: Path | str = ".", cache_path: Path | str = DEFAULT_CACHE_PATH) -> None:
+    def __init__(
+        self,
+        root: Path | str = ".",
+        cache_path: Path | str = DEFAULT_CACHE_PATH,
+        *,
+        measure: bool = True,
+    ) -> None:
         self.root = Path(root).resolve()
         self.store = GraphStore(cache_path)
+        self.measure = measure
         self._parsers: dict[str, object] = {}
 
     def _parser(self, language: str) -> object:
@@ -148,6 +155,15 @@ class Indexer:
         tree = parser.parse(source)  # type: ignore[attr-defined]
         parsed = build_file(rel, source, profile, tree.root_node)
         self.store.put_file(parsed, profile.version, grammar_version)
+
+        # Measuring in the same pass reuses the tree that is already in hand; parsing twice
+        # would double the cost of the hook path for no benefit.
+        if self.measure:
+            from oxn.metrics.engine import measure_file
+
+            measured = measure_file(list(parsed.entities), source, profile, tree.root_node)
+            self.store.put_metrics(rel, measured)
+
         return parsed, False
 
     def index(self, roots: Iterable[Path] | None = None, *, force: bool = False) -> IndexReport:

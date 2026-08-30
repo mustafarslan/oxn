@@ -74,6 +74,33 @@ def parse(
 
 
 @app.command()
+def metrics(
+    paths: list[str] = typer.Argument(None, help="Files or directories to measure."),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    sort_by: str = typer.Option("cognitive_complexity", "--sort-by", help="Metric to rank by."),
+    limit: int = typer.Option(20, "--limit", help="How many entities to show."),
+    explain: bool = typer.Option(
+        False, "--explain", help="Show the increment trail for the worst offender."
+    ),
+) -> None:
+    """Rank code by a Tier-1 metric.
+
+    Every point of a cognitive-complexity score can be traced to a line and a reason:
+    ``oxn metrics --explain`` prints that trail.
+    """
+    from oxn.report import run_metrics
+
+    run_metrics(
+        paths or ["."],
+        sort_by=sort_by,
+        limit=limit,
+        explain=explain,
+        json_output=json_output,
+        console=None if json_output else _console(),
+    )
+
+
+@app.command()
 def doctor() -> None:
     """Report the environment OXN found: grammars, toolchains, and indexers."""
     from oxn.doctor import run_doctor

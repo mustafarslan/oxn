@@ -107,3 +107,84 @@ def _emit(payload: dict[str, Any], json_output: bool, console: Console | None) -
             f"[yellow]{len(index['parse_incomplete'])} file(s) had parse errors[/yellow]; "
             "metrics for those will be suppressed"
         )
+
+
+def run_metrics(
+    paths: list[str],
+    *,
+    sort_by: str = "cognitive_complexity",
+    limit: int = 20,
+    explain: bool = False,
+    json_output: bool = False,
+    console: Console | None = None,
+) -> dict[str, Any]:
+    """Index ``paths`` and rank their entities by one metric."""
+    from oxn.graph.indexer import Indexer, iter_source_files
+
+    targets = [Path(raw) for raw in paths]
+    missing = [str(target) for target in targets if not target.exists()]
+    if missing:
+        failure: dict[str, Any] = {
+            "status": "ERROR",
+            "errors": dict.fromkeys(missing, "no such file or directory"),
+        }
+        _emit(failure, json_output, console)
+        return failure
+
+    with Indexer() as indexer:
+        indexer.index(targets)
+        wanted = {indexer.relative(path) for path in iter_source_files(targets)}
+        rows = [
+            {"qualified_name": name, "path": path, "value": value}
+            for name, path, value in indexer.store.worst(sort_by, limit=limit * 4)
+            if path in wanted
+        ][:limit]
+        trail: list[str] = []
+        if explain and rows:
+            trail = _explain_worst(indexer, rows[0])
+
+    payload: dict[str, Any] = {
+        "status": "OK",
+        "metric": sort_by,
+        "entities": rows,
+    }
+    if trail:
+        payload["explanation"] = trail
+
+    _emit_metrics(payload, json_output, console)
+    return payload
+
+
+def _explain_worst(indexer: Any, row: dict[str, Any]) -> list[str]:
+    """Re-measure the worst offender to recover its increment trail."""
+    import json as _json
+
+    cursor = indexer.store._conn.execute(  # noqa: SLF001 -- reporting reads the cache directly
+        "SELECT m.explanation FROM metrics m JOIN entities e ON e.id = m.entity_id"
+        " WHERE e.qualified_name = ? AND m.file_path = ? AND m.metric_key = 'cognitive_complexity'",
+        (row["qualified_name"], row["path"]),
+    ).fetchone()
+    if cursor is None or cursor["explanation"] is None:
+        return []
+    return list(_json.loads(cursor["explanation"]))
+
+
+def _emit_metrics(payload: dict[str, Any], json_output: bool, console: Console | None) -> None:
+    if json_output or console is None:
+        json.dump(payload, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return
+
+    metric = payload["metric"]
+    console.print(f"[bold]Ranked by {metric}[/bold]\n")
+    for row in payload["entities"]:
+        name = row["qualified_name"].split(".")[-1]
+        console.print(f"  [bold]{row['value']:>6.0f}[/bold]  {name:<32} [dim]{row['path']}[/dim]")
+    if payload.get("explanation"):
+        worst = payload["entities"][0]
+        console.print(
+            f"\n[bold]Why {worst['qualified_name'].split('.')[-1]} scores "
+            f"{worst['value']:.0f}:[/bold]"
+        )
+        for line in payload["explanation"]:
+            console.print(f"  [dim]{line}[/dim]")

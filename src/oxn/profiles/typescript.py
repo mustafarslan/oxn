@@ -14,6 +14,133 @@ Two findings worth stating, because both contradict the usual description:
 from __future__ import annotations
 
 from oxn.profiles.base import LanguageProfile, Wrapper
+from oxn.profiles.spec import (
+    CognitiveSpec,
+    CyclomaticSpec,
+    HalsteadSpec,
+    MetricSpec,
+    SizeSpec,
+)
+
+_BOOLEAN_OPS = frozenset({"&&", "||"})
+
+# Shared by TypeScript and JavaScript: the grammars agree on control flow.
+_TS_METRICS = MetricSpec(
+    cyclomatic=CyclomaticSpec(
+        decision_points=frozenset(
+            {
+                "if_statement",
+                "ternary_expression",
+                "for_statement",
+                "for_in_statement",
+                "while_statement",
+                "do_statement",
+                "catch_clause",
+                # Each `case` branches; `default` does not.
+                "switch_case",
+            }
+        ),
+        boolean_node="binary_expression",
+        boolean_operators=_BOOLEAN_OPS,
+    ),
+    cognitive=CognitiveSpec(
+        structural=frozenset(
+            {
+                "if_statement",
+                "ternary_expression",
+                "for_statement",
+                "for_in_statement",
+                "while_statement",
+                "do_statement",
+                "catch_clause",
+                # A switch and all its cases together incur ONE increment.
+                "switch_statement",
+            }
+        ),
+        hybrid=frozenset({"else_clause"}),
+        nesting_only=frozenset(
+            {
+                "function_declaration",
+                "generator_function_declaration",
+                "function_expression",
+                "arrow_function",
+                "method_definition",
+            }
+        ),
+        fundamental=frozenset(),
+        labelled_jump_kinds=frozenset({"break_statement", "continue_statement"}),
+        # `try` and `finally` are ignored by the specification; `catch` is structural.
+        ignored=frozenset({"try_statement", "finally_clause", "statement_block"}),
+        boolean_node="binary_expression",
+        boolean_operators=_BOOLEAN_OPS,
+        hybrid_parents=frozenset({"if_statement"}),
+        # `else if` is an else_clause wrapping an if_statement, verified against the grammar.
+        else_if_via_else_clause=True,
+        else_clause_kind="else_clause",
+        if_kind="if_statement",
+        js_declarative_function_exception=True,
+        call_kinds=frozenset({"call_expression"}),
+        callee_field="function",
+    ),
+    size=SizeSpec(
+        statement_kinds=frozenset(
+            {
+                "expression_statement",
+                "variable_declaration",
+                "lexical_declaration",
+                "return_statement",
+                "if_statement",
+                "for_statement",
+                "for_in_statement",
+                "while_statement",
+                "do_statement",
+                "try_statement",
+                "switch_statement",
+                "throw_statement",
+                "break_statement",
+                "continue_statement",
+                "import_statement",
+                "export_statement",
+                "class_declaration",
+                "function_declaration",
+                "interface_declaration",
+                "type_alias_declaration",
+                "enum_declaration",
+            }
+        ),
+        return_kinds=frozenset({"return_statement", "throw_statement"}),
+        docstrings_are_comments=False,
+    ),
+    halstead=HalsteadSpec(
+        spec_version=1,
+        operand_kinds=frozenset(
+            {
+                "identifier",
+                "type_identifier",
+                "property_identifier",
+                "private_property_identifier",
+                "field_identifier",
+                "statement_identifier",
+                "integer",
+                "float",
+                "number",
+                "string",
+                "string_content",
+                "string_fragment",
+                "true",
+                "false",
+                "none",
+                "null",
+                "undefined",
+                "ellipsis",
+                "shorthand_property_identifier",
+                "predefined_type",
+            }
+        ),
+        excluded_tokens=frozenset({"\n", "", ":"}),
+        excluded_kinds=frozenset({"comment"}),
+    ),
+)
 
 _FUNCTION_LIKE = frozenset(
     {
@@ -62,6 +189,7 @@ TYPESCRIPT = LanguageProfile(
     abstract_kinds=frozenset(
         {"interface_declaration", "abstract_class_declaration", "type_alias_declaration"}
     ),
+    metrics=_TS_METRICS,
 )
 
 JAVASCRIPT = LanguageProfile(
@@ -84,4 +212,5 @@ JAVASCRIPT = LanguageProfile(
     string_kinds=frozenset({"string", "template_string"}),
     abstract_markers=frozenset(),
     abstract_kinds=frozenset(),
+    metrics=_TS_METRICS,
 )

@@ -7,6 +7,140 @@ Node kinds verified against the ``tree-sitter-python`` grammar shipped in
 from __future__ import annotations
 
 from oxn.profiles.base import LanguageProfile, Wrapper
+from oxn.profiles.spec import (
+    CognitiveSpec,
+    CyclomaticSpec,
+    HalsteadSpec,
+    MetricSpec,
+    SizeSpec,
+)
+
+_BOOLEAN_OPS = frozenset({"and", "or"})
+
+PYTHON_METRICS = MetricSpec(
+    cyclomatic=CyclomaticSpec(
+        # OXN's rule: count what branches the control-flow graph.
+        #   assert     -> counted (radon agrees, lizard does not): it raises or continues.
+        #   finally    -> not counted (radon agrees, lizard does not): unconditional.
+        #   loop else  -> not counted (lizard agrees, radon does not): OXN counts no `else`.
+        #   case       -> counted per case (lizard agrees, radon does not).
+        # Every divergence is recorded in docs/divergences.md.
+        decision_points=frozenset(
+            {
+                "if_statement",
+                "elif_clause",
+                "conditional_expression",
+                "for_statement",
+                "while_statement",
+                "except_clause",
+                "assert_statement",
+                "case_clause",
+                # Comprehension clauses are loops and filters like any other.
+                "for_in_clause",
+                "if_clause",
+            }
+        ),
+        boolean_node="boolean_operator",
+        boolean_operators=_BOOLEAN_OPS,
+    ),
+    cognitive=CognitiveSpec(
+        structural=frozenset(
+            {
+                "if_statement",
+                "conditional_expression",
+                "for_statement",
+                "while_statement",
+                "except_clause",
+                "match_statement",
+            }
+        ),
+        # `elif`/`else`: +1, no nesting increment, but they raise the nesting level.
+        hybrid=frozenset({"elif_clause", "else_clause"}),
+        # Lambdas and nested functions score nothing themselves but nest what is inside.
+        nesting_only=frozenset({"lambda", "function_definition"}),
+        fundamental=frozenset(),
+        # The specification ignores `try` and `finally` altogether. Python has no labelled
+        # break, so it never receives a jump increment.
+        ignored=frozenset({"try_statement", "finally_clause"}),
+        boolean_node="boolean_operator",
+        boolean_operators=_BOOLEAN_OPS,
+        comprehension_kinds=frozenset(
+            {
+                "list_comprehension",
+                "set_comprehension",
+                "dictionary_comprehension",
+                "generator_expression",
+            }
+        ),
+        comprehension_loop_kinds=frozenset({"for_in_clause"}),
+        comprehension_filter_kinds=frozenset({"if_clause"}),
+        hybrid_parents=frozenset({"if_statement"}),
+        python_decorator_exception=True,
+        call_kinds=frozenset({"call"}),
+        callee_field="function",
+    ),
+    size=SizeSpec(
+        statement_kinds=frozenset(
+            {
+                "expression_statement",
+                "return_statement",
+                "pass_statement",
+                "raise_statement",
+                "assert_statement",
+                "delete_statement",
+                "import_statement",
+                "global_statement",
+                "import_from_statement",
+                "print_statement",
+                "break_statement",
+                "exec_statement",
+                "continue_statement",
+                "if_statement",
+                "for_statement",
+                "while_statement",
+                "try_statement",
+                "with_statement",
+                "match_statement",
+                "function_definition",
+                "class_definition",
+                "nonlocal_statement",
+                "future_import_statement",
+            }
+        ),
+        return_kinds=frozenset({"return_statement", "raise_statement"}),
+        docstrings_are_comments=True,
+    ),
+    halstead=HalsteadSpec(
+        spec_version=1,
+        operand_kinds=frozenset(
+            {
+                "identifier",
+                "type_identifier",
+                "property_identifier",
+                "private_property_identifier",
+                "field_identifier",
+                "statement_identifier",
+                "integer",
+                "float",
+                "number",
+                "string",
+                "string_content",
+                "string_fragment",
+                "true",
+                "false",
+                "none",
+                "null",
+                "undefined",
+                "ellipsis",
+                "shorthand_property_identifier",
+                "predefined_type",
+            }
+        ),
+        excluded_tokens=frozenset({"\n", "", ":"}),
+        excluded_kinds=frozenset({"comment"}),
+    ),
+)
+
 
 PYTHON = LanguageProfile(
     name="python",
@@ -45,4 +179,5 @@ PYTHON = LanguageProfile(
         {"abstractmethod", "abstractproperty", "ABC", "ABCMeta", "Protocol"}
     ),
     abstract_kinds=frozenset(),
+    metrics=PYTHON_METRICS,
 )
