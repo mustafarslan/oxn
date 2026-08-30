@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -17,21 +18,34 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def load_harness():
-    """Import `scripts/dogfood.py`, which is dev tooling rather than a package module.
+#: The harness is three modules -- `dogfood` drives, `actor.py` talks to a model, and
+#: `gauntlet.py` verifies without one -- and these tests are about the harness rather than
+#: about any one of them. The fixture merges the three, so a test names what it is testing
+#: instead of where the code happens to live this week.
+HARNESS_MODULES = ("gauntlet", "actor", "dogfood")
 
-    `scripts/` goes on the path first: `dogfood` imports its deterministic half from
-    `gauntlet`, and a file loaded by location has no package to resolve that against.
+
+def load_harness():
+    """Import the harness, which is dev tooling rather than a package module.
+
+    `scripts/` goes on the path first: the modules import each other by plain name, and a
+    file loaded by location has no package to resolve that against.
     """
     scripts = str(ROOT / "scripts")
     if scripts not in sys.path:
         sys.path.insert(0, scripts)
-    spec = importlib.util.spec_from_file_location("dogfood", ROOT / "scripts" / "dogfood.py")
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["dogfood"] = module
-    spec.loader.exec_module(module)
-    return module
+
+    merged = types.SimpleNamespace()
+    for name in HARNESS_MODULES:
+        spec = importlib.util.spec_from_file_location(name, ROOT / "scripts" / f"{name}.py")
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+        for attribute in vars(module):
+            if not attribute.startswith("__"):
+                setattr(merged, attribute, getattr(module, attribute))
+    return merged
 
 
 @pytest.fixture(scope="module")
