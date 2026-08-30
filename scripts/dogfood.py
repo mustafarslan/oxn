@@ -228,10 +228,19 @@ class GauntletResult:
     functions_after: int = 0
     single_caller_helpers: int = 0
     failures: list[str] = field(default_factory=list)
+    #: Does the function the actor was asked to simplify still exist? A deleted function
+    #: is not a simplified one, and it used to score zero -- see `measure`.
+    target_present: bool = True
+    #: The ceiling the repair had to meet. Getting closer is not the same as arriving.
+    ceiling: float = 0.0
 
     @property
     def improved(self) -> bool:
         return self.score_after < self.score_before
+
+    @property
+    def under_ceiling(self) -> bool:
+        return self.score_after <= self.ceiling
 
     @property
     def shredded(self) -> bool:
@@ -247,21 +256,37 @@ class GauntletResult:
 
     @property
     def passed(self) -> bool:
+        """Every one of these is load-bearing, and two were added after a live run.
+
+        `target_present` closes a soundness hole the harness had from the start: an actor
+        that *deletes* the function scores zero on it, which `improved` reads as the best
+        repair ever produced. Only the test suite caught it, and only because that function
+        happened to be covered -- an uncovered one would have been accepted.
+
+        `under_ceiling` is the difference between progress and success. A 35 taken to 14 is
+        real work, but OXN would still block it, and a harness that accepts what the tool
+        rejects is measuring the wrong thing.
+        """
         return (
             self.tests_pass
             and self.lint_pass
             and self.types_pass
+            and self.target_present
             and self.improved
+            and self.under_ceiling
             and not self.shredded
         )
 
 
-def run_gauntlet(sandbox: Sandbox, target: Target, before: dict[str, float]) -> GauntletResult:
+def run_gauntlet(
+    sandbox: Sandbox, target: Target, before: dict[str, float], ceiling: int
+) -> GauntletResult:
     """Verify a candidate deterministically, before any model is asked an opinion."""
     result = GauntletResult(
         score_before=before["score"],
         file_mass_before=before["mass"],
         functions_before=int(before["functions"]),
+        ceiling=float(ceiling),
     )
 
     tests = sandbox.run("-m", "pytest", "-m", "not oracle and not llm", "-q", "-x")
@@ -284,6 +309,12 @@ def run_gauntlet(sandbox: Sandbox, target: Target, before: dict[str, float]) -> 
     result.file_mass_after = after["mass"]
     result.functions_after = int(after["functions"])
     result.single_caller_helpers = int(after["single_caller"])
+    result.target_present = bool(after["present"])
+    if not result.target_present:
+        result.failures.append(
+            f"{target.leaf} no longer exists in {target.path}. The task is to simplify it, "
+            f"not to remove it; every caller still expects it."
+        )
     return result
 
 
@@ -299,15 +330,21 @@ def measure(sandbox: Sandbox | None, target: Target) -> dict[str, float]:
         check=False,
     )
     if result.returncode != 0:
-        return {"score": 999.0, "mass": 0.0, "functions": 0.0, "single_caller": 0.0}
+        # The file no longer parses. 999 keeps this out of every comparison that treats a
+        # lower score as better.
+        return {"score": 999.0, "mass": 0.0, "functions": 0.0, "single_caller": 0.0, "present": 0.0}
     rows = json.loads(result.stdout).get("entities", [])
     scores = [row["value"] for row in rows]
     target_rows = [row for row in rows if row["qualified_name"].endswith(f".{target.leaf}")]
     return {
-        "score": float(target_rows[0]["value"]) if target_rows else 0.0,
+        # A missing function is reported as missing, never as a score. Returning 0.0 here --
+        # as this did until a live run deleted `_imported_names` outright -- makes deletion
+        # look like the strongest possible refactoring.
+        "score": float(target_rows[0]["value"]) if target_rows else 999.0,
         "mass": float(sum(scores)),
         "functions": float(len(rows)),
         "single_caller": 0.0,
+        "present": 1.0 if target_rows else 0.0,
     }
 
 
@@ -401,12 +438,13 @@ Reply with exactly this JSON object and nothing else:
 def ask_judge(
     client: Any, original: str, candidate: str, before: float, after: float
 ) -> dict[str, Any]:
-    return client.generate_json(
+    verdict: dict[str, Any] = client.generate_json(
         JUDGE_PROMPT.format(
             before=int(before), after=int(after), original=original, candidate=candidate
         ),
         system=JUDGE_SYSTEM,
     )
+    return verdict
 
 
 # ---- the loop -----------------------------------------------------------------------------
@@ -490,7 +528,7 @@ def repair(
                 patched = original_file[: span[0]] + candidate.encode() + original_file[span[1] :]
                 (sandbox.path / target.path).write_bytes(patched)
 
-                gauntlet = run_gauntlet(sandbox, target, before)
+                gauntlet = run_gauntlet(sandbox, target, before, ceiling)
                 verdict: dict[str, Any] = {}
                 if gauntlet.passed:
                     try:
@@ -522,7 +560,12 @@ def repair(
         finally:
             sandbox.destroy()
 
-    _append_log(attempts)
+    if dry_run:
+        # The fake client emits fixed junk, so these rows would be indistinguishable from
+        # real attempts in a benchmark record that exists to be read later.
+        say(f"\n{DIM}dry run -- not logged{RESET}")
+    else:
+        _append_log(attempts)
     return attempts
 
 
@@ -615,14 +658,25 @@ def summarise() -> None:
     say(f"{BOLD}{len(by_target)} target(s), {len(rows)} attempt(s){RESET}")
     say(f"  converged: {converged}/{len(by_target)}")
     for name, group in sorted(by_target.items()):
-        best = min(
-            (r["gauntlet"].get("score_after", 999) for r in group if r["gauntlet"]), default=None
-        )
-        first = group[0]["gauntlet"].get("score_before") if group[0]["gauntlet"] else None
+        scored = [row for row in group if row["gauntlet"]]
+        # A score only counts as a result if the code it was measured on actually works.
+        # Attempts that fail their tests, or that deleted the target outright, still produce
+        # a number -- and it is usually a flatteringly low one.
+        valid = [
+            row
+            for row in scored
+            if row["gauntlet"].get("tests_pass") and row["gauntlet"].get("target_present", True)
+        ]
+        best = min((row["gauntlet"]["score_after"] for row in valid), default=None)
+        # The first attempt may have died before measuring anything, so take the first row
+        # that has a measurement rather than the first row.
+        first = scored[0]["gauntlet"].get("score_before") if scored else None
         status = (
             f"{GREEN}accepted{RESET}" if any(r["accepted"] for r in group) else f"{RED}no{RESET}"
         )
-        say(f"  {name:32} {first} -> {best}  attempts={len(group)}  {status}")
+        errors = sum(1 for row in group if row.get("error"))
+        note = f"  ({errors} failed to run)" if errors else ""
+        say(f"  {name:32} {_num(first)} -> {_num(best)}  attempts={len(group)}  {status}{note}")
 
     judged = [r for r in rows if r.get("judge", {}).get("verdict") in {"accept", "reject"}]
     if judged:
@@ -632,6 +686,10 @@ def summarise() -> None:
             if (r["judge"]["verdict"] == "accept") == bool(r["gauntlet"].get("tests_pass"))
         )
         say(f"\n  judge/gauntlet agreement: {agree}/{len(judged)}")
+
+
+def _num(value: float | None) -> str:
+    return "--" if value is None else f"{value:g}"
 
 
 def plan(ceiling: int, limit: int) -> None:

@@ -109,6 +109,8 @@ def gauntlet(harness, **kwargs):
         "file_mass_after": 100.0,
         "functions_before": 5,
         "functions_after": 5,
+        "ceiling": 12.0,
+        "target_present": True,
     }
     return harness.GauntletResult(**{**defaults, **kwargs})
 
@@ -149,6 +151,37 @@ def test_lint_and_type_failures_reject(harness) -> None:
 
 def test_no_improvement_is_not_an_acceptance(harness) -> None:
     assert not gauntlet(harness, score_after=30.0).passed
+
+
+def test_deleting_the_function_is_not_repairing_it(harness) -> None:
+    """A live run produced exactly this, and the gauntlet nearly rewarded it.
+
+    Asked to simplify `_imported_names`, the actor removed it. The measurement then found
+    no row for the target and reported a score of zero -- the lowest possible, so
+    `improved` was true and the deletion read as the strongest refactoring in the log. Only
+    the test suite caught it, and only because that particular function had a caller under
+    test; an uncovered one would have been accepted outright.
+    """
+    result = gauntlet(harness, target_present=False, score_after=0.0, functions_after=4)
+    assert result.improved, "the score did fall -- that is precisely the trap"
+    assert not result.passed
+
+
+def test_getting_closer_to_the_ceiling_is_not_reaching_it(harness) -> None:
+    """Also from a live run: 35 -> 14 against a ceiling of 12.
+
+    Real work, and a real improvement, but OXN would still block the result. A harness that
+    accepts what the tool rejects is measuring something other than the tool.
+    """
+    result = gauntlet(harness, score_before=35.0, score_after=14.0, file_mass_after=80.0)
+    assert result.improved
+    assert not result.under_ceiling
+    assert not result.passed
+
+
+def test_landing_exactly_on_the_ceiling_is_an_acceptance(harness) -> None:
+    """The ceiling is a maximum, not a bound to beat."""
+    assert gauntlet(harness, score_after=12.0, file_mass_after=80.0).passed
 
 
 # ---- the dry-run client -------------------------------------------------------------------------
