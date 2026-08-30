@@ -78,3 +78,21 @@ def test_parse_reports_missing_paths_without_crashing(tmp_path) -> None:
     payload = json.loads(result.stdout)
     assert payload["status"] == "ERROR"
     assert "nope.py" in payload["errors"]
+
+
+def test_module_invocation_works() -> None:
+    """``python -m oxn`` must behave exactly like the console script."""
+    result = subprocess.run(
+        [sys.executable, "-m", "oxn", "version"], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert oxn.__version__ in result.stdout
+
+
+def test_module_invocation_supports_the_json_fast_path() -> None:
+    """A hook may invoke OXN this way, so the fast path has to work here too."""
+    result = subprocess.run(
+        [sys.executable, "-m", "oxn", "check", "--json"], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["oxn_version"] == oxn.__version__

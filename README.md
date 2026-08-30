@@ -43,13 +43,23 @@ The full rule and the classification of every tool considered: **[ADR-0001](docs
 
 ```sh
 python -m pip install -e ".[dev]"
-pytest -m "not oracle"      # default lane: pure Python, no external tools
+python scripts/check.py     # the fast lane: lint, types, unit tests
+python scripts/check.py --all --install   # every lane, fetching what it needs
+```
+
+OXN runs either as the `oxn` console script or as a module, which is what you want when the
+script is not on `PATH` -- an unactivated virtualenv, `uv run`, or a hook whose environment
+you do not control:
+
+```sh
 oxn doctor                  # report grammars, toolchains and indexers found
+python -m oxn doctor        # identical, no PATH required
+python -m oxn metrics --explain src/
 ```
 
 The `oracle` lane runs differential tests against the third-party tools OXN deliberately
-does not depend on. It needs Node, Go, a JDK and Cargo, so it runs nightly rather than on
-every push.
+does not depend on; it needs Node, and later a JDK, Go and Cargo. GitHub Actions is
+manual-only by design -- `scripts/check.py` is this project's CI.
 
 Benchmark corpora are pinned, never vendored:
 

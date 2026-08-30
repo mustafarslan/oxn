@@ -1234,8 +1234,11 @@ function shredded into twenty one-line helpers with worse overall design — pre
 4. **Launch languages for the first metric milestone.** *Decided and shipped:* Python, TypeScript
    and JavaScript have full profiles; Go, Rust and Java have verified grammars and land as profiles
    in P6, alongside their gocognit and rust-code-analysis oracles.
-5. **The `max_cognitive_complexity: 8` default** in `idea.md` is ~2× stricter than SonarSource's own
-   15. Confirm this is intentional.
+5. **Cognitive complexity ceiling.** *Decided: 12.* `idea.md` proposed 8 and SonarSource's own
+   default is 15; 8 flags a great deal of reasonable code, 15 lets agent-written functions through
+   while still being hard to read. Recorded with its reasoning in `src/oxn/thresholds.py`. It is
+   only safe paired with the anti-gaming aggregates of §10.5 — a per-function ceiling alone teaches
+   an agent to shred one function into twenty one-line helpers.
 6. **CI image may contain LGPL/GPL oracles** (eslint-plugin-sonarjs, code-maat). **Still open, and
    now load-bearing:** eslint-plugin-sonarjs (LGPL-3.0) is wired into the oracle lane as of P2. It
    is invoked as a subprocess, never linked or redistributed, which is licence-clean — but it is a

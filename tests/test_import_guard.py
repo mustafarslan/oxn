@@ -49,6 +49,20 @@ def test_importing_cli_is_free() -> None:
     )
 
 
+def test_module_entry_point_stays_on_the_fast_path() -> None:
+    """``python -m oxn check --json`` is a hook-callable entry point too."""
+    loaded = _modules_after(
+        "import runpy, sys\n"
+        "sys.argv = ['oxn', 'check', '--json']\n"
+        "try:\n"
+        "    runpy.run_module('oxn', run_name='__main__')\n"
+        "except SystemExit:\n"
+        "    pass"
+    )
+    offenders = loaded & FORBIDDEN_ON_FAST_PATH
+    assert not offenders, f"`python -m oxn check --json` loaded {sorted(offenders)}"
+
+
 def test_fast_path_never_imports_typer_or_rich() -> None:
     """The real thing: running ``oxn check --json`` must not touch the human-path stack."""
     loaded = _modules_after(
