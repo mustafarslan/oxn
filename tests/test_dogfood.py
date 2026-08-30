@@ -279,3 +279,43 @@ def test_the_fake_client_defines_the_function_it_was_asked_for(harness) -> None:
     """
     reply = harness._FakeClient().generate("Reply with the complete replacement for `_walk` only.")
     assert harness._defines(reply, "_walk")
+
+
+# ---- the extraction arms ------------------------------------------------------------------------
+
+
+def _prompt(harness, *, allow: bool) -> str:
+    return str(
+        harness.ACTOR_PROMPT.format(
+            ceiling=12,
+            score=35,
+            trail="  x",
+            file_source="pass",
+            name="f",
+            feedback="",
+            extraction=harness.ALLOW_EXTRACTION if allow else harness.NO_EXTRACTION,
+        )
+    )
+
+
+def test_the_two_arms_differ_only_in_whether_extraction_is_allowed(harness) -> None:
+    """The experiment the harness was built to run, and it needs both arms intact.
+
+    Banning extraction was the only behaviour until a live run showed what it costs: on a
+    dispatch function with a dozen irreducible branches, flattening into comprehensions is
+    the sole remaining move, and comprehension clauses cost about what the nesting they
+    replace cost. The ceiling is then unreachable by construction, and a failure to
+    converge says nothing about the model.
+    """
+    banned, allowed = _prompt(harness, allow=False), _prompt(harness, allow=True)
+    assert "Do NOT split" in banned and "MAY extract" not in banned
+    assert "MAY extract" in allowed and "Do NOT split" not in allowed
+    assert banned.replace(harness.NO_EXTRACTION, "") == allowed.replace(
+        harness.ALLOW_EXTRACTION, ""
+    ), "the arms must be identical apart from the rule under test"
+
+
+def test_permitting_extraction_does_not_disarm_the_shredding_gate(harness) -> None:
+    """The gate is what makes the permissive arm safe to run at all."""
+    assert "detected and rejected" in harness.ALLOW_EXTRACTION
+    assert gauntlet(harness, functions_after=12, file_mass_after=99.0).shredded

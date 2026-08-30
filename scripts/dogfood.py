@@ -366,9 +366,7 @@ The tool's breakdown of where the score comes from:
 {trail}
 
 Rules you must follow, because the point is readable code and not a lower number:
-- Do NOT split the function into several small single-use helpers. Complexity moved
-  somewhere else is not complexity removed, and it is detected and rejected.
-- DO reduce nesting: early returns and guard clauses, flattening `else` after `return`,
+{extraction}- DO reduce nesting: early returns and guard clauses, flattening `else` after `return`,
   replacing nested conditionals with a dispatch table or a lookup where that reads better.
 - Preserve behaviour exactly. Every existing test must still pass.
 - Keep the signature, the name, and any decorators identical.
@@ -386,6 +384,25 @@ Reply with the complete replacement for `{name}` only. It must contain a
 {feedback}"""
 
 
+#: The two arms of the extraction experiment. The banning arm was the harness's only
+#: behaviour until a live run showed what it costs: on a dispatch function with a dozen
+#: irreducible branches, flattening into comprehensions is the sole legal move, and OXN
+#: charges comprehension clauses about what the nesting they replace would cost. The ceiling
+#: is then unreachable by construction -- so a failure to converge says nothing about the
+#: model. It also contradicted the gauntlet, which already polices extraction by measuring
+#: the file's total complexity mass, and does it with more precision than a blanket ban.
+NO_EXTRACTION = """\
+- Do NOT split the function into several small single-use helpers. Complexity moved
+  somewhere else is not complexity removed, and it is detected and rejected.
+"""
+
+ALLOW_EXTRACTION = """\
+- You MAY extract helpers, but each must be worth reading on its own: a name that
+  describes a whole idea, and a body that means something away from the call site.
+  Scattering the function across many one-line helpers is detected and rejected --
+  complexity moved is not complexity removed, and the file's total is measured.
+"""
+
 FEEDBACK = """
 Your previous attempt was rejected for these reasons. Address them rather than
 starting again from a different design:
@@ -395,7 +412,12 @@ starting again from a different design:
 
 
 def ask_actor(
-    client: Any, target: Target, ceiling: int, file_source: str, feedback: str = ""
+    client: Any,
+    target: Target,
+    ceiling: int,
+    file_source: str,
+    feedback: str = "",
+    allow_extraction: bool = False,
 ) -> tuple[str, str]:
     """The candidate, and the raw reply it was extracted from.
 
@@ -409,6 +431,7 @@ def ask_actor(
         file_source=file_source,
         name=target.leaf,
         feedback=FEEDBACK.format(failures=feedback) if feedback else "",
+        extraction=ALLOW_EXTRACTION if allow_extraction else NO_EXTRACTION,
     )
     reply = client.generate(prompt, system=ACTOR_SYSTEM)
     return _strip_fences(reply), reply
@@ -547,6 +570,7 @@ def repair(
     ceiling: int,
     retries: int,
     dry_run: bool,
+    allow_extraction: bool = False,
     model: str = "",
     judge_model: str = "",
     host: str = "",
@@ -594,7 +618,12 @@ def repair(
 
                 try:
                     candidate, reply = ask_actor(
-                        actor, target, ceiling, original_file.decode(errors="replace"), feedback
+                        actor,
+                        target,
+                        ceiling,
+                        original_file.decode(errors="replace"),
+                        feedback,
+                        allow_extraction,
                     )
                 except Exception as error:  # noqa: BLE001 - a model failure is a data point
                     attempts.append(
@@ -814,6 +843,11 @@ def main(argv: list[str] | None = None) -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("command", choices=["plan", "repair", "report"])
+    parser.add_argument(
+        "--allow-extraction",
+        action="store_true",
+        help="let the actor extract helpers; the shredding gate still polices them",
+    )
     parser.add_argument("--ceiling", type=int, default=12)
     parser.add_argument("--limit", type=int, default=3)
     parser.add_argument("--retries", type=int, default=3)
@@ -844,6 +878,7 @@ def main(argv: list[str] | None = None) -> int:
     attempts = repair(
         targets,
         ceiling=args.ceiling,
+        allow_extraction=args.allow_extraction,
         retries=args.retries,
         dry_run=args.dry_run,
         model=args.model,
