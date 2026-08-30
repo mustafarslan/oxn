@@ -2,6 +2,10 @@
 
 A local architecture and quality gatekeeper for LLM coding agents.
 
+**oxn** is short for *oxygen* — the thing you never notice until it runs out. Architectural
+quality behaves the same way: invisible while it holds, and the only thing that matters once
+it is gone. Agents burn through it faster than people do.
+
 OXN computes software architecture and quality metrics itself — from one normalized code
 graph, uniformly across languages — and uses them to hold coding agents to a project's
 declared architectural invariants. Semantic context goes *in* over MCP; deterministic
