@@ -360,10 +360,14 @@ def run_gauntlet(
     if not result.tests_pass:
         result.failures.append(_tail(tests.stdout or tests.stderr))
 
+    # Both halves, because `scripts/check.py` runs both: a gate weaker than the project's
+    # own CI can accept a candidate that then fails it, which is what happened when the
+    # first accepted repair had to be reformatted by hand before it would commit.
     lint = sandbox.run("-m", "ruff", "check", ".")
-    result.lint_pass = lint.returncode == 0
+    formatting = sandbox.run("-m", "ruff", "format", "--check", ".")
+    result.lint_pass = lint.returncode == 0 and formatting.returncode == 0
     if not result.lint_pass:
-        result.failures.append(_tail(lint.stdout))
+        result.failures.append(_tail(lint.stdout if lint.returncode else formatting.stdout))
 
     types = sandbox.run("-m", "mypy")
     result.types_pass = types.returncode == 0

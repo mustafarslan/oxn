@@ -323,28 +323,55 @@ def _imported_names(node: Node, profile: LanguageProfile) -> Iterator[tuple[str,
     """
     spec = profile.metrics.imports
     if spec.style != "python":
-        # `import a from "./m"` binds `a`, which the clause holds rather than the specifier.
-        source = node.child_by_field_name(spec.module_field)
-        specifier = _strip_quotes(_text(source)) if source is not None else ""
-        for clause in node.named_children:
-            for name in _ecmascript_clause_names(clause):
-                yield name, specifier
+        yield from _ecmascript_imported_names(node, profile)
         return
-
     if node.type == "import_statement":
-        for child in node.children_by_field_name(spec.name_field):
-            if child.type in spec.alias_kinds:
-                alias = child.child_by_field_name("alias")
-                target = child.child_by_field_name("name")
-                if alias is not None and target is not None:
-                    yield _text(alias), _text(target)
-            else:
-                dotted = _text(child)
-                head = dotted.split(".")[0]
-                if head:
-                    yield head, dotted
+        yield from _plain_import_names(node, profile)
         return
+    yield from _from_import_names(node, profile)
 
+
+def _ecmascript_imported_names(node: Node, profile: LanguageProfile) -> Iterator[tuple[str, str]]:
+    """``(name, source)`` for each name an ECMAScript import binds.
+
+    ``import a from "./m"`` binds ``a``, which the clause holds rather than the specifier;
+    the specifier is the source, quoted in the syntax and stripped here.
+    """
+    spec = profile.metrics.imports
+    source = node.child_by_field_name(spec.module_field)
+    specifier = _strip_quotes(_text(source)) if source is not None else ""
+    for clause in node.named_children:
+        for name in _ecmascript_clause_names(clause):
+            yield name, specifier
+
+
+def _plain_import_names(node: Node, profile: LanguageProfile) -> Iterator[tuple[str, str]]:
+    """``(name, source)`` for each name a plain ``import`` statement binds.
+
+    ``import a.b`` binds the head ``a`` and points it at ``a.b``; ``import a.b as c``
+    binds ``c`` and points it at the unaliased ``a.b``.
+    """
+    spec = profile.metrics.imports
+    for child in node.children_by_field_name(spec.name_field):
+        if child.type in spec.alias_kinds:
+            alias = child.child_by_field_name("alias")
+            target = child.child_by_field_name("name")
+            if alias is not None and target is not None:
+                yield _text(alias), _text(target)
+        else:
+            dotted = _text(child)
+            head = dotted.split(".")[0]
+            if head:
+                yield head, dotted
+
+
+def _from_import_names(node: Node, profile: LanguageProfile) -> Iterator[tuple[str, str]]:
+    """``(name, source)`` for each name a ``from`` import binds.
+
+    Every name points at the module specifier, aliased or not. ``from m import *`` binds
+    no name that syntax alone can identify, so it contributes nothing.
+    """
+    spec = profile.metrics.imports
     module = node.child_by_field_name(spec.module_field)
     specifier = _text(module) if module is not None else ""
     for child in node.children_by_field_name(spec.name_field):
