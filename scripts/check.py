@@ -122,8 +122,41 @@ def oracle_lane(*, install: bool) -> bool:
     else:
         print(f"{DIM}  node not found; JavaScript oracle tests will skip{RESET}")
 
+    pmd = ROOT / "tools" / "pmd-bin"
+    if install and not pmd.exists():
+        _install_pmd(lane, pmd)
+    if not pmd.exists():
+        print(f"{DIM}  PMD absent; duplication oracle tests will skip{RESET}")
+
     lane.run(PYTHON, "-m", "pytest", "-m", "oracle", "-q", env=env)
     return lane.finish()
+
+
+def _install_pmd(lane: Lane, target: Path, version: str = "7.7.0") -> None:
+    """Fetch PMD, whose CPD is the duplication oracle. Java only, never a runtime dep."""
+    if not shutil.which("java"):
+        print(f"{DIM}  java not found; skipping PMD{RESET}")
+        return
+    import urllib.request
+    import zipfile
+
+    url = (
+        "https://github.com/pmd/pmd/releases/download/"
+        f"pmd_releases%2F{version}/pmd-dist-{version}-bin.zip"
+    )
+    archive = target.parent / "pmd.zip"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    print(f"{DIM}  downloading PMD {version} (~70MB){RESET}")
+    try:
+        urllib.request.urlretrieve(url, archive)  # noqa: S310 - pinned https release URL
+        with zipfile.ZipFile(archive) as bundle:
+            bundle.extractall(target.parent)
+        (target.parent / f"pmd-bin-{version}").rename(target)
+        (target / "bin" / "pmd").chmod(0o755)
+    except Exception as error:  # noqa: BLE001 - an oracle download must not fail the lane
+        print(f"{DIM}  PMD download failed ({error}); its tests will skip{RESET}")
+    finally:
+        archive.unlink(missing_ok=True)
 
 
 def corpus_lane(*, fetch: bool) -> bool:

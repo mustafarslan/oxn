@@ -31,3 +31,6 @@ tests/oracles/package-lock.json
 
 # OS
 .DS_Store
+
+# Oracle tools are downloaded, never vendored.
+tools/

@@ -135,3 +135,36 @@ its published table. Across httpx, Spearman ρ ≈ 0.82 for volume.
 Neither is wrong — Halstead has no canonical classification in any language, which is exactly why
 OXN publishes and versions its own (`halstead_spec_version`). CI asserts ρ ≥ 0.75 as a sanity check
 that the two move together. Correctness rests on property tests and hand-computed goldens instead.
+
+
+---
+
+## Duplication — Python (oracle: PMD-CPD 7.7.0)
+
+**Recall, not equality.** The two tools tokenize differently and resolve overlapping
+candidates differently, so identical clone classes were never a sensible target. What matters
+for a duplication detector is what it *misses*.
+
+Measured on httpx at `--minimum-tokens 50`:
+
+| | PMD-CPD | OXN |
+|---|---|---|
+| occurrences reported | 167 | 73 |
+| duplicated lines | 1,396 | 2,003 |
+| **recall of PMD's lines** | — | **92.1%** |
+| line-level Jaccard | — | 0.61 |
+| files flagged | 8 | 11 |
+
+OXN reports fewer, longer clones covering more lines: it extends every match maximally
+before selecting, so one long clone replaces several short ones. It recovers 92% of what PMD
+finds and flags three files PMD does not.
+
+**One real bug came out of this comparison.** Selecting candidates in hash-bucket order let a
+*short* clone claim tokens a *longer* one needed, and the longer clone — the one worth
+reporting — was then discarded as overlapping. Extending every candidate before selecting,
+longest first, lifted recall from 59% to 92%. CI asserts recall ≥ 0.85 and file-level
+Jaccard ≥ 0.60.
+
+**Not detected:** Type-3 (gapped) clones, where an inserted or deleted statement breaks the
+run. Stated rather than hidden — a clone report that silently omits a category is worse than
+one that says what it covers.

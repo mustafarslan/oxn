@@ -101,6 +101,27 @@ def metrics(
 
 
 @app.command()
+def volume(
+    paths: list[str] = typer.Argument(None, help="Files or directories to analyse."),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    no_history: bool = typer.Option(False, "--no-history", help="Skip git history."),
+) -> None:
+    """Report duplication, verbosity, structural erosion and hotspots.
+
+    These are the signals agent-written code degrades: volume correlates with
+    architectural decay where prompt specificity does not.
+    """
+    from oxn.report import run_volume
+
+    run_volume(
+        paths or ["."],
+        json_output=json_output,
+        include_history=not no_history,
+        console=None if json_output else _console(),
+    )
+
+
+@app.command()
 def doctor() -> None:
     """Report the environment OXN found: grammars, toolchains, and indexers."""
     from oxn.doctor import run_doctor

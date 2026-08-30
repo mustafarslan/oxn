@@ -134,11 +134,20 @@ def run_metrics(
     with Indexer() as indexer:
         indexer.index(targets)
         wanted = {indexer.relative(path) for path in iter_source_files(targets)}
-        rows = [
-            {"qualified_name": name, "path": path, "value": value}
-            for name, path, value in indexer.store.worst(sort_by, limit=limit * 4)
-            if path in wanted
-        ][:limit]
+        file_scoped = {"hotspot", "churn", "commits", "duplicate_lines", "authors"}
+        if sort_by in file_scoped:
+            # These belong to a path, not to a code entity, and history has no entity at all.
+            rows = [
+                {"qualified_name": path, "path": path, "value": value}
+                for path, value in indexer.store.file_metrics(sort_by, limit=limit * 4)
+                if path in wanted
+            ][:limit]
+        else:
+            rows = [
+                {"qualified_name": name, "path": path, "value": value}
+                for name, path, value in indexer.store.worst(sort_by, limit=limit * 4)
+                if path in wanted
+            ][:limit]
         trail: list[str] = []
         if explain and rows:
             trail = _explain_worst(indexer, rows[0])
@@ -146,6 +155,7 @@ def run_metrics(
     payload: dict[str, Any] = {
         "status": "OK",
         "metric": sort_by,
+        "scope": "file" if sort_by in file_scoped else "entity",
         "entities": rows,
     }
     if trail:
@@ -176,10 +186,18 @@ def _emit_metrics(payload: dict[str, Any], json_output: bool, console: Console |
         return
 
     metric = payload["metric"]
+    file_scoped = payload.get("scope") == "file"
     console.print(f"[bold]Ranked by {metric}[/bold]\n")
     for row in payload["entities"]:
-        name = row["qualified_name"].split(".")[-1]
-        console.print(f"  [bold]{row['value']:>6.0f}[/bold]  {name:<32} [dim]{row['path']}[/dim]")
+        value = row["value"]
+        # A hotspot score lives in [0, 1]; a churn count does not. Format each so the
+        # number stays readable instead of being rounded away.
+        rendered = f"{value:>7.3f}" if 0 < abs(value) < 10 else f"{value:>7.0f}"
+        if file_scoped:
+            console.print(f"  [bold]{rendered}[/bold]  {row['path']}")
+        else:
+            name = row["qualified_name"].split(".")[-1]
+            console.print(f"  [bold]{rendered}[/bold]  {name:<32} [dim]{row['path']}[/dim]")
     if payload.get("explanation"):
         worst = payload["entities"][0]
         console.print(
@@ -188,3 +206,68 @@ def _emit_metrics(payload: dict[str, Any], json_output: bool, console: Console |
         )
         for line in payload["explanation"]:
             console.print(f"  [dim]{line}[/dim]")
+
+
+def run_volume(
+    paths: list[str],
+    *,
+    json_output: bool = False,
+    include_history: bool = True,
+    console: Console | None = None,
+) -> dict[str, Any]:
+    """Duplication, erosion and hotspots for ``paths``."""
+    from oxn.graph.indexer import Indexer
+    from oxn.volume.scan import persist, scan_volume
+
+    targets = [Path(raw) for raw in paths]
+    missing = [str(target) for target in targets if not target.exists()]
+    if missing:
+        failure: dict[str, Any] = {
+            "status": "ERROR",
+            "errors": dict.fromkeys(missing, "no such file or directory"),
+        }
+        _emit(failure, json_output, console)
+        return failure
+
+    with Indexer() as indexer:
+        indexer.index(targets)
+        report = scan_volume(indexer, targets, include_history=include_history)
+        persist(indexer, report)
+        payload: dict[str, Any] = {"status": "OK", **report.as_dict()}
+
+    _emit_volume(payload, json_output, console)
+    return payload
+
+
+def _emit_volume(payload: dict[str, Any], json_output: bool, console: Console | None) -> None:
+    if json_output or console is None:
+        json.dump(payload, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return
+
+    duplication = payload["duplication"]
+    erosion = payload["erosion"]
+    console.print("[bold]Volume[/bold]")
+    console.print(
+        f"  verbosity        [bold]{duplication['verbosity']:.1%}[/bold] of tokens are duplicated"
+        f"  [dim]({duplication['clone_classes']} clone classes,"
+        f" {duplication['duplicate_tokens']:,} of {duplication['total_tokens']:,} tokens)[/dim]"
+    )
+    key = next(k for k in erosion if k.startswith("erosion_at_"))
+    console.print(
+        f"  erosion          [bold]{erosion[key]:.1%}[/bold] of complexity sits in the worst "
+        f"{key.split('_')[-1]} of {erosion['function_count']} functions"
+    )
+    console.print(
+        f"  gini             [bold]{erosion['gini']:.3f}[/bold] [dim](0 = evenly spread)[/dim]"
+    )
+
+    if payload.get("hotspots"):
+        console.print(
+            "\n[bold]Hotspots[/bold] [dim](change frequency x cognitive complexity)[/dim]"
+        )
+        for spot in payload["hotspots"][:10]:
+            console.print(
+                f"  [bold]{spot['score']:.3f}[/bold]  {spot['path']:<52}"
+                f" [dim]{spot['commits']} commits, complexity {spot['complexity']:.0f}[/dim]"
+            )

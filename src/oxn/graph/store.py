@@ -29,7 +29,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Iterable, Iterator
 
 #: Bump on any change to the statements below. A mismatch rebuilds the cache.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 DEFAULT_CACHE_PATH = Path(".oxn/cache/graph.db")
 
@@ -93,6 +93,17 @@ CREATE TABLE metrics (
     file_path   TEXT NOT NULL REFERENCES files(path) ON DELETE CASCADE,
     PRIMARY KEY (entity_id, metric_key)
 );
+
+-- File-scoped measurements: duplication, verbosity, churn, hotspot rank. These belong to
+-- a path rather than to a code entity, and history has no entity at all.
+CREATE TABLE file_metrics (
+    path       TEXT NOT NULL,
+    metric_key TEXT NOT NULL,
+    value      REAL NOT NULL,
+    PRIMARY KEY (path, metric_key)
+);
+
+CREATE INDEX file_metrics_by_key ON file_metrics(metric_key, value);
 
 CREATE INDEX metrics_by_file ON metrics(file_path);
 CREATE INDEX metrics_by_key  ON metrics(metric_key, value);
@@ -245,6 +256,42 @@ class GraphStore:
                 rows,
             )
 
+    def put_file_metrics(self, values: dict[str, dict[str, float]]) -> None:
+        """Replace file-scoped measurements for the paths named."""
+        with self._transaction() as conn:
+            for path, metrics in values.items():
+                conn.execute("DELETE FROM file_metrics WHERE path = ?", (path,))
+                conn.executemany(
+                    "INSERT INTO file_metrics (path, metric_key, value) VALUES (?, ?, ?)",
+                    [(path, key, float(value)) for key, value in metrics.items()],
+                )
+
+    def file_metrics(self, metric_key: str, limit: int = 25) -> list[tuple[str, float]]:
+        """Highest values of one file-scoped metric."""
+        rows = self._conn.execute(
+            "SELECT path, value FROM file_metrics WHERE metric_key = ? ORDER BY value DESC LIMIT ?",
+            (metric_key, limit),
+        ).fetchall()
+        return [(row["path"], row["value"]) for row in rows]
+
+    def complexity_by_file(self, metric_key: str = "cognitive_complexity") -> dict[str, float]:
+        """Total complexity per file, the term hotspot ranking multiplies by churn."""
+        rows = self._conn.execute(
+            "SELECT file_path, sum(value) AS total FROM metrics"
+            " WHERE metric_key = ? GROUP BY file_path",
+            (metric_key,),
+        ).fetchall()
+        return {row["file_path"]: float(row["total"]) for row in rows}
+
+    def entity_scores(self, metric_key: str = "cognitive_complexity") -> dict[str, float]:
+        """Qualified name -> value, for every measured entity. Feeds erosion."""
+        rows = self._conn.execute(
+            "SELECT e.qualified_name, m.value FROM metrics m"
+            " JOIN entities e ON e.id = m.entity_id WHERE m.metric_key = ?",
+            (metric_key,),
+        ).fetchall()
+        return {row["qualified_name"]: float(row["value"]) for row in rows}
+
     def metrics_for(self, path: str) -> dict[str, dict[str, float]]:
         """entity_id -> {metric key: value} for one file."""
         out: dict[str, dict[str, float]] = {}
@@ -293,6 +340,7 @@ class GraphStore:
             "entities": count("entities"),
             "edges": count("edges"),
             "metrics": count("metrics"),
+            "file_metrics": count("file_metrics"),
             "db_path": str(self.path),
         }
 
