@@ -23,13 +23,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from oxn.graph.model import Edge, EdgeKind, Entity, EntityKind, ParsedFile, Provenance, Resolution
-from oxn.metrics.engine import EntityMetrics
+from oxn.metrics.engine import EntityMetrics, MetricValue
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Collection, Iterable, Iterator
 
 #: Bump on any change to the statements below. A mismatch rebuilds the cache.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 DEFAULT_CACHE_PATH = Path(".oxn/cache/graph.db")
 
@@ -94,6 +94,10 @@ CREATE TABLE metrics (
     value       REAL NOT NULL,
     exactness   TEXT NOT NULL DEFAULT 'EXACT',
     resolution  TEXT NOT NULL DEFAULT 'L0',
+    -- Direction of error for an approximate value. Persisted because the gate policy of
+    -- ADR-0002 reads it: an APPROX value may block a ceiling only when it is a *lower*
+    -- bound. Dropping it on write meant a cached measurement could not be gated on at all.
+    bound       TEXT NOT NULL DEFAULT 'exact',
     explanation TEXT,
     file_path   TEXT NOT NULL REFERENCES files(path) ON DELETE CASCADE,
     PRIMARY KEY (entity_id, metric_key)
@@ -325,6 +329,7 @@ class GraphStore:
                 float(value.value),
                 value.exactness,
                 value.resolution.value,
+                value.bound,
                 json.dumps(list(value.explanation)) if value.explanation else None,
                 path,
             )
@@ -335,7 +340,7 @@ class GraphStore:
             conn.execute("DELETE FROM metrics WHERE file_path = ?", (path,))
             conn.executemany(
                 "INSERT INTO metrics (entity_id, metric_key, value, exactness, resolution,"
-                " explanation, file_path) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                " bound, explanation, file_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 rows,
             )
 
@@ -395,6 +400,29 @@ class GraphStore:
             "SELECT entity_id, metric_key, value FROM metrics WHERE file_path = ?", (path,)
         ):
             out.setdefault(row["entity_id"], {})[row["metric_key"]] = row["value"]
+        return out
+
+    def measurements_for(self, path: str) -> dict[str, dict[str, MetricValue]]:
+        """entity_id -> {metric key: full measurement} for one file.
+
+        `metrics_for` returns bare floats, which is enough to rank by but not enough to
+        *gate* on: ADR-0002 lets an approximate value block a ceiling only when it is a
+        lower bound, and a float has no bound.
+        """
+        out: dict[str, dict[str, MetricValue]] = {}
+        for row in self._conn.execute(
+            "SELECT entity_id, metric_key, value, exactness, resolution, bound, explanation"
+            " FROM metrics WHERE file_path = ?",
+            (path,),
+        ):
+            out.setdefault(row["entity_id"], {})[row["metric_key"]] = MetricValue(
+                key=row["metric_key"],
+                value=row["value"],
+                exactness=row["exactness"],
+                resolution=Resolution(row["resolution"]),
+                bound=row["bound"],
+                explanation=tuple(json.loads(row["explanation"]) if row["explanation"] else ()),
+            )
         return out
 
     def worst(

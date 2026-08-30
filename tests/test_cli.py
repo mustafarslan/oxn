@@ -21,14 +21,61 @@ def test_version_is_pep440() -> None:
     assert all(p.isdigit() for p in parts)
 
 
-def test_check_json_emits_valid_json() -> None:
+def test_check_json_emits_valid_json(tmp_path) -> None:
     """The hook parses this output. It must be JSON on stdout, always."""
-    result = _run("check", "--json", "some/file.py")
+    (tmp_path / "calm.py").write_text("def one(a):\n    return a\n")
+    result = subprocess.run(
+        [sys.executable, "-m", "oxn", "check", "--json", "calm.py"],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+    )
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["oxn_version"] == oxn.__version__
-    assert payload["paths"] == ["some/file.py"]
-    assert "violations" in payload
+    assert payload["paths"] == ["calm.py"]
+    assert payload["status"] == "PASSED"
+    assert payload["violations"] == []
+
+
+def test_a_violation_exits_two_so_the_hook_can_feed_it_back(tmp_path) -> None:
+    """The whole enforcement model rests on this number.
+
+    A Claude Code `PostToolUse` hook treats exit 2 as "tell the agent about this"; anything
+    else is either silence or a broken tool. 1 is reserved for OXN itself failing, which is
+    a different situation and must not read as a code violation.
+    """
+    (tmp_path / "tangled.py").write_text(
+        "def tangled(rows):\n"
+        + "".join(f"{' ' * (4 + 4 * n)}for x{n} in rows:\n" for n in range(6))
+        + " " * 28
+        + "print(x5)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "oxn", "check", "--json", "tangled.py"],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+    )
+    assert result.returncode == 2, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "FAILED"
+    assert payload["violations"], "a failing check must say what failed"
+    assert all("message" in violation for violation in payload["violations"])
+
+
+def test_a_missing_path_is_an_error_not_a_violation(tmp_path) -> None:
+    """Exit 1, because OXN could not answer -- not exit 2, which claims the code is wrong."""
+    result = subprocess.run(
+        [sys.executable, "-m", "oxn", "check", "--json", "nope.py"],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+    )
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert "nope.py" in payload["errors"]
+    assert payload["violations"] == []
 
 
 def test_bare_invocation_shows_help() -> None:
@@ -89,10 +136,14 @@ def test_module_invocation_works() -> None:
     assert oxn.__version__ in result.stdout
 
 
-def test_module_invocation_supports_the_json_fast_path() -> None:
+def test_module_invocation_supports_the_json_fast_path(tmp_path) -> None:
     """A hook may invoke OXN this way, so the fast path has to work here too."""
+    (tmp_path / "calm.py").write_text("def one(a):\n    return a\n")
     result = subprocess.run(
-        [sys.executable, "-m", "oxn", "check", "--json"], capture_output=True, text=True
+        [sys.executable, "-m", "oxn", "check", "--json"],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
     )
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["oxn_version"] == oxn.__version__

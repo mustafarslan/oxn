@@ -35,7 +35,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.11"]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.11", "types-PyYAML>=6.0"]
 # CI-only differential-test oracles. NEVER runtime dependencies -- see ADR-0001 and
 # docs/metrics.md section 9. Installed only in the CI oracle lane.
 oracle = [

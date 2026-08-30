@@ -34,8 +34,10 @@ def _is_fast_path(argv: list[str]) -> bool:
 def _run_fast_path(argv: list[str]) -> int:
     """Stdlib-only dispatch for ``oxn check --json``.
 
-    Phase P0 placeholder: the engine lands in P1/P2. The dispatch shape is real from the
-    first commit so the import discipline is enforced before there is anything to slow down.
+    Everything heavy is imported *inside* this function, after argument parsing, so a
+    malformed invocation costs a bare interpreter rather than a full engine load. The engine
+    itself is unavoidable once there is work to do -- the point of the split was never to
+    avoid the analysis, only the presentation layer that the hook has no use for.
     """
     import argparse
     import json
@@ -43,21 +45,31 @@ def _run_fast_path(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="oxn check", add_help=True)
     parser.add_argument("paths", nargs="*", help="files or directories to check")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
+    parser.add_argument(
+        "--deep",
+        action="store_true",
+        help="also check repository-scoped contracts; too slow for a hook",
+    )
+    parser.add_argument("--no-baseline", action="store_true", help="ignore .oxn/baseline.json")
     args = parser.parse_args(argv[1:])
 
-    result = {
-        "oxn_version": _version(),
-        "status": "NOT_IMPLEMENTED",
-        "paths": args.paths,
-        "violations": [],
-        "diagnostics": [
-            "The analysis engine is not built yet (roadmap phases P1-P2). "
-            "This command currently reports its own status only."
-        ],
-    }
-    json.dump(result, sys.stdout, indent=2)
+    from oxn.check import run_check  # noqa: PLC0415 -- lazy by design; see the docstring
+    from oxn.config import ConfigError  # noqa: PLC0415
+
+    try:
+        report = run_check(args.paths, deep=args.deep, use_baseline=not args.no_baseline)
+    except ConfigError as error:
+        json.dump(
+            {"status": "ERROR", "errors": {"oxn.yaml": str(error)}, "violations": []},
+            sys.stdout,
+            indent=2,
+        )
+        sys.stdout.write("\n")
+        return 1
+
+    json.dump(report.as_dict(), sys.stdout, indent=2)
     sys.stdout.write("\n")
-    return 0
+    return report.exit_code
 
 
 def _version() -> str:

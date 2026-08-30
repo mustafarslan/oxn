@@ -40,14 +40,68 @@ def version() -> None:
 def check(
     paths: list[str] = typer.Argument(None, help="Files or directories to check."),
     json_output: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    deep: bool = typer.Option(
+        False, "--deep", help="Also check repository-scoped contracts. Too slow for a hook."
+    ),
+    no_baseline: bool = typer.Option(
+        False, "--no-baseline", help="Ignore .oxn/baseline.json and report every violation."
+    ),
 ) -> None:
     """Check files against the project's architectural and quality invariants.
 
-    The ``--json`` form is dispatched by :mod:`oxn.cli` before typer is ever imported.
+    The ``--json`` form is dispatched by :mod:`oxn.cli` before typer is ever imported, so
+    this function is only reached on the human path.
     """
+    from oxn.check import render, run_check
+    from oxn.config import ConfigError
+
     console = _console()
-    console.print("[yellow]The analysis engine is not built yet[/yellow] (roadmap phases P1-P2).")
-    console.print(f"Would check: {paths or ['.']}")
+    try:
+        report = run_check(paths or ["."], deep=deep, use_baseline=not no_baseline)
+    except ConfigError as error:
+        console.print(f"[red]oxn.yaml[/red]: {error}")
+        raise typer.Exit(1) from error
+
+    if json_output:
+        import json
+
+        console.print_json(json.dumps(report.as_dict()))
+    else:
+        render(report, console)
+    raise typer.Exit(report.exit_code)
+
+
+@app.command()
+def baseline(
+    paths: list[str] = typer.Argument(None, help="Files or directories to record."),
+    deep: bool = typer.Option(False, "--deep", help="Include repository-scoped contracts."),
+) -> None:
+    """Record today's violations as accepted debt, so only *new* ones fail.
+
+    The ratchet, not an amnesty: a recorded violation stops failing the build, but the same
+    violation getting worse starts failing it again, and anything new fails immediately.
+    This is what makes `oxn check` adoptable on a repository that predates it.
+    """
+    from oxn.check import run_check, write_baseline
+    from oxn.config import Config, ConfigError
+
+    console = _console()
+    try:
+        settings = Config.load()
+        report = run_check(paths or ["."], config=settings, deep=deep, use_baseline=False)
+    except ConfigError as error:
+        console.print(f"[red]oxn.yaml[/red]: {error}")
+        raise typer.Exit(1) from error
+
+    if report.errors:
+        for path, problem in report.errors.items():
+            console.print(f"[red]error[/red] {path}: {problem}")
+        raise typer.Exit(1)
+
+    recorded = write_baseline(report, settings.baseline_path)
+    where = settings.baseline_path.relative_to(settings.root)
+    console.print(f"recorded [bold]{recorded}[/bold] violation(s) as accepted debt in {where}")
+    console.print("[dim]new violations, and these getting worse, will still fail[/dim]")
 
 
 @app.command()
