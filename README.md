@@ -57,9 +57,21 @@ python -m oxn doctor        # identical, no PATH required
 python -m oxn metrics --explain src/
 ```
 
-The `oracle` lane runs differential tests against the third-party tools OXN deliberately
-does not depend on; it needs Node, and later a JDK, Go and Cargo. GitHub Actions is
-manual-only by design -- `scripts/check.py` is this project's CI.
+Lanes, in increasing cost:
+
+| lane | what it runs |
+|---|---|
+| default | lint, types and the deterministic test suite -- no network, no toolchains |
+| `--matrix` | the default lane on Python 3.10 through 3.14 |
+| `--oracle` | differential tests against the third-party tools OXN deliberately does not depend on; needs Node, a JDK and Go |
+| `--corpus` | phase exit criteria measured on real repositories |
+| `--llm` | the few tests that need a language model, via Ollama |
+
+GitHub Actions is manual-only by design -- `scripts/check.py` is this project's CI.
+
+The `llm` lane uses Ollama with `glm-5.3:cloud`, overridable through `OXN_OLLAMA_MODEL` and
+`OXN_OLLAMA_HOST`. It skips when the host is unreachable, and no other lane depends on a
+model being up.
 
 Benchmark corpora are pinned, never vendored:
 

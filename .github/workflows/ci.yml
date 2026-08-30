@@ -33,7 +33,7 @@ jobs:
       - name: Test
         # Corpus tests (`slow`) skip automatically when the corpora are not fetched;
         # the `corpus` job below runs them against the real repositories.
-        run: pytest -m "not oracle"
+        run: pytest -m "not oracle and not llm"
 
       - name: Type check
         if: matrix.python-version == '3.12'

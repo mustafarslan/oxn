@@ -69,7 +69,9 @@ def fast_lane() -> bool:
     lane.run(PYTHON, "-m", "ruff", "check", ".")
     lane.run(PYTHON, "-m", "ruff", "format", "--check", ".")
     lane.run(PYTHON, "-m", "mypy")
-    lane.run(PYTHON, "-m", "pytest", "-m", "not oracle", "-q")
+    # `llm` is excluded as well as `oracle`: the fast lane must never depend on a model
+    # being reachable, which is exactly what "not oracle" alone failed to guarantee.
+    lane.run(PYTHON, "-m", "pytest", "-m", "not oracle and not llm", "-q")
     return lane.finish()
 
 
@@ -93,7 +95,7 @@ def matrix_lane() -> bool:
             lane.run("uv", "venv", "--python", version, "-q", str(env_dir))
         interpreter = env_dir / "bin" / "python"
         lane.run("uv", "pip", "install", "--python", str(interpreter), "-q", "-e", ".[dev]")
-        lane.run(interpreter, "-m", "pytest", "-m", "not oracle", "-q")
+        lane.run(interpreter, "-m", "pytest", "-m", "not oracle and not llm", "-q")
     return lane.finish()
 
 

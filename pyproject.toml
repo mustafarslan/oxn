@@ -82,6 +82,9 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.ruff.lint.per-file-ignores]
 # typer declares defaults via calls in the signature; that is the library's idiom, not a bug.
 "src/oxn/_app.py" = ["B008"]
+# The transliteration fixtures are one line of real source per language. Wrapping them to
+# fit a column limit would obscure the very thing the test compares.
+"tests/test_polyglot.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.10"

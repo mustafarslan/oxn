@@ -21,7 +21,6 @@ from oxn.graph.builder import build_file
 from oxn.languages import get_parser
 from oxn.llm import OllamaClient
 from oxn.metrics import cognitive_complexity
-from oxn.metrics.engine import measure_file
 from oxn.profiles import get_profile
 
 pytestmark = pytest.mark.llm
