@@ -269,3 +269,13 @@ def test_the_fake_client_makes_the_loop_testable(harness) -> None:
     client = harness._FakeClient()
     assert "def " in client.generate("anything")
     assert client.generate_json("anything")["verdict"] == "reject"
+
+
+def test_the_fake_client_defines_the_function_it_was_asked_for(harness) -> None:
+    """Otherwise a dry run stops at the define-check and never reaches the gauntlet.
+
+    A fixed `def placeholder()` made every dry run fail at extraction, which tests the
+    guard rather than the plumbing the guard protects.
+    """
+    reply = harness._FakeClient().generate("Reply with the complete replacement for `_walk` only.")
+    assert harness._defines(reply, "_walk")

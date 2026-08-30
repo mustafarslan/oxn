@@ -734,8 +734,17 @@ class _FakeClient:
     host = "(none)"
 
     def generate(self, prompt: str, *, temperature: float = 0.0, system: str = "") -> str:
-        del prompt, temperature, system
-        return "def placeholder():\n    return None\n"
+        """A reply that defines the function actually asked for.
+
+        A fixed `def placeholder()` stopped exercising anything once the harness began
+        rejecting candidates that omit the target: every dry run failed at extraction and
+        the gauntlet was never reached. Reading the name back out of the prompt keeps the
+        dry run a test of the plumbing rather than of the check that guards it.
+        """
+        del temperature, system
+        match = re.search(r"replacement for `([^`]+)`", prompt)
+        name = match.group(1) if match else "placeholder"
+        return f"def {name}(*args, **kwargs):\n    return None\n"
 
     def generate_json(self, prompt: str, *, system: str = "") -> dict[str, object]:
         del prompt, system
