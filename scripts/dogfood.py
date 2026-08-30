@@ -24,6 +24,10 @@ emits diffs and a JSONL log for a human to review and commit.
     python scripts/dogfood.py repair --limit 3     # attempt repairs, write diffs
     python scripts/dogfood.py repair --dry-run     # exercise the plumbing, no model calls
     python scripts/dogfood.py report               # summarise the log
+
+Models are configurable: `--model`, `--judge-model` and `--host` override
+`OXN_OLLAMA_MODEL`, `OXN_OLLAMA_JUDGE_MODEL` and `OXN_OLLAMA_HOST`, which in turn override
+the defaults. The loop needs *an* actor and *a* judge; which ones is the operator's choice.
 """
 
 from __future__ import annotations
@@ -43,6 +47,16 @@ ROOT = Path(__file__).resolve().parent.parent
 SCRATCH = Path(os.environ.get("OXN_SCRATCH", "/tmp")) / "oxn-dogfood"
 LOG = ROOT / "benchmarks" / "dogfood-log.jsonl"
 DIFFS = SCRATCH / "diffs"
+
+
+def say(message: str = "") -> None:
+    """Print, flushing immediately.
+
+    A repair run spends minutes inside a single model call, and output buffered through a
+    pipe shows nothing until the process exits -- which is indistinguishable from a hang.
+    """
+    print(message, flush=True)
+
 
 DIM, GREEN, RED, YELLOW, BOLD, RESET = (
     "\033[2m",
@@ -412,19 +426,37 @@ class Attempt:
     seconds: float = 0.0
 
 
-def repair(targets: list[Target], *, ceiling: int, retries: int, dry_run: bool) -> list[Attempt]:
-    """Attempt to repair each target, verifying every candidate before judging it."""
+def repair(
+    targets: list[Target],
+    *,
+    ceiling: int,
+    retries: int,
+    dry_run: bool,
+    model: str = "",
+    judge_model: str = "",
+    host: str = "",
+) -> list[Attempt]:
+    """Attempt to repair each target, verifying every candidate before judging it.
+
+    Models are chosen per run: an explicit flag wins, then the environment, then the
+    defaults. Nothing here assumes a particular model -- the loop wants *an* actor and *a*
+    judge, and which ones is the operator's business.
+    """
     from oxn.llm import OllamaClient
     from oxn.profiles import profile_for_path
 
-    actor: Any = _FakeClient() if dry_run else OllamaClient.from_env()
-    judge: Any = _FakeClient() if dry_run else OllamaClient.judge_from_env()
+    actor: Any = _FakeClient() if dry_run else _client(OllamaClient.from_env(), model, host)
+    judge: Any = (
+        _FakeClient() if dry_run else _client(OllamaClient.judge_from_env(), judge_model, host)
+    )
+    if not dry_run:
+        say(f"{DIM}actor {actor.model}  judge {judge.model}  at {actor.host}{RESET}")
 
     DIFFS.mkdir(parents=True, exist_ok=True)
     attempts: list[Attempt] = []
 
     for target in targets:
-        print(f"\n{BOLD}{target.leaf}{RESET} {DIM}{target.path} scores {target.score:.0f}{RESET}")
+        say(f"\n{BOLD}{target.leaf}{RESET} {DIM}{target.path} scores {target.score:.0f}{RESET}")
         before = measure(None, target)
         profile = profile_for_path(target.path)
         if profile is None:
@@ -432,7 +464,7 @@ def repair(targets: list[Target], *, ceiling: int, retries: int, dry_run: bool) 
 
         sandbox = Sandbox(target.leaf)
         try:
-            print(f"{DIM}  creating sandbox...{RESET}")
+            say(f"{DIM}  creating sandbox...{RESET}")
             sandbox.create()
 
             for index in range(1, retries + 1):
@@ -440,7 +472,7 @@ def repair(targets: list[Target], *, ceiling: int, retries: int, dry_run: bool) 
                 original_file = (sandbox.path / target.path).read_bytes()
                 span = function_span(sandbox.path / target.path, target.leaf, profile)
                 if span is None:
-                    print(f"{RED}  cannot locate {target.leaf}{RESET}")
+                    say(f"{RED}  cannot locate {target.leaf}{RESET}")
                     break
                 original = original_file[span[0] : span[1]].decode()
 
@@ -452,7 +484,7 @@ def repair(targets: list[Target], *, ceiling: int, retries: int, dry_run: bool) 
                     attempts.append(
                         Attempt(target.leaf, target.path, index, False, {}, error=str(error)[:200])
                     )
-                    print(f"{RED}  attempt {index}: actor failed: {error}{RESET}")
+                    say(f"{RED}  attempt {index}: actor failed: {error}{RESET}")
                     continue
 
                 patched = original_file[: span[0]] + candidate.encode() + original_file[span[1] :]
@@ -507,12 +539,12 @@ def _report_attempt(
         marks.append(f"{YELLOW}SHREDDED{RESET}")
     colour = GREEN if accepted else RED
     decision = verdict.get("verdict", "-")
-    print(
+    say(
         f"  attempt {index}: " + "  ".join(marks) + f"  judge={decision}  {colour}"
         f"{'ACCEPTED' if accepted else 'rejected'}{RESET}"
     )
     for concern in verdict.get("concerns", [])[:3]:
-        print(f"{DIM}      concern: {concern}{RESET}")
+        say(f"{DIM}      concern: {concern}{RESET}")
 
 
 def _write_diff(target: Target, original: str, candidate: str) -> None:
@@ -526,7 +558,7 @@ def _write_diff(target: Target, original: str, candidate: str) -> None:
     )
     out = DIFFS / f"{target.leaf}.diff"
     out.write_text("".join(diff))
-    print(f"{GREEN}  diff written: {out}{RESET}")
+    say(f"{GREEN}  diff written: {out}{RESET}")
 
 
 def _append_log(attempts: list[Attempt]) -> None:
@@ -536,13 +568,26 @@ def _append_log(attempts: list[Attempt]) -> None:
     with LOG.open("a") as handle:
         for attempt in attempts:
             handle.write(json.dumps({"timestamp": time.time(), **asdict(attempt)}) + "\n")
-    print(f"\n{DIM}logged {len(attempts)} attempt(s) to {LOG.relative_to(ROOT)}{RESET}")
+    say(f"\n{DIM}logged {len(attempts)} attempt(s) to {LOG.relative_to(ROOT)}{RESET}")
+
+
+def _client(base: Any, model: str, host: str) -> Any:
+    """Apply per-run overrides to a client built from the environment."""
+    import dataclasses
+
+    changes: dict[str, Any] = {}
+    if model:
+        changes["model"] = model
+    if host:
+        changes["host"] = host
+    return dataclasses.replace(base, **changes) if changes else base
 
 
 class _FakeClient:
     """A deterministic stand-in, so the harness itself has tests that need no model."""
 
     model = "dry-run"
+    host = "(none)"
 
     def generate(self, prompt: str, *, temperature: float = 0.0, system: str = "") -> str:
         del prompt, temperature, system
@@ -559,7 +604,7 @@ class _FakeClient:
 def summarise() -> None:
     """What the log says about convergence -- the study 2508.11958 asks for."""
     if not LOG.exists():
-        print("no attempts logged yet")
+        say("no attempts logged yet")
         return
     rows = [json.loads(line) for line in LOG.read_text().splitlines() if line.strip()]
     by_target: dict[str, list[dict[str, Any]]] = {}
@@ -567,8 +612,8 @@ def summarise() -> None:
         by_target.setdefault(row["target"], []).append(row)
 
     converged = sum(1 for group in by_target.values() if any(r["accepted"] for r in group))
-    print(f"{BOLD}{len(by_target)} target(s), {len(rows)} attempt(s){RESET}")
-    print(f"  converged: {converged}/{len(by_target)}")
+    say(f"{BOLD}{len(by_target)} target(s), {len(rows)} attempt(s){RESET}")
+    say(f"  converged: {converged}/{len(by_target)}")
     for name, group in sorted(by_target.items()):
         best = min(
             (r["gauntlet"].get("score_after", 999) for r in group if r["gauntlet"]), default=None
@@ -577,7 +622,7 @@ def summarise() -> None:
         status = (
             f"{GREEN}accepted{RESET}" if any(r["accepted"] for r in group) else f"{RED}no{RESET}"
         )
-        print(f"  {name:32} {first} -> {best}  attempts={len(group)}  {status}")
+        say(f"  {name:32} {first} -> {best}  attempts={len(group)}  {status}")
 
     judged = [r for r in rows if r.get("judge", {}).get("verdict") in {"accept", "reject"}]
     if judged:
@@ -586,14 +631,14 @@ def summarise() -> None:
             for r in judged
             if (r["judge"]["verdict"] == "accept") == bool(r["gauntlet"].get("tests_pass"))
         )
-        print(f"\n  judge/gauntlet agreement: {agree}/{len(judged)}")
+        say(f"\n  judge/gauntlet agreement: {agree}/{len(judged)}")
 
 
 def plan(ceiling: int, limit: int) -> None:
     for target in select_targets(ceiling, limit, skip=set()):
-        print(f"  {target.score:5.0f}  {target.leaf:32} {DIM}{target.path}{RESET}")
+        say(f"  {target.score:5.0f}  {target.leaf:32} {DIM}{target.path}{RESET}")
         for line in target.trail[:3]:
-            print(f"{DIM}          {line}{RESET}")
+            say(f"{DIM}          {line}{RESET}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -605,6 +650,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=3)
     parser.add_argument("--retries", type=int, default=3)
     parser.add_argument("--dry-run", action="store_true", help="exercise the loop with no model")
+    parser.add_argument(
+        "--model", default="", help="actor model (default: $OXN_OLLAMA_MODEL, else glm-5.3:cloud)"
+    )
+    parser.add_argument(
+        "--judge-model",
+        default="",
+        help="judge model (default: $OXN_OLLAMA_JUDGE_MODEL, else deepseek-v4-pro:cloud)",
+    )
+    parser.add_argument("--host", default="", help="Ollama host (default: $OXN_OLLAMA_HOST)")
     parser.add_argument("--skip", action="append", default=[], help="qualified name to skip")
     args = parser.parse_args(argv)
 
@@ -617,9 +671,17 @@ def main(argv: list[str] | None = None) -> int:
 
     targets = select_targets(args.ceiling, args.limit, skip=set(args.skip))
     if not targets:
-        print("nothing over the ceiling")
+        say("nothing over the ceiling")
         return 0
-    attempts = repair(targets, ceiling=args.ceiling, retries=args.retries, dry_run=args.dry_run)
+    attempts = repair(
+        targets,
+        ceiling=args.ceiling,
+        retries=args.retries,
+        dry_run=args.dry_run,
+        model=args.model,
+        judge_model=args.judge_model,
+        host=args.host,
+    )
     return 0 if any(a.accepted for a in attempts) or args.dry_run else 1
 
 
