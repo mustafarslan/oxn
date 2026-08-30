@@ -18,7 +18,14 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def load_harness():
-    """Import `scripts/dogfood.py`, which is dev tooling rather than a package module."""
+    """Import `scripts/dogfood.py`, which is dev tooling rather than a package module.
+
+    `scripts/` goes on the path first: `dogfood` imports its deterministic half from
+    `gauntlet`, and a file loaded by location has no package to resolve that against.
+    """
+    scripts = str(ROOT / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
     spec = importlib.util.spec_from_file_location("dogfood", ROOT / "scripts" / "dogfood.py")
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)

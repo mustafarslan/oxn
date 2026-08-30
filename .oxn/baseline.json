@@ -75,7 +75,7 @@
     "cyclomatic_complexity|src/oxn/scip/index.py|src.oxn.scip.index._parse_occurrence": 13.0,
     "cyclomatic_complexity|src/oxn/volume/clones.py|src.oxn.volume.clones._extend": 17.0,
     "cyclomatic_complexity|src/oxn/volume/clones.py|src.oxn.volume.clones.find_clones": 19.0,
-    "file_sloc|scripts/dogfood.py|scripts.dogfood": 788.0,
+    "file_sloc|scripts/dogfood.py|scripts.dogfood": 589.0,
     "function_sloc|scripts/dogfood.py|scripts.dogfood.repair": 116.0,
     "function_sloc|src/oxn/graph/architecture.py|src.oxn.graph.architecture.detect_smells": 82.0,
     "function_sloc|src/oxn/graph/builder.py|src.oxn.graph.builder.build_file": 85.0,
