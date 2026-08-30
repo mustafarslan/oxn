@@ -75,6 +75,10 @@ markers = [
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
+# Fetched corpora are other people's code, and 31 MB of it. `.gitignore` covers this in a
+# working tree, but ruff only honours gitignore inside a git repository -- so a copy of the
+# tree without `.git` (a dogfood sandbox, an extracted archive) would lint all of httpx.
+extend-exclude = ["benchmarks/corpora"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]

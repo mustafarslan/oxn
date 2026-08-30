@@ -164,6 +164,37 @@ def function_span(path: Path, leaf: str, profile: Any) -> tuple[int, int] | None
 # ---- sandbox ------------------------------------------------------------------------------
 
 
+#: Never copied into a sandbox. Basenames, plus paths relative to the repository root --
+#: `shutil.ignore_patterns` matches basenames *only*, so the entry `benchmarks/corpora`
+#: silently matched nothing and every sandbox copied 31 MB of other people's source. That
+#: also broke linting: ruff honours `.gitignore` only inside a git repository, and a sandbox
+#: has no `.git`, so it linted all of httpx and failed three otherwise-passing repairs.
+SKIP_NAMES = frozenset(
+    {
+        ".git",
+        ".venv",
+        ".venvs",
+        ".oxn",
+        "tools",
+        "__pycache__",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".pytest_cache",
+    }
+)
+SKIP_PATHS = frozenset({"benchmarks/corpora"})
+
+
+def _skip(directory: str, names: list[str]) -> set[str]:
+    here = Path(directory).resolve()
+    ignored = {name for name in names if name in SKIP_NAMES or name.endswith(".pyc")}
+    for relative in SKIP_PATHS:
+        candidate = (ROOT / relative).resolve()
+        if candidate.parent == here:
+            ignored.add(candidate.name)
+    return ignored
+
+
 class Sandbox:
     """A throwaway copy of the repository. The working tree is never touched."""
 
@@ -175,23 +206,7 @@ class Sandbox:
         if self.path.exists():
             shutil.rmtree(self.path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(
-            ROOT,
-            self.path,
-            ignore=shutil.ignore_patterns(
-                ".git",
-                ".venv",
-                ".venvs",
-                ".oxn",
-                "benchmarks/corpora",
-                "tools",
-                "__pycache__",
-                "*.pyc",
-                ".mypy_cache",
-                ".ruff_cache",
-                ".pytest_cache",
-            ),
-        )
+        shutil.copytree(ROOT, self.path, ignore=_skip)
         subprocess.run(["uv", "venv", "-q", str(self.path / ".venv")], check=True)
         subprocess.run(
             ["uv", "pip", "install", "--python", str(self.python), "-q", "-e", f"{self.path}[dev]"],
