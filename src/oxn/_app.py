@@ -149,6 +149,32 @@ def arch(
 
 
 @app.command()
+def index(
+    paths: list[str] = typer.Argument(None, help="Directory to index."),
+    language: str = typer.Option("python", "--language", help="Language to index."),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    reuse: str = typer.Option(
+        "", "--index-file", help="Ingest an existing .scip file instead of generating one."
+    ),
+) -> None:
+    """Build a SCIP index and merge compiler-grade symbols into the graph.
+
+    This is resolution rung L2 (ADR-0002): it makes coupling and call-graph metrics exact
+    rather than heuristic. It needs a per-language indexer, which OXN detects but never
+    installs -- run `oxn doctor` to see what is available.
+    """
+    from oxn.report import run_index
+
+    run_index(
+        paths or ["."],
+        language=language,
+        index_file=reuse or None,
+        json_output=json_output,
+        console=None if json_output else _console(),
+    )
+
+
+@app.command()
 def doctor() -> None:
     """Report the environment OXN found: grammars, toolchains, and indexers."""
     from oxn.doctor import run_doctor

@@ -29,7 +29,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Iterable, Iterator
 
 #: Bump on any change to the statements below. A mismatch rebuilds the cache.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 DEFAULT_CACHE_PATH = Path(".oxn/cache/graph.db")
 
@@ -104,6 +104,19 @@ CREATE TABLE file_metrics (
 );
 
 CREATE INDEX file_metrics_by_key ON file_metrics(metric_key, value);
+
+-- SCIP symbol identities (ADR-0002, rung L2). Keeping them lets a later run resolve an
+-- edge whose target lives in a file indexed earlier, and lets staleness be detected per
+-- file rather than for the index as a whole.
+CREATE TABLE symbols (
+    symbol      TEXT PRIMARY KEY,
+    entity_id   TEXT NOT NULL,
+    file_path   TEXT NOT NULL REFERENCES files(path) ON DELETE CASCADE,
+    resolution  TEXT NOT NULL DEFAULT 'L2'
+);
+
+CREATE INDEX symbols_by_entity ON symbols(entity_id);
+CREATE INDEX symbols_by_file   ON symbols(file_path);
 
 CREATE INDEX metrics_by_file ON metrics(file_path);
 CREATE INDEX metrics_by_key  ON metrics(metric_key, value);
@@ -233,6 +246,71 @@ class GraphStore:
                 ],
             )
 
+    def put_symbols(self, path: str, symbols: dict[str, str]) -> None:
+        """Record ``SCIP symbol -> entity id`` for one file."""
+        with self._transaction() as conn:
+            conn.execute("DELETE FROM symbols WHERE file_path = ?", (path,))
+            conn.executemany(
+                "INSERT OR REPLACE INTO symbols (symbol, entity_id, file_path) VALUES (?, ?, ?)",
+                [(symbol, entity_id, path) for symbol, entity_id in symbols.items()],
+            )
+
+    def symbol_table(self) -> dict[str, str]:
+        """Every known ``symbol -> entity id``, for resolving cross-file edge targets."""
+        return {
+            row["symbol"]: row["entity_id"]
+            for row in self._conn.execute("SELECT symbol, entity_id FROM symbols")
+        }
+
+    def put_edges(self, path: str, edges: list[Edge]) -> None:
+        """Replace the non-containment edges belonging to one file."""
+        with self._transaction() as conn:
+            conn.execute("DELETE FROM edges WHERE file_path = ?", (path,))
+            conn.executemany(
+                "INSERT INTO edges (src_id, kind, dst_id, dst_ref, provenance, resolution,"
+                " confidence, attrs, file_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        edge.src_id,
+                        edge.kind.value,
+                        edge.dst_id,
+                        edge.dst_ref,
+                        edge.provenance.value,
+                        edge.resolution.value,
+                        edge.confidence,
+                        json.dumps(edge.attrs, sort_keys=True),
+                        path,
+                    )
+                    for edge in edges
+                ],
+            )
+
+    def resolve_edge_targets(self) -> int:
+        """Fill in ``dst_id`` wherever an edge's ``dst_ref`` names a known symbol.
+
+        Run after every file is indexed: an edge often points at a symbol defined in a file
+        that had not been seen when the edge was created.
+        """
+        with self._transaction() as conn:
+            cursor = conn.execute(
+                "UPDATE edges SET dst_id ="
+                " (SELECT entity_id FROM symbols s WHERE s.symbol = edges.dst_ref)"
+                " WHERE dst_id IS NULL AND dst_ref IS NOT NULL"
+                " AND EXISTS (SELECT 1 FROM symbols s WHERE s.symbol = edges.dst_ref)"
+            )
+            return int(cursor.rowcount)
+
+    def edge_stats(self) -> dict[str, int]:
+        rows = self._conn.execute(
+            "SELECT kind, count(*) AS n, sum(dst_id IS NOT NULL) AS resolved"
+            " FROM edges GROUP BY kind"
+        ).fetchall()
+        stats: dict[str, int] = {}
+        for row in rows:
+            stats[row["kind"]] = int(row["n"])
+            stats[f"{row['kind']}_resolved"] = int(row["resolved"] or 0)
+        return stats
+
     def put_metrics(self, path: str, measured: list[EntityMetrics]) -> None:
         """Replace this file's measurements."""
         rows = [
@@ -341,6 +419,7 @@ class GraphStore:
             "edges": count("edges"),
             "metrics": count("metrics"),
             "file_metrics": count("file_metrics"),
+            "symbols": count("symbols"),
             "db_path": str(self.path),
         }
 

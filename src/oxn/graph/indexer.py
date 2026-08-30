@@ -121,7 +121,7 @@ class Indexer:
             self._parsers[language] = get_parser(language)
         return self._parsers[language]
 
-    def _grammar_version(self) -> str:
+    def grammar_version(self) -> str:
         """Identifies the grammar set. Part of the cache key, so a pack upgrade invalidates."""
         from importlib.metadata import PackageNotFoundError, version
 
@@ -146,7 +146,7 @@ class Indexer:
         source = path.read_bytes()
         rel = self.relative(path)
         sha = content_sha(source)
-        grammar_version = self._grammar_version()
+        grammar_version = self.grammar_version()
 
         if not force and self.store.is_current(rel, sha, profile.version, grammar_version):
             return None, True

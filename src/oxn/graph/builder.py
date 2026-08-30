@@ -94,7 +94,13 @@ def build_file(path: str, source: bytes, profile: LanguageProfile, tree_root: No
             local = name or f"<{definition.type}@{definition.start_point[0] + 1}>"
             qualified = f"{prefix}.{local}" if prefix else local
 
-            attrs: dict[str, object] = {"node_kind": definition.type}
+            # The entity spans the *wrapper* so decorator lines belong to it, but the
+            # definition's own range is what SCIP occurrences and metric visitors join
+            # against. Keeping both avoids every consumer re-deriving one from the other.
+            attrs: dict[str, object] = {
+                "node_kind": definition.type,
+                "def_range": [definition.start_byte, definition.end_byte],
+            }
             if kind in {EntityKind.FUNCTION, EntityKind.METHOD, EntityKind.LAMBDA}:
                 attrs["parameters"] = profile.parameter_names(definition)
             if child is not definition:

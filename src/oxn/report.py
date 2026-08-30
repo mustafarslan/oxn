@@ -436,3 +436,89 @@ def _emit_arch(payload: dict[str, Any], json_output: bool, console: Console | No
             console.print(
                 f"  {item['source']}:{item['line']} -> [yellow]{item['specifier']}[/yellow]"
             )
+
+
+def run_index(
+    paths: list[str],
+    *,
+    language: str = "python",
+    index_file: str | None = None,
+    json_output: bool = False,
+    console: Console | None = None,
+) -> dict[str, Any]:
+    """Generate or ingest a SCIP index, merging its symbols into the graph."""
+    import tempfile
+
+    from oxn.graph.indexer import Indexer
+    from oxn.scip.ingest import ingest_index
+    from oxn.scip.runner import IndexerNotFound, run_indexer
+
+    target = Path(paths[0]).resolve()
+    if not target.exists():
+        failure: dict[str, Any] = {"status": "ERROR", "errors": {str(target): "no such path"}}
+        _emit(failure, json_output, console)
+        return failure
+
+    with Indexer(root=target) as indexer:
+        scip_path: Path
+        with tempfile.TemporaryDirectory() as scratch:
+            if index_file:
+                scip_path = Path(index_file)
+            else:
+                try:
+                    scip_path = run_indexer(
+                        language,
+                        target,
+                        Path(scratch) / "index.scip",
+                        project_name=target.name,
+                    )
+                except IndexerNotFound as error:
+                    failure = {"status": "ERROR", "errors": {language: str(error)}}
+                    _emit(failure, json_output, console)
+                    return failure
+
+            report = ingest_index(indexer, scip_path)
+            stats = indexer.store.edge_stats()
+
+    payload: dict[str, Any] = {"status": "OK", "index": report.as_dict(), "edges": stats}
+    _emit_index(payload, json_output, console)
+    return payload
+
+
+def _emit_index(payload: dict[str, Any], json_output: bool, console: Console | None) -> None:
+    if json_output or console is None:
+        json.dump(payload, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return
+
+    if payload["status"] == "ERROR":
+        for key, message in payload["errors"].items():
+            console.print(f"[red]{key}[/red]: {message}")
+        return
+
+    report = payload["index"]
+    console.print(
+        f"[bold]SCIP index ingested[/bold]  {report['matched_documents']} of "
+        f"{report['documents']} documents in {report['seconds']}s\n"
+    )
+    console.print(
+        f"  definitions      [bold]{report['definition_coverage']:.1%}[/bold] of declarations "
+        f"matched a symbol  [dim]({report['symbols']} symbols)[/dim]"
+    )
+    console.print(
+        f"  call sites       [bold]{report['call_coverage']:.1%}[/bold] resolved to a target"
+    )
+    console.print(
+        f"  edges            [bold]{report['edges']}[/bold] recovered, "
+        f"{report['edge_resolution']:.1%} pointing inside the tree"
+    )
+    for kind in ("calls", "extends", "overrides"):
+        if kind in payload["edges"]:
+            console.print(
+                f"    {kind:<12} {payload['edges'][kind]:>5}"
+                f" [dim]({payload['edges'].get(kind + '_resolved', 0)} in-tree)[/dim]"
+            )
+    if report["skipped"]:
+        console.print(
+            f"\n[dim]skipped {len(report['skipped'])} document(s) OXN does not parse[/dim]"
+        )
