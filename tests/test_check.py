@@ -21,8 +21,7 @@ from oxn.check import (
     write_baseline,
 )
 from oxn.config import Config, ConfigError
-from oxn.graph.model import Resolution
-from oxn.metrics.engine import MetricValue
+from oxn.graph.model import MetricValue, Resolution
 
 TANGLED = (
     "def tangled(rows):\n"

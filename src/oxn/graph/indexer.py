@@ -9,46 +9,19 @@ parsing, or the hook's latency budget is spent re-deriving facts that have not c
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from oxn.graph.builder import build_file, content_sha
+from oxn.graph.sources import iter_source_files
 from oxn.graph.store import DEFAULT_CACHE_PATH, GraphStore
 from oxn.profiles import profile_for_path
 
 if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Iterable
 
     from oxn.graph.model import ParsedFile
-
-#: Never analysed. Generated and vendored code otherwise dominates every metric --
-#: docs/metrics.md makes this the difference between a signal and noise.
-DEFAULT_EXCLUDES: frozenset[str] = frozenset(
-    {
-        ".git",
-        ".hg",
-        ".svn",
-        ".oxn",
-        ".venv",
-        "venv",
-        "node_modules",
-        "__pycache__",
-        ".mypy_cache",
-        ".pytest_cache",
-        ".ruff_cache",
-        "dist",
-        "build",
-        "target",
-        "vendor",
-        "third_party",
-        ".tox",
-        ".next",
-        ".nuxt",
-        "site-packages",
-    }
-)
 
 
 @dataclass
@@ -80,23 +53,6 @@ class IndexReport:
             "parse_incomplete": self.incomplete,
             "errors": self.errors,
         }
-
-
-def iter_source_files(
-    roots: Iterable[Path], excludes: frozenset[str] = DEFAULT_EXCLUDES
-) -> Iterator[Path]:
-    """Yield every file OXN has a profile for, beneath ``roots``."""
-    for root in roots:
-        if root.is_file():
-            if profile_for_path(str(root)) is not None:
-                yield root
-            continue
-        for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [d for d in dirnames if d not in excludes and not d.startswith(".")]
-            for filename in filenames:
-                candidate = Path(dirpath) / filename
-                if profile_for_path(str(candidate)) is not None:
-                    yield candidate
 
 
 class Indexer:

@@ -22,8 +22,17 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from oxn.graph.model import Edge, EdgeKind, Entity, EntityKind, ParsedFile, Provenance, Resolution
-from oxn.metrics.engine import EntityMetrics, MetricValue
+from oxn.graph.model import (
+    Edge,
+    EdgeKind,
+    Entity,
+    EntityKind,
+    EntityMetrics,
+    MetricValue,
+    ParsedFile,
+    Provenance,
+    Resolution,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Collection, Iterable, Iterator

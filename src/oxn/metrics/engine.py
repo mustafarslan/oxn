@@ -7,10 +7,9 @@ produced, and attaches metric values carrying their own exactness and provenance
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from oxn.graph.model import EntityKind, Resolution
+from oxn.graph.model import EntityKind, EntityMetrics, MetricValue
 from oxn.metrics.cognitive import cognitive_complexity
 from oxn.metrics.cyclomatic import cyclomatic_complexity
 from oxn.metrics.halstead import halstead, maintainability_index
@@ -24,67 +23,6 @@ if TYPE_CHECKING:  # pragma: no cover
 
 #: Entities that carry function-shaped metrics.
 CALLABLE_KINDS = frozenset({EntityKind.FUNCTION, EntityKind.METHOD, EntityKind.LAMBDA})
-
-
-@dataclass(frozen=True, slots=True)
-class MetricValue:
-    """One measurement, with everything needed to judge how much to trust it."""
-
-    key: str
-    value: float
-    exactness: str = "EXACT"
-    resolution: Resolution = Resolution.L0
-    #: Human-readable trail, where the metric can produce one.
-    explanation: tuple[str, ...] = ()
-    #: ``"exact"`` | ``"lower"`` | ``"upper"``. An approximate value is still useful when
-    #: its direction of error is known: a *lower bound* that already exceeds a ceiling
-    #: proves the true value does too, so a ceiling gate can act on it soundly even though
-    #: the number itself is not final. Without this, "only EXACT may block" would disable
-    #: the project's headline gate for every function that makes a call.
-    bound: str = "exact"
-
-    @property
-    def can_block_ceiling(self) -> bool:
-        """Whether a "must not exceed" gate may act on this value."""
-        return self.exactness == "EXACT" or self.bound == "lower"
-
-    def as_dict(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "value": self.value,
-            "exactness": self.exactness,
-            "resolution": self.resolution.value,
-            "bound": self.bound,
-        }
-        if self.explanation:
-            payload["explanation"] = list(self.explanation)
-        return payload
-
-
-@dataclass
-class EntityMetrics:
-    """All measurements for one entity."""
-
-    entity_id: str
-    qualified_name: str
-    kind: EntityKind
-    line: int
-    values: dict[str, MetricValue] = field(default_factory=dict)
-
-    def add(self, value: MetricValue) -> None:
-        self.values[value.key] = value
-
-    def get(self, key: str) -> float | None:
-        found = self.values.get(key)
-        return found.value if found else None
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "entity_id": self.entity_id,
-            "qualified_name": self.qualified_name,
-            "kind": self.kind.value,
-            "line": self.line,
-            "metrics": {key: value.as_dict() for key, value in self.values.items()},
-        }
 
 
 def measure_file(

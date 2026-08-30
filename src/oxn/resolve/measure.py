@@ -198,7 +198,7 @@ def measure_corpus(root: Path, index_path: Path, language: str = "python") -> Re
     """Grade L0/L1 against a SCIP index over a whole tree."""
     from oxn.graph.builder import build_file
     from oxn.graph.depgraph import build_dependency_graph
-    from oxn.graph.indexer import iter_source_files
+    from oxn.graph.sources import iter_source_files
     from oxn.languages import get_parser
     from oxn.profiles import profile_for_path
     from oxn.resolve.scopes import build_scopes

@@ -16,10 +16,12 @@ excluded from ``DEPENDS_ON`` by default, which is what Martin's metrics mean by 
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
+    from collections.abc import Iterator
+
     from tree_sitter import Node
 
     from oxn.profiles.base import LanguageProfile
@@ -51,20 +53,51 @@ def extract_imports(root: Node, profile: LanguageProfile) -> list[RawImport]:
     if not spec.statement_kinds and not spec.call_kinds:
         return []
 
-    found: list[RawImport] = []
-    stack = [root]
-    while stack:
-        node = stack.pop()
-        if node.type in spec.statement_kinds:
-            found.extend(_from_statement(node, spec))
-        elif node.type in spec.call_kinds:
-            dynamic = _from_dynamic_call(node, spec)
-            if dynamic is not None:
-                found.append(dynamic)
-        stack.extend(node.named_children)
-
+    found = [
+        item for node, type_only in _walk(root, spec) for item in _imports_at(node, spec, type_only)
+    ]
     found.sort(key=lambda item: (item.line, item.specifier))
     return found
+
+
+def _walk(root: Node, spec: ImportSpec) -> Iterator[tuple[Node, bool]]:
+    """Every node, paired with whether it sits inside a type-only guard."""
+    stack: list[tuple[Node, bool]] = [(root, False)]
+    while stack:
+        node, guarded = stack.pop()
+        yield node, guarded
+        inner = guarded or _is_type_checking_guard(node, spec)
+        stack.extend((child, inner) for child in node.named_children)
+
+
+def _imports_at(node: Node, spec: ImportSpec, type_only: bool) -> list[RawImport]:
+    """What this one node imports, if anything."""
+    if node.type in spec.statement_kinds:
+        statements = _from_statement(node, spec)
+        return [replace(item, kind="type_only") for item in statements] if type_only else statements
+    if node.type in spec.call_kinds:
+        dynamic = _from_dynamic_call(node, spec)
+        return [dynamic] if dynamic is not None else []
+    return []
+
+
+def _is_type_checking_guard(node: Node, spec: ImportSpec) -> bool:
+    """Is this an `if TYPE_CHECKING:` block?
+
+    Python has no `import type` keyword, so its type-only imports are ordinary imports
+    nested inside this guard -- erased at runtime exactly as TypeScript's are. Counting them
+    as runtime coupling inflates every Martin metric, can manufacture a cycle out of nothing,
+    and produced two false layer-contract violations in OXN's own repository, which is where
+    this was found.
+
+    The condition is matched on the name rather than on a resolved symbol: `TYPE_CHECKING`
+    is `typing.TYPE_CHECKING` by universal convention, and a name that says it and means
+    something else is a problem no import graph can help with.
+    """
+    if spec.style != "python" or node.type != "if_statement":
+        return False
+    condition = node.child_by_field_name("condition")
+    return condition is not None and b"TYPE_CHECKING" in (condition.text or b"")
 
 
 # ---- statements -----------------------------------------------------------------------

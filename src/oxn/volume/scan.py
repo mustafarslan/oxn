@@ -56,7 +56,7 @@ def scan_duplication(
     Reparses rather than reading the cache: window hashes are not persisted yet, and the
     honest thing is to pay the cost visibly rather than pretend the cache covers it.
     """
-    from oxn.graph.indexer import iter_source_files
+    from oxn.graph.sources import iter_source_files
     from oxn.languages import get_parser
     from oxn.profiles import profile_for_path
 

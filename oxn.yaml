@@ -24,13 +24,30 @@ ceilings:
 layers:
   surfaces: ["src/oxn/cli.py", "src/oxn/_app.py", "src/oxn/report.py", "src/oxn/check.py", "src/oxn/init.py"]
   orchestration: ["src/oxn/graph/indexer.py"]
+  # `sources.py` is graph, not orchestration: finding source files is not orchestrating
+  # anything, and every tier needs the walk. It lived beside `Indexer` until this contract
+  # objected three times over.
   analysis: ["src/oxn/metrics/*", "src/oxn/resolve/*", "src/oxn/volume/*", "src/oxn/vcs/*", "src/oxn/scip/*"]
   graph: ["src/oxn/graph/*"]
+  # Not part of the layered contract below -- tests may reach anywhere, that is their job --
+  # but named so they can carry their own ceilings.
+  tests: ["tests/*"]
 
 contracts:
   - name: surfaces-analysis-graph
     kind: layered
     order: [surfaces, orchestration, analysis, graph]
+
+# A test file's length means something different from a production file's. `test_oracles.py`
+# is 600 lines because it holds the divergence tables for six third-party tools, and
+# splitting it to satisfy a limit written for production code would scatter one subject
+# across six files. The per-function ceilings still apply: this relaxes length alone.
+#
+# Reversible, and worth revisiting -- splitting the oracle tests by tool family is the
+# better answer if the file keeps growing.
+layer_ceilings:
+  tests:
+    file_sloc: 800
 
 # Fixtures are source files on purpose -- a hand-built shred is supposed to look bad.
 advisory:

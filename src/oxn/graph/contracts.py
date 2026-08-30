@@ -24,8 +24,6 @@ import fnmatch
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from oxn.graph.algos import shortest_path
-
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Mapping, Sequence
 
@@ -130,7 +128,11 @@ def check_contracts(
         unassigned=[path for path, layer in assignment.items() if layer is None]
     )
 
-    layer_edges: dict[tuple[str, str], tuple[str, str]] = {}
+    # Every concrete edge, not one exemplar per layer pair. Collapsing them was enough for a
+    # Reflexion-style report -- "does this layer reach that one" -- but not for a gate: a
+    # finding keyed on the layer pair forgives every later import between the same two
+    # layers, so the baseline could never see a new violation or notice one getting worse.
+    layer_edges: dict[tuple[str, str], list[tuple[str, str]]] = {}
     for source in paths:
         source_layer = assignment[source]
         if source_layer is None:
@@ -139,7 +141,7 @@ def check_contracts(
             target_layer = assignment.get(target)
             if target_layer is None or target_layer == source_layer:
                 continue
-            layer_edges.setdefault((source_layer, target_layer), (source, target))
+            layer_edges.setdefault((source_layer, target_layer), []).append((source, target))
 
     declared: set[tuple[str, str]] = set()
     for contract in contracts:
@@ -169,7 +171,7 @@ def _check_one(
     contract: Contract,
     file_graph: Graph[str],
     assignment: Mapping[str, str | None],
-    layer_edges: Mapping[tuple[str, str], tuple[str, str]],
+    layer_edges: Mapping[tuple[str, str], list[tuple[str, str]]],
 ) -> list[Violation]:
     if contract.kind == "layered":
         return _check_layered(contract, file_graph, layer_edges)
@@ -185,31 +187,33 @@ def _check_one(
 def _check_layered(
     contract: Contract,
     file_graph: Graph[str],
-    layer_edges: Mapping[tuple[str, str], tuple[str, str]],
+    layer_edges: Mapping[tuple[str, str], list[tuple[str, str]]],
 ) -> list[Violation]:
     """A lower layer must never depend on a higher one."""
     position = {name: index for index, name in enumerate(contract.order)}
     violations: list[Violation] = []
-    for (source_layer, target_layer), (source, target) in layer_edges.items():
+    for (source_layer, target_layer), edges in layer_edges.items():
         if source_layer not in position or target_layer not in position:
             continue
-        if position[source_layer] > position[target_layer]:
-            violations.append(
-                Violation(
-                    contract=contract.name,
-                    source=source_layer,
-                    target=target_layer,
-                    chain=tuple(shortest_path(file_graph, source, target) or (source, target)),
-                    detail=f"{source_layer} must not depend on {target_layer}",
-                )
+        if position[source_layer] <= position[target_layer]:
+            continue
+        violations.extend(
+            Violation(
+                contract=contract.name,
+                source=source_layer,
+                target=target_layer,
+                chain=(source, target),
+                detail=f"{source_layer} must not depend on {target_layer}",
             )
+            for source, target in edges
+        )
     return violations
 
 
 def _check_forbidden(
     contract: Contract,
     file_graph: Graph[str],
-    layer_edges: Mapping[tuple[str, str], tuple[str, str]],
+    layer_edges: Mapping[tuple[str, str], list[tuple[str, str]]],
 ) -> list[Violation]:
     forbidden = set(contract.forbidden)
     return [
@@ -217,18 +221,19 @@ def _check_forbidden(
             contract=contract.name,
             source=source_layer,
             target=target_layer,
-            chain=tuple(shortest_path(file_graph, source, target) or (source, target)),
+            chain=(source, target),
             detail=f"{source_layer} may not depend on {target_layer}",
         )
-        for (source_layer, target_layer), (source, target) in layer_edges.items()
+        for (source_layer, target_layer), edges in layer_edges.items()
         if source_layer == contract.source and target_layer in forbidden
+        for source, target in edges
     ]
 
 
 def _check_independence(
     contract: Contract,
     file_graph: Graph[str],
-    layer_edges: Mapping[tuple[str, str], tuple[str, str]],
+    layer_edges: Mapping[tuple[str, str], list[tuple[str, str]]],
 ) -> list[Violation]:
     """Named modules must not know about each other, in either direction."""
     named = set(contract.modules)
@@ -237,11 +242,12 @@ def _check_independence(
             contract=contract.name,
             source=source_layer,
             target=target_layer,
-            chain=tuple(shortest_path(file_graph, source, target) or (source, target)),
+            chain=(source, target),
             detail=f"{source_layer} and {target_layer} must remain independent",
         )
-        for (source_layer, target_layer), (source, target) in layer_edges.items()
+        for (source_layer, target_layer), edges in layer_edges.items()
         if source_layer in named and target_layer in named
+        for source, target in edges
     ]
 
 

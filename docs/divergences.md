@@ -58,6 +58,33 @@ name**, never by summing a file — otherwise the two tools appear to disagree w
 
 ---
 
+## Import graph — Python (oracle: grimp)
+
+**Agreement: 120/152 of grimp's edges (79%), and every divergence reduces to one of two
+enumerated rules.** Raw equality was asserted until 2026-08-30 and passed only because OXN
+had a bug; the two tools answer different questions in two places.
+
+| divergence | grimp | **OXN** | why |
+|---|---|---|---|
+| import inside `if TYPE_CHECKING:` | counted (32 edges) | **excluded** | erased at runtime, so no coupling of the kind Martin's metrics measure |
+| `from pkg import module` | `pkg.module` only | `pkg.module` **and** `pkg` (2 edges) | importing a submodule executes the package `__init__`; that dependency is real |
+
+**On type-only imports.** OXN already excluded TypeScript's `import type`; Python has no such
+keyword, and its equivalent is an ordinary import nested under a `TYPE_CHECKING` guard.
+Counting one and not the other was an inconsistency, not a policy — and while it lasted it
+inflated every Martin metric on Python code and manufactured **two false layer-contract
+violations in OXN's own repository**, which is where it was found. `include_type_only=True`
+still reports them for anyone who wants the compile-time graph.
+
+**On package edges.** This is the same modelling decision that an earlier fixture-based
+comparison with grimp established: treating `from pkg import core` as a single target
+silently loses edges. OXN records both targets; grimp records the submodule.
+
+The test now asserts every divergence falls under one of these two rules, plus a floor on
+raw agreement so the rules cannot quietly come to explain everything.
+
+---
+
 ## Cognitive complexity — Python (oracle: complexipy)
 
 **Agreement: 651/656 functions = 99.24%** across all of httpx.

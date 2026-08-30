@@ -167,7 +167,8 @@ def run_check(
 def _measure(targets: list[Path], settings: Config, report: CheckReport) -> list[Finding]:
     """Tier-1 ceilings over every entity in `targets`. The hook path, and the whole budget."""
     from oxn.graph.contracts import assign_layers
-    from oxn.graph.indexer import Indexer, iter_source_files
+    from oxn.graph.indexer import Indexer
+    from oxn.graph.sources import iter_source_files
 
     findings: list[Finding] = []
     with Indexer() as indexer:
@@ -233,7 +234,8 @@ def _architecture(targets: list[Path], settings: Config, report: CheckReport) ->
         return []
     from oxn.graph.contracts import check_contracts
     from oxn.graph.depgraph import build_dependency_graph
-    from oxn.graph.indexer import Indexer, iter_source_files
+    from oxn.graph.indexer import Indexer
+    from oxn.graph.sources import iter_source_files
 
     with Indexer() as indexer:
         files = list(iter_source_files(targets))
@@ -242,11 +244,18 @@ def _architecture(targets: list[Path], settings: Config, report: CheckReport) ->
         # violation has to name the file that caused it, not the directory it sits in.
         conformance = check_contracts(graph.files, settings.layers, settings.contracts)
 
+    # Keyed by the offending *edge*, never by the layer pair. `Violation.source` is a layer
+    # name, and a finding keyed on it forgives every later import between the same two
+    # layers -- so a brand-new violation would land on an existing baseline entry with an
+    # identical value, and neither "new" nor "worse" could ever fire. The baseline would
+    # look like a ratchet and behave like an amnesty.
     return [
         Finding(
             rule=f"contract:{violation.contract}",
-            path=violation.source,
-            entity=violation.source,
+            path=violation.chain[0] if violation.chain else violation.source,
+            entity=f"{violation.chain[0]} -> {violation.chain[-1]}"
+            if violation.chain
+            else f"{violation.source} -> {violation.target}",
             line=1,
             value=1.0,
             ceiling=0.0,

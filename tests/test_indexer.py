@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from oxn.graph.indexer import Indexer, iter_source_files
+from oxn.graph.indexer import Indexer
+from oxn.graph.sources import iter_source_files
 
 
 def _indexer(repo, tmp_path) -> Indexer:

@@ -147,3 +147,73 @@ class ParsedFile:
     @property
     def root(self) -> Entity:
         return self.entities[0]
+
+
+# ---- measurements -----------------------------------------------------------------------
+#
+# `MetricValue` and `EntityMetrics` live here rather than beside the engine that produces
+# them, because they are *vocabulary* rather than analysis: the store persists them, the gate
+# reads them, and the engine happens to be what fills them in. While they lived in
+# `metrics.engine`, `graph/store.py` had to import the analysis layer to describe its own
+# rows -- which OXN's own layer contract reported, correctly, as the graph reaching upwards.
+
+
+@dataclass(frozen=True, slots=True)
+class MetricValue:
+    """One measurement, with everything needed to judge how much to trust it."""
+
+    key: str
+    value: float
+    exactness: str = "EXACT"
+    resolution: Resolution = Resolution.L0
+    #: Human-readable trail, where the metric can produce one.
+    explanation: tuple[str, ...] = ()
+    #: ``"exact"`` | ``"lower"`` | ``"upper"``. An approximate value is still useful when
+    #: its direction of error is known: a *lower bound* that already exceeds a ceiling
+    #: proves the true value does too, so a ceiling gate can act on it soundly even though
+    #: the number itself is not final. Without this, "only EXACT may block" would disable
+    #: the project's headline gate for every function that makes a call.
+    bound: str = "exact"
+
+    @property
+    def can_block_ceiling(self) -> bool:
+        """Whether a "must not exceed" gate may act on this value."""
+        return self.exactness == "EXACT" or self.bound == "lower"
+
+    def as_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "value": self.value,
+            "exactness": self.exactness,
+            "resolution": self.resolution.value,
+            "bound": self.bound,
+        }
+        if self.explanation:
+            payload["explanation"] = list(self.explanation)
+        return payload
+
+
+@dataclass
+class EntityMetrics:
+    """All measurements for one entity."""
+
+    entity_id: str
+    qualified_name: str
+    kind: EntityKind
+    line: int
+    values: dict[str, MetricValue] = field(default_factory=dict)
+
+    def add(self, value: MetricValue) -> None:
+        self.values[value.key] = value
+
+    def get(self, key: str) -> float | None:
+        found = self.values.get(key)
+        return found.value if found else None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "entity_id": self.entity_id,
+            "qualified_name": self.qualified_name,
+            "kind": self.kind.value,
+            "line": self.line,
+            "metrics": {key: value.as_dict() for key, value in self.values.items()},
+        }
