@@ -44,7 +44,11 @@ class OllamaClient:
 
     host: str = DEFAULT_HOST
     model: str = DEFAULT_MODEL
-    timeout: int = 180
+    #: Seconds of **silence** tolerated, not total generation time -- see `generate`. A
+    #: 428-second repair on `glm-5.3:cloud` streamed 37,869 frames with a largest gap of
+    #: 8.0s, so this leaves an order of magnitude of headroom while still noticing a stream
+    #: that has genuinely stopped. Raise `OXN_OLLAMA_TIMEOUT` for a slower link.
+    timeout: int = 120
 
     @classmethod
     def from_env(cls) -> OllamaClient:
@@ -52,7 +56,7 @@ class OllamaClient:
         return cls(
             host=os.environ.get("OXN_OLLAMA_HOST", DEFAULT_HOST),
             model=os.environ.get("OXN_OLLAMA_MODEL", DEFAULT_MODEL),
-            timeout=int(os.environ.get("OXN_OLLAMA_TIMEOUT", "600")),
+            timeout=int(os.environ.get("OXN_OLLAMA_TIMEOUT", "120")),
         )
 
     @classmethod
@@ -61,7 +65,7 @@ class OllamaClient:
         return cls(
             host=os.environ.get("OXN_OLLAMA_HOST", DEFAULT_HOST),
             model=os.environ.get("OXN_OLLAMA_JUDGE_MODEL", DEFAULT_JUDGE_MODEL),
-            timeout=int(os.environ.get("OXN_OLLAMA_TIMEOUT", "600")),
+            timeout=int(os.environ.get("OXN_OLLAMA_TIMEOUT", "120")),
         )
 
     def generate_json(self, prompt: str, *, system: str = "") -> dict[str, object]:
@@ -95,11 +99,24 @@ class OllamaClient:
             return False
 
     def generate(self, prompt: str, *, temperature: float = 0.0, system: str = "") -> str:
-        """One completion. Temperature defaults to 0 so a test is reproducible."""
+        """One completion. Temperature defaults to 0 so a test is reproducible.
+
+        The request **streams**, and that is a correctness decision rather than a cosmetic
+        one. With ``stream: false`` the server stays silent for the whole generation, so the
+        socket timeout degenerates into a total wall-clock limit: a reasoning model that
+        thinks for longer than it fails outright, however healthy the connection. Streaming
+        makes the same number mean *no progress for this long*, which is the condition worth
+        aborting on. A 383-second repair -- measured, on ``glm-5.3:cloud`` -- flipped between
+        success and "unreachable" against a 600-second blocking read; under streaming it is
+        simply a slow answer.
+
+        Chunks carrying only ``thinking`` still count as progress: they reset the read clock
+        by arriving, and contribute nothing to the completion.
+        """
         payload: dict[str, object] = {
             "model": self.model,
             "prompt": prompt,
-            "stream": False,
+            "stream": True,
             "options": {"temperature": temperature},
         }
         if system:
@@ -110,15 +127,38 @@ class OllamaClient:
             data=json.dumps(payload).encode(),
             headers={"Content-Type": "application/json"},
         )
+        chunks: list[str] = []
+        saw_completion = False
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                body = json.loads(response.read().decode())
-        except (urllib.error.URLError, OSError, TimeoutError) as error:
+                for line in response:
+                    stripped = line.strip()
+                    if not stripped:
+                        continue
+                    frame = json.loads(stripped.decode())
+                    if error_text := frame.get("error"):
+                        raise OllamaError(f"{self.model} reported: {error_text}")
+                    piece = frame.get("response")
+                    if isinstance(piece, str):
+                        saw_completion = True
+                        chunks.append(piece)
+                    if frame.get("done"):
+                        break
+        except TimeoutError as error:
+            raise OllamaError(
+                f"{self.model} sent nothing for {self.timeout}s -- it may still be "
+                f"generating; raise OXN_OLLAMA_TIMEOUT if so ({error})"
+            ) from error
+        except (urllib.error.URLError, OSError) as error:
+            reason = getattr(error, "reason", error)
+            if isinstance(reason, TimeoutError):
+                raise OllamaError(
+                    f"Ollama at {self.host} did not answer within {self.timeout}s"
+                ) from error
             raise OllamaError(f"Ollama at {self.host} is unreachable: {error}") from error
         except json.JSONDecodeError as error:
             raise OllamaError(f"Ollama returned invalid JSON: {error}") from error
 
-        text = body.get("response")
-        if not isinstance(text, str):
-            raise OllamaError(f"Ollama returned no completion: {body!r}")
-        return text.strip()
+        if not saw_completion:
+            raise OllamaError(f"Ollama returned no completion for {self.model}")
+        return "".join(chunks).strip()
