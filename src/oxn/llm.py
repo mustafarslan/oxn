@@ -99,7 +99,13 @@ class OllamaClient:
             return False
 
     def generate(self, prompt: str, *, temperature: float = 0.0, system: str = "") -> str:
-        """One completion. Temperature defaults to 0 so a test is reproducible.
+        """One completion. Temperature defaults to 0, which is not the same as determinism.
+
+        It removes the sampler as a source of variation and nothing else: three runs of the
+        identical repair prompt against `glm-5.3:cloud` at temperature 0 returned three
+        materially different rewrites. Batching and routing on a hosted endpoint are not
+        under a caller's control, so a test that needs a fixed answer must pin the answer,
+        not the temperature.
 
         The request **streams**, and that is a correctness decision rather than a cosmetic
         one. With ``stream: false`` the server stays silent for the whole generation, so the

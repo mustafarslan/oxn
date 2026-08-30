@@ -95,6 +95,83 @@ def test_fences_and_prose_are_stripped(harness, reply: str) -> None:
     assert "Hope that helps" not in cleaned
 
 
+def test_every_fenced_block_survives_extraction(harness) -> None:
+    """A model that answers in two blocks must not lose the second one.
+
+    This is how the harness deleted a function twice. Extraction returned the *first* block
+    containing `def `, so a reply that introduced a helper and then gave the rewritten
+    target kept the helper and dropped the target -- which was then spliced over the
+    target's byte range, leaving its callers with a `NameError`.
+    """
+    reply = (
+        "First a helper:\n\n```python\ndef _alias(node):\n    return node.text\n```\n\n"
+        "Then the function itself:\n\n```python\ndef target(node):\n    return _alias(node)\n```"
+    )
+    cleaned = harness._strip_fences(reply)
+    assert "def _alias" in cleaned
+    assert "def target" in cleaned
+
+
+def test_prose_between_blocks_is_never_spliced(harness) -> None:
+    """Splitting on the fence marker alternates outside and inside; only inside is code."""
+    reply = (
+        "```python\ndef a():\n    pass\n```\n\n"
+        "and now a second def is mentioned in prose: def not_code\n\n"
+        "```python\ndef b():\n    pass\n```"
+    )
+    cleaned = harness._strip_fences(reply)
+    assert "prose" not in cleaned
+    assert "not_code" not in cleaned
+    assert "def a():" in cleaned and "def b():" in cleaned
+
+
+@pytest.mark.parametrize(
+    ("source", "name", "expected"),
+    [
+        ("def target(a):\n    return a", "target", True),
+        ("async def target(a):\n    return a", "target", True),
+        ("    def target(self):\n        return 1", "target", True),
+        ("def target_helper(a):\n    return a", "target", False),
+        ("def other(a):\n    return a", "target", False),
+        ("# def target(a): removed\ndef other(): pass", "target", False),
+    ],
+)
+def test_a_candidate_must_define_the_function_it_replaces(
+    harness, source: str, name: str, expected: bool
+) -> None:
+    """Checked before the gauntlet, because a splice that omits the target deletes it.
+
+    Finding that out from a `NameError` costs a full test, lint and type run first -- five
+    minutes to learn something visible in the reply itself.
+    """
+    assert harness._defines(source, name) is expected
+
+
+# ---- retry feedback -----------------------------------------------------------------------------
+
+
+def test_a_rejected_attempt_tells_the_actor_what_went_wrong(harness) -> None:
+    """Without this a retry is resampling, not iteration.
+
+    The convergence question the harness exists to ask assumes the actor sees its previous
+    failure. At temperature 0 an identical prompt varies only by the model's own
+    nondeterminism, which is not a feedback loop.
+    """
+    feedback = harness._feedback(gauntlet(harness, score_after=14.0, types_pass=False))
+    assert "ceiling" in feedback
+    assert "14" in feedback and "12" in feedback
+    assert "Type checking failed" in feedback
+
+
+def test_a_deleted_target_is_named_as_the_reason(harness) -> None:
+    feedback = harness._feedback(gauntlet(harness, target_present=False, tests_pass=False))
+    assert "did not define" in feedback
+
+
+def test_a_clean_run_that_met_the_ceiling_has_nothing_to_say(harness) -> None:
+    assert harness._feedback(gauntlet(harness, score_after=10.0)) == ""
+
+
 # ---- the shredding detector --------------------------------------------------------------------
 
 

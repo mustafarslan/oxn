@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -380,31 +381,102 @@ Here is the whole file for context:
 {file_source}
 ```
 
-Reply with the complete replacement for `{name}` only.
+Reply with the complete replacement for `{name}` only. It must contain a
+`def {name}(...)` -- a reply that omits it deletes the function.
+{feedback}"""
+
+
+FEEDBACK = """
+Your previous attempt was rejected for these reasons. Address them rather than
+starting again from a different design:
+
+{failures}
 """
 
 
-def ask_actor(client: Any, target: Target, ceiling: int, file_source: str) -> str:
+def ask_actor(
+    client: Any, target: Target, ceiling: int, file_source: str, feedback: str = ""
+) -> tuple[str, str]:
+    """The candidate, and the raw reply it was extracted from.
+
+    Both are kept: the raw reply is the only thing that can diagnose an extraction bug, and
+    logging just the extracted candidate is how one went unnoticed.
+    """
     prompt = ACTOR_PROMPT.format(
         ceiling=ceiling,
         score=int(target.score),
         trail="\n".join(f"  {line}" for line in target.trail) or "  (unavailable)",
         file_source=file_source,
         name=target.leaf,
+        feedback=FEEDBACK.format(failures=feedback) if feedback else "",
     )
     reply = client.generate(prompt, system=ACTOR_SYSTEM)
-    return _strip_fences(reply)
+    return _strip_fences(reply), reply
+
+
+def _feedback(gauntlet: GauntletResult) -> str:
+    """What to tell the actor next time.
+
+    Retrying with an identical prompt is resampling, not iteration: at temperature 0 the
+    only thing that varies is the model's own nondeterminism. The convergence question this
+    harness exists to ask (arXiv 2508.11958) is about a *feedback* loop, so the loop has to
+    close.
+    """
+    reasons = []
+    if not gauntlet.target_present:
+        reasons.append("- Your reply did not define the function, so it was deleted.")
+    if not gauntlet.tests_pass:
+        reasons.append("- The test suite failed.")
+    if not gauntlet.lint_pass:
+        reasons.append("- Lint failed.")
+    if not gauntlet.types_pass:
+        reasons.append("- Type checking failed.")
+    if gauntlet.target_present and not gauntlet.under_ceiling:
+        reasons.append(
+            f"- It still scores {gauntlet.score_after:.0f}, above the ceiling of "
+            f"{gauntlet.ceiling:.0f}. Reducing the score is not enough; it must reach the "
+            f"ceiling."
+        )
+    if gauntlet.shredded:
+        reasons.append(
+            "- The complexity was scattered into new helpers rather than removed; the "
+            "file's total is unchanged."
+        )
+    detail = "\n".join(gauntlet.failures[:2])
+    return "\n".join(reasons) + (f"\n\nTool output:\n{detail}" if detail else "")
 
 
 def _strip_fences(text: str) -> str:
+    """Every fenced code block in the reply, concatenated in order.
+
+    This used to return the *first* block containing `def `, which silently discarded the
+    rest. A model that writes a helper in one block and the rewritten function in the next
+    -- an entirely reasonable way to answer -- would have the second block dropped, and the
+    first spliced over the target's byte range. The function then does not exist, and its
+    callers raise `NameError`.
+
+    Splitting on the fence marker alternates outside/inside, so only the odd-numbered
+    segments are code; the even ones are the model's prose, which must never be spliced
+    into a source file.
+    """
     cleaned = text.strip()
-    if "```" in cleaned:
-        parts = cleaned.split("```")
-        for part in parts[1:]:
-            body = part[7:] if part.startswith("python\n") else part
-            if "def " in body:
-                return body.strip("\n")
-    return cleaned
+    if "```" not in cleaned:
+        return cleaned
+    blocks = []
+    for part in cleaned.split("```")[1::2]:
+        body = part.split("\n", 1)[1] if part.split("\n", 1)[0].strip().isalpha() else part
+        if "def " in body:
+            blocks.append(body.strip("\n"))
+    return "\n\n\n".join(blocks) if blocks else cleaned
+
+
+def _defines(source: str, name: str) -> bool:
+    """Does this candidate actually define the function it is replacing?
+
+    Checked before the gauntlet runs, because a candidate that omits the target deletes it
+    on splice -- and finding that out costs a full test, lint and type run first.
+    """
+    return re.search(rf"^\s*(?:async\s+)?def\s+{re.escape(name)}\s*\(", source, re.M) is not None
 
 
 # ---- the judge ----------------------------------------------------------------------------
@@ -462,6 +534,11 @@ class Attempt:
     judge: dict[str, Any] = field(default_factory=dict)
     error: str = ""
     seconds: float = 0.0
+    #: The extracted candidate and the raw reply it came from. A few KB each, and the only
+    #: way to diagnose a bug in extraction after the fact -- which is precisely the analysis
+    #: that was impossible when only the verdict was recorded.
+    candidate: str = ""
+    reply: str = ""
 
 
 def repair(
@@ -505,6 +582,7 @@ def repair(
             say(f"{DIM}  creating sandbox...{RESET}")
             sandbox.create()
 
+            feedback = ""
             for index in range(1, retries + 1):
                 started = time.perf_counter()
                 original_file = (sandbox.path / target.path).read_bytes()
@@ -515,14 +593,34 @@ def repair(
                 original = original_file[span[0] : span[1]].decode()
 
                 try:
-                    candidate = ask_actor(
-                        actor, target, ceiling, original_file.decode(errors="replace")
+                    candidate, reply = ask_actor(
+                        actor, target, ceiling, original_file.decode(errors="replace"), feedback
                     )
                 except Exception as error:  # noqa: BLE001 - a model failure is a data point
                     attempts.append(
                         Attempt(target.leaf, target.path, index, False, {}, error=str(error)[:200])
                     )
                     say(f"{RED}  attempt {index}: actor failed: {error}{RESET}")
+                    continue
+
+                if not _defines(candidate, target.leaf):
+                    # Splicing this would delete the function. Reject now rather than after
+                    # a full test, lint and type run.
+                    feedback = f"- Your reply did not contain a `def {target.leaf}(...)`."
+                    attempts.append(
+                        Attempt(
+                            target.leaf,
+                            target.path,
+                            index,
+                            False,
+                            {},
+                            error=f"the reply did not define {target.leaf}",
+                            seconds=time.perf_counter() - started,
+                            candidate=candidate,
+                            reply=reply,
+                        )
+                    )
+                    say(f"{RED}  attempt {index}: reply did not define {target.leaf}{RESET}")
                     continue
 
                 patched = original_file[: span[0]] + candidate.encode() + original_file[span[1] :]
@@ -548,9 +646,12 @@ def repair(
                         asdict(gauntlet),
                         verdict,
                         seconds=time.perf_counter() - started,
+                        candidate=candidate,
+                        reply=reply,
                     )
                 )
                 _report_attempt(index, gauntlet, verdict, accepted)
+                feedback = _feedback(gauntlet)
 
                 if accepted:
                     _write_diff(target, original, candidate)
