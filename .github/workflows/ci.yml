@@ -79,5 +79,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - run: python -m pip install -e ".[dev,oracle]"
+      # eslint-plugin-sonarjs is LGPL-3.0. It runs here as a subprocess and is never linked
+      # into or distributed with OXN, which keeps it licence-clean under ADR-0001.
+      - name: Install the JavaScript oracle
+        working-directory: tests/oracles
+        run: npm install --no-save --no-audit --no-fund eslint@9 eslint-plugin-sonarjs@4
+      - name: Fetch corpora
+        run: python scripts/fetch_corpora.py --name python-httpx
       - run: pytest -m oracle
+        env:
+          OXN_SONARJS_DIR: ${{ github.workspace }}/tests/oracles

@@ -28,7 +28,29 @@ graph.* Measured on identical snippets:
 | nested functions | parent 2 + closure 2, reported separately | flat, 4 total | **separate entities** | A nested function is its own entity in the code graph with its own score; a parent's number stays about the parent. |
 
 Comprehension clauses (`for_in_clause`, `if_clause`) each add one decision point. radon and lizard
-agree with OXN here and with each other.
+agree with OXN here and with each other — *except* when the comprehension sits inside an `assert`,
+where radon counts neither clause: `assert all(x for x in a if x)` scores 4 in OXN and 2 in radon.
+That single gap accounts for all six unexplained radon differences across httpx, and every one of
+them is in a test file.
+
+### Measured at corpus scale (httpx, 1,134 functions)
+
+| oracle | raw agreement | **divergences explained by the rules above** |
+|---|---|---|
+| lizard | 56.2% | **100.00%** (1,134/1,134) |
+| radon | 99.1% | **99.46%** (1,099/1,105) |
+
+Raw agreement against lizard looks alarming until you see why: `assert` is pervasive in real Python,
+and it is a one-line difference in the table above. **Raw agreement is the wrong measure**, because
+radon and lizard contradict each other on constructs that appear in most files — no implementation
+can agree with both. The measure that means something is whether every difference reduces to an
+enumerated rule:
+
+    lizard == oxn − (asserts) + (finally clauses)
+    radon  == oxn + (loop-else clauses) − (extra match cases beyond the first)
+
+Both formulas are asserted in `tests/test_oracles.py`. If an oracle changes behaviour, that test
+fails and this document gets revisited.
 
 **Harness consequence.** radon reports nested functions under `block.closures` rather than at top
 level, while lizard reports them flat. Any oracle comparison must therefore match **per function by

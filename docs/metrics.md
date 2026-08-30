@@ -1225,17 +1225,25 @@ function shredded into twenty one-line helpers with worse overall design — pre
    `EXACT` and fresh metrics may *block*; `APPROX` and `stale` metrics warn. Revisit only if it
    proves too permissive in practice.
 2. **May `oxn init` install per-language toolchains and indexers, or only detect and instruct?**
-   Recommendation: detect and instruct only.
-3. **`.oxn/` cache location and `.gitignore` policy.** The cache is a build artifact; the
-   baseline/ratchet is *not* and should be committed.
-4. **Launch languages for the first metric milestone.** Recommendation: Python + TypeScript, with
-   Go/Rust/Java following.
+   *Decided: detect and instruct only.* `oxn doctor` reports which SCIP indexers are present and
+   prints the install command for those that are not; OXN never installs anything on a user's
+   behalf. Encoded in `src/oxn/doctor.py` and ADR-0002.
+3. **`.oxn/` cache location and `.gitignore` policy.** *Decided and implemented:* the cache lives
+   at `.oxn/cache/graph.db` and is gitignored as a build artifact; `.oxn/baseline.json` is
+   explicitly un-ignored, because the ratchet is shared state, not a derived one.
+4. **Launch languages for the first metric milestone.** *Decided and shipped:* Python, TypeScript
+   and JavaScript have full profiles; Go, Rust and Java have verified grammars and land as profiles
+   in P6, alongside their gocognit and rust-code-analysis oracles.
 5. **The `max_cognitive_complexity: 8` default** in `idea.md` is ~2× stricter than SonarSource's own
    15. Confirm this is intentional.
-6. **CI image may contain LGPL/GPL oracles** (eslint-plugin-sonarjs, code-maat). Confirm this is
-   acceptable given no distribution occurs.
-7. **Halstead spec ownership.** Confirm OXN publishes its own versioned classification table rather
-   than chasing radon compatibility.
+6. **CI image may contain LGPL/GPL oracles** (eslint-plugin-sonarjs, code-maat). **Still open, and
+   now load-bearing:** eslint-plugin-sonarjs (LGPL-3.0) is wired into the oracle lane as of P2. It
+   is invoked as a subprocess, never linked or redistributed, which is licence-clean — but it is a
+   decision worth making deliberately rather than by default.
+7. **Halstead spec ownership.** *Decided and implemented:* OXN publishes its own table, versioned
+   as `halstead_spec_version` on the profile. Confirmed necessary by measurement -- radon counts a
+   strictly narrower operator set (§3.6), so chasing compatibility would have meant abandoning
+   cross-language comparability.
 
 ---
 

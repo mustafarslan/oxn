@@ -24,5 +24,9 @@ htmlcov/
 # Benchmark corpora are fetched, never vendored (see benchmarks/manifest.yaml).
 benchmarks/corpora/
 
+# Oracle runners install their tools locally; never vendored.
+tests/oracles/node_modules/
+tests/oracles/package-lock.json
+
 # OS
 .DS_Store
