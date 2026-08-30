@@ -139,15 +139,17 @@ def run_metrics(
             # These belong to a path, not to a code entity, and history has no entity at all.
             rows = [
                 {"qualified_name": path, "path": path, "value": value}
-                for path, value in indexer.store.file_metrics(sort_by, limit=limit * 4)
-                if path in wanted
-            ][:limit]
+                for path, value in indexer.store.file_metrics(sort_by, limit=limit, paths=wanted)
+            ]
         else:
+            # The store narrows to `wanted` before applying the limit. Ranking the whole
+            # graph and filtering afterwards asked which of the *project's* worst entities
+            # happened to be in these files -- so a file healthier than the project's worst
+            # reported nothing at all, with `status: OK`.
             rows = [
                 {"qualified_name": name, "path": path, "value": value}
-                for name, path, value in indexer.store.worst(sort_by, limit=limit * 4)
-                if path in wanted
-            ][:limit]
+                for name, path, value in indexer.store.worst(sort_by, limit=limit, paths=wanted)
+            ]
         trail: list[str] = []
         if explain and rows:
             trail = _explain_worst(indexer, rows[0])

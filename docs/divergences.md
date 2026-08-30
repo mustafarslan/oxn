@@ -72,6 +72,7 @@ expression positions.** Characterised precisely:
 | inside an f-string — `f"{[x for x in a]}"` | **missed** | counted |
 | keyword-argument value — `g(k=[x for x in a])` | **missed** | counted |
 | inside a subscript — `d[[x for x in a][0]]` | **missed** | counted |
+| generator expression in `yield from (...)` | **missed** | counted |
 
 OXN counts a comprehension wherever it appears. The specification takes the same position for the
 constructs it does discuss: increments apply "in variable assignments, method invocations, and return
@@ -90,6 +91,34 @@ characterising complexipy and are published as OXN's own (docs/metrics.md §3.2)
 
 Verified: `[x for x in a]` = 1 · `[x for x in a for y in b if x if y]` = 4 ·
 `[[y for y in x] for x in a]` = 3 · `[[[z for z in y] for y in x] for x in a]` = 6.
+
+### The largest divergence measured so far: 5 vs 26
+
+Found in use rather than on the corpus, which is why it is recorded here separately. The repair
+harness asked a model to simplify `_imported_names` (`src/oxn/resolve/scopes.py`); it replaced
+nested loops with `yield from (genexp)` throughout. **complexipy scores the result 5. OXN scores
+it 26.**
+
+The gap is entirely the `yield from` row above. Reduced:
+
+```python
+def yielded(y):
+    yield from ((a, b) for a in y for b in a if b if b > 1)
+```
+
+**complexipy: 0. OXN: 4** (`for` 1 + `for` 1 + two filters). A function with four decisions
+scoring zero is a traversal gap, not a position on what comprehensions cost — and complexipy
+charges the same clauses correctly when the identical expression appears in a `return`
+(`plain_return` = 3, matching OXN).
+
+Two controls make the verdict safe rather than self-serving:
+
+* on the **original** function both tools return **exactly 35**;
+* where complexipy can see the construct, its per-clause charges match OXN's rules.
+
+So OXN stands. Recorded because a 21-point live divergence against the reference implementation
+is precisely what this file exists to hold, and because the next person to see a 5 next to a 26
+deserves to find the answer already written down.
 
 ---
 

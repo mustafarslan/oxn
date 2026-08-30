@@ -128,3 +128,64 @@ def test_reindexing_replaces_metrics_rather_than_accumulating(tmp_path) -> None:
         before = store.stats()["metrics"]
         store.put_metrics(parsed.path, results)
         assert store.stats()["metrics"] == before
+
+
+def _tangled(name: str) -> str:
+    return (
+        f"def {name}(rows):\n"
+        "    for row in rows:\n"
+        "        if row:\n"
+        "            for cell in row:\n"
+        "                if cell:\n"
+        "                    if cell > 1:\n"
+        "                        return cell\n"
+        "    return None\n"
+    )
+
+
+CALM = (
+    "def one(a):\n    return a\n\n\n"
+    "def two(a):\n    return a if a else 0\n\n\n"
+    "def three(a):\n    return [x for x in a if x]\n"
+)
+
+
+def test_a_file_reports_its_own_entities_whatever_else_is_indexed(tmp_path, monkeypatch) -> None:
+    """`oxn metrics <file>` must answer about that file, not about the project.
+
+    The ranking ran across the whole graph and filtered to the requested paths afterwards,
+    so a file whose functions were all healthier than the project's worst reported
+    *nothing* -- with `status: OK`, which is worse than an error. An agent asking about the
+    clean file it had just written got silence, indistinguishable from a clean bill of
+    health.
+
+    The fixture has to out-number the old code's hedge: it fetched `limit * 4` rows before
+    filtering, so the bug only shows when enough worse functions exist elsewhere.
+    """
+    from oxn.report import run_metrics
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "tangled.py").write_text("\n\n".join(_tangled(f"tangled{n}") for n in range(12)))
+    (tmp_path / "calm.py").write_text(CALM)
+
+    run_metrics(["tangled.py", "calm.py"], json_output=True)
+    payload = run_metrics(["calm.py"], limit=2, json_output=True)
+
+    names = {row["qualified_name"].split(".")[-1] for row in payload["entities"]}
+    assert names, "the requested file's entities must not be crowded out by other files"
+    assert names <= {"one", "two", "three"}
+    assert len(names) == 2, "the limit caps the requested file, not the project"
+
+
+def test_every_function_is_reported_when_the_limit_allows(tmp_path, monkeypatch) -> None:
+    from oxn.report import run_metrics
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "tangled.py").write_text("\n\n".join(_tangled(f"tangled{n}") for n in range(12)))
+    (tmp_path / "calm.py").write_text(CALM)
+
+    run_metrics(["tangled.py", "calm.py"], json_output=True)
+    payload = run_metrics(["calm.py"], json_output=True)
+
+    names = {row["qualified_name"].split(".")[-1] for row in payload["entities"]}
+    assert names == {"one", "two", "three"}

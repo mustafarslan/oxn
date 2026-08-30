@@ -26,12 +26,17 @@ from oxn.graph.model import Edge, EdgeKind, Entity, EntityKind, ParsedFile, Prov
 from oxn.metrics.engine import EntityMetrics
 
 if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Collection, Iterable, Iterator
 
 #: Bump on any change to the statements below. A mismatch rebuilds the cache.
 SCHEMA_VERSION = 4
 
 DEFAULT_CACHE_PATH = Path(".oxn/cache/graph.db")
+
+#: SQLite binds a bounded number of parameters per statement (999 before 3.32). Beyond this
+#: many paths a query filters in Python instead -- still ranking within the requested set,
+#: which is the property that matters.
+_MAX_BOUND_PARAMS = 400
 
 _SCHEMA = """
 CREATE TABLE meta (
@@ -344,12 +349,25 @@ class GraphStore:
                     [(path, key, float(value)) for key, value in metrics.items()],
                 )
 
-    def file_metrics(self, metric_key: str, limit: int = 25) -> list[tuple[str, float]]:
-        """Highest values of one file-scoped metric."""
-        rows = self._conn.execute(
-            "SELECT path, value FROM file_metrics WHERE metric_key = ? ORDER BY value DESC LIMIT ?",
-            (metric_key, limit),
-        ).fetchall()
+    def file_metrics(
+        self, metric_key: str, limit: int = 25, paths: Collection[str] | None = None
+    ) -> list[tuple[str, float]]:
+        """Highest values of one file-scoped metric. `paths` narrows before the limit."""
+        sql = "SELECT path, value FROM file_metrics WHERE metric_key = ?"
+        if paths is None:
+            rows = self._conn.execute(
+                f"{sql} ORDER BY value DESC LIMIT ?", (metric_key, limit)
+            ).fetchall()
+        elif len(paths) <= _MAX_BOUND_PARAMS:
+            marks = ",".join("?" * len(paths))
+            rows = self._conn.execute(
+                f"{sql} AND path IN ({marks}) ORDER BY value DESC LIMIT ?",
+                (metric_key, *paths, limit),
+            ).fetchall()
+        else:
+            wanted = set(paths)
+            ranked = self._conn.execute(f"{sql} ORDER BY value DESC", (metric_key,))
+            rows = [row for row in ranked if row["path"] in wanted][:limit]
         return [(row["path"], row["value"]) for row in rows]
 
     def complexity_by_file(self, metric_key: str = "cognitive_complexity") -> dict[str, float]:
@@ -379,14 +397,39 @@ class GraphStore:
             out.setdefault(row["entity_id"], {})[row["metric_key"]] = row["value"]
         return out
 
-    def worst(self, metric_key: str, limit: int = 20) -> list[tuple[str, str, float]]:
-        """Highest values of one metric across the graph, as (qualified name, path, value)."""
-        rows = self._conn.execute(
+    def worst(
+        self, metric_key: str, limit: int = 20, paths: Collection[str] | None = None
+    ) -> list[tuple[str, str, float]]:
+        """Highest values of one metric, as (qualified name, path, value).
+
+        `paths` restricts the ranking **before** the limit applies, and that ordering is the
+        whole point. Ranking the graph first and filtering afterwards answers a different
+        question -- "which of the project's worst functions happen to live here" -- and for
+        a file whose functions are all healthier than the project's worst it answers with
+        silence. A caller asking about one file must get that file's entities, however the
+        rest of the repository looks.
+        """
+        sql = (
             "SELECT e.qualified_name, m.file_path, m.value FROM metrics m"
             " JOIN entities e ON e.id = m.entity_id"
-            " WHERE m.metric_key = ? ORDER BY m.value DESC LIMIT ?",
-            (metric_key, limit),
-        ).fetchall()
+            " WHERE m.metric_key = ?"
+        )
+        if paths is None:
+            rows = self._conn.execute(
+                f"{sql} ORDER BY m.value DESC LIMIT ?", (metric_key, limit)
+            ).fetchall()
+        elif len(paths) <= _MAX_BOUND_PARAMS:
+            marks = ",".join("?" * len(paths))
+            rows = self._conn.execute(
+                f"{sql} AND m.file_path IN ({marks}) ORDER BY m.value DESC LIMIT ?",
+                (metric_key, *paths, limit),
+            ).fetchall()
+        else:
+            # More paths than SQLite will bind at once. Rank everything and filter here:
+            # slower, but it still ranks within the requested set rather than outside it.
+            wanted = set(paths)
+            ranked = self._conn.execute(f"{sql} ORDER BY m.value DESC", (metric_key,))
+            rows = [row for row in ranked if row["file_path"] in wanted][:limit]
         return [(r["qualified_name"], r["file_path"], r["value"]) for r in rows]
 
     def entities_for(self, path: str) -> list[Entity]:
