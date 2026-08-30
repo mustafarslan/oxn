@@ -30,6 +30,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from oxn import thresholds
+
 
 class Evidence(str, Enum):
     """How a value was arrived at, ordered from weakest to strongest.
@@ -78,98 +80,112 @@ class Parameter:
         }
 
 
-def parameters() -> list[Parameter]:
-    """The whole tunable surface. Adding a threshold anywhere means adding it here."""
-    from oxn import thresholds
+#: Ceilings on a single function or file. Every one of these is a judgement or a citation,
+#: never a measurement -- which is precisely what P10's corpus percentiles are for.
+_CEILINGS: tuple[Parameter, ...] = (
+    Parameter(
+        name="MAX_COGNITIVE_COMPLEXITY",
+        value=float(thresholds.MAX_COGNITIVE_COMPLEXITY),
+        evidence=Evidence.JUDGEMENT,
+        observations=0,
+        provenance=(
+            "12, between idea.md's proposed 8 and SonarSource's default 15. Neither endpoint "
+            "is measured either: 15 is a product default, not a finding."
+        ),
+        fit_when="corpus percentiles exist for cognitive complexity per language (P10)",
+    ),
+    Parameter(
+        name="MAX_CYCLOMATIC_COMPLEXITY",
+        value=float(thresholds.MAX_CYCLOMATIC_COMPLEXITY),
+        evidence=Evidence.LITERATURE,
+        observations=0,
+        provenance="McCabe (1976); NIST SP 500-235 discusses 10 and 15 as the usual band",
+        fit_when="corpus percentiles exist (P10)",
+    ),
+    Parameter(
+        name="MAX_PARAMETERS",
+        value=float(thresholds.MAX_PARAMETERS),
+        evidence=Evidence.LITERATURE,
+        observations=0,
+        provenance="Fowler, Refactoring (Long Parameter List); the 4-5 band from Clean Code",
+    ),
+    Parameter(
+        name="MAX_NESTING_DEPTH",
+        value=float(thresholds.MAX_NESTING_DEPTH),
+        evidence=Evidence.JUDGEMENT,
+        observations=0,
+        provenance="conventional; nesting is what cognitive complexity already charges for",
+        fit_when="corpus percentiles exist (P10)",
+    ),
+    Parameter(
+        name="MAX_FUNCTION_SLOC",
+        value=float(thresholds.MAX_FUNCTION_SLOC),
+        evidence=Evidence.JUDGEMENT,
+        observations=0,
+        provenance="conventional rather than derived",
+        fit_when="corpus percentiles exist (P10)",
+    ),
+    Parameter(
+        name="MAX_FILE_SLOC",
+        value=float(thresholds.MAX_FILE_SLOC),
+        evidence=Evidence.JUDGEMENT,
+        observations=0,
+        provenance="conventional rather than derived",
+        fit_when="corpus percentiles exist (P10)",
+    ),
+)
 
-    return [
-        Parameter(
-            name="MAX_COGNITIVE_COMPLEXITY",
-            value=float(thresholds.MAX_COGNITIVE_COMPLEXITY),
-            evidence=Evidence.JUDGEMENT,
-            observations=0,
-            provenance=(
-                "12, between idea.md's proposed 8 and SonarSource's default 15. Neither "
-                "endpoint is measured either: 15 is a product default, not a finding."
-            ),
-            fit_when="corpus percentiles exist for cognitive complexity per language (P10)",
+#: Parameters about *judgement* rather than size, and the only ones OXN has fitted to
+#: anything it observed itself. Both need labels, not distributions: no percentile of a
+#: corpus can say whether an extraction was cohesive.
+_ANTI_GAMING: tuple[Parameter, ...] = (
+    Parameter(
+        name="DUPLICATION_MIN_TOKENS",
+        value=float(thresholds.DUPLICATION_MIN_TOKENS),
+        evidence=Evidence.MEASURED,
+        observations=1,
+        provenance=(
+            "50 rather than PMD-CPD's 100: measured against PMD-CPD on the pinned corpus, "
+            "where 100 missed the small copy-paste blocks agents actually produce"
         ),
-        Parameter(
-            name="MAX_CYCLOMATIC_COMPLEXITY",
-            value=float(thresholds.MAX_CYCLOMATIC_COMPLEXITY),
-            evidence=Evidence.LITERATURE,
-            observations=0,
-            provenance="McCabe (1976); NIST SP 500-235 discusses 10 and 15 as the usual band",
-            fit_when="corpus percentiles exist (P10)",
+        fit_when="clone recall is measured across more than one corpus",
+    ),
+    Parameter(
+        name="TRIVIAL_HELPER",
+        value=2.0,
+        evidence=Evidence.MEASURED,
+        observations=2,
+        provenance=(
+            "the median helper score separating one cohesive extraction (4, 9, 11) from one "
+            "hand-built shred (16 helpers, median 1), both of `_imported_names`"
         ),
-        Parameter(
-            name="MAX_PARAMETERS",
-            value=float(thresholds.MAX_PARAMETERS),
-            evidence=Evidence.LITERATURE,
-            observations=0,
-            provenance="Fowler, Refactoring (Long Parameter List); the 4-5 band from Clean Code",
+        fit_when=(
+            "benchmarks/dogfood-log.jsonl holds ~50 labelled extractions; at that point this "
+            "is a grid search over one scalar against judge and human labels"
         ),
-        Parameter(
-            name="MAX_NESTING_DEPTH",
-            value=float(thresholds.MAX_NESTING_DEPTH),
-            evidence=Evidence.JUDGEMENT,
-            observations=0,
-            provenance="conventional; nesting is what cognitive complexity already charges for",
-            fit_when="corpus percentiles exist (P10)",
+    ),
+    Parameter(
+        name="MANY_HELPERS",
+        value=3.0,
+        evidence=Evidence.JUDGEMENT,
+        observations=0,
+        provenance=(
+            "the smallest count that can mean 'many'; a three-way dispatch legitimately "
+            "extracts three, so the count alone was never going to be the discriminator"
         ),
-        Parameter(
-            name="MAX_FUNCTION_SLOC",
-            value=float(thresholds.MAX_FUNCTION_SLOC),
-            evidence=Evidence.JUDGEMENT,
-            observations=0,
-            provenance="conventional rather than derived",
-            fit_when="corpus percentiles exist (P10)",
-        ),
-        Parameter(
-            name="MAX_FILE_SLOC",
-            value=float(thresholds.MAX_FILE_SLOC),
-            evidence=Evidence.JUDGEMENT,
-            observations=0,
-            provenance="conventional rather than derived",
-            fit_when="corpus percentiles exist (P10)",
-        ),
-        Parameter(
-            name="DUPLICATION_MIN_TOKENS",
-            value=float(thresholds.DUPLICATION_MIN_TOKENS),
-            evidence=Evidence.MEASURED,
-            observations=1,
-            provenance=(
-                "50 rather than PMD-CPD's 100: measured against PMD-CPD on the pinned corpus, "
-                "where 100 missed the small copy-paste blocks agents actually produce"
-            ),
-            fit_when="clone recall is measured across more than one corpus",
-        ),
-        Parameter(
-            name="TRIVIAL_HELPER",
-            value=2.0,
-            evidence=Evidence.MEASURED,
-            observations=2,
-            provenance=(
-                "the median helper score separating one cohesive extraction (4, 9, 11) from "
-                "one hand-built shred (16 helpers, median 1), both of `_imported_names`"
-            ),
-            fit_when=(
-                "benchmarks/dogfood-log.jsonl holds ~50 labelled extractions; at that point "
-                "this is a grid search over one scalar against judge and human labels"
-            ),
-        ),
-        Parameter(
-            name="MANY_HELPERS",
-            value=3.0,
-            evidence=Evidence.JUDGEMENT,
-            observations=0,
-            provenance=(
-                "the smallest count that can mean 'many'; a three-way dispatch legitimately "
-                "extracts three, so the count alone was never going to be the discriminator"
-            ),
-            fit_when="the same labelled set as TRIVIAL_HELPER",
-        ),
-    ]
+        fit_when="the same labelled set as TRIVIAL_HELPER",
+    ),
+)
+
+
+def parameters() -> list[Parameter]:
+    """The whole tunable surface. Adding a threshold anywhere means adding it here.
+
+    Data at module level rather than inside a function body, because `oxn check` flagged the
+    91-line function this used to be on the day it was written -- and a function whose entire
+    body is a list is a list.
+    """
+    return [*_CEILINGS, *_ANTI_GAMING]
 
 
 def summary() -> dict[str, object]:

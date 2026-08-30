@@ -65,13 +65,17 @@ class Lane:
 
 
 def fast_lane() -> bool:
-    lane = Lane("fast (lint, types, unit tests)")
+    lane = Lane("fast (lint, types, unit tests, oxn on oxn)")
     lane.run(PYTHON, "-m", "ruff", "check", ".")
     lane.run(PYTHON, "-m", "ruff", "format", "--check", ".")
     lane.run(PYTHON, "-m", "mypy")
     # `llm` is excluded as well as `oracle`: the fast lane must never depend on a model
     # being reachable, which is exactly what "not oracle" alone failed to guarantee.
     lane.run(PYTHON, "-m", "pytest", "-m", "not oracle and not llm", "-q")
+    # OXN gates OXN. The hook catches an edit as it happens; this catches everything the
+    # hook did not see -- a rebase, a merge, an edit made outside the agent. Without it
+    # "OXN gates its own development" would mean only "when an agent is driving".
+    lane.run(PYTHON, "-m", "oxn", "check", "--deep", "src", "tests", "scripts")
     return lane.finish()
 
 
