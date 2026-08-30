@@ -1,0 +1,37 @@
+# OXN — architecture and quality invariants for OXN itself.
+#
+# Dogfooding is the point: if this configuration is annoying to work under, it is not
+# shippable to anyone else. Every value here is a default from `oxn.thresholds` unless a
+# comment says otherwise, and the reasoning for each default lives beside it in that file.
+
+ceilings:
+  cognitive_complexity: 12   # the headline gate; chosen over SonarSource's 15, idea.md's 8
+  cyclomatic_complexity: 10
+  max_nesting_depth: 4
+  parameter_count: 5
+  function_sloc: 60
+  file_sloc: 500
+
+# OXN's own architecture. The order is outermost first: a layer may depend on every layer
+# after it and on none before it.
+#
+# `graph/indexer.py` sits in `orchestration` rather than `graph`, and that placement was
+# corrected *by this contract*. The first run flagged `graph/indexer.py -> metrics/engine.py`
+# as the graph layer reaching into analysis. The import is deliberate -- the indexer measures
+# in the same pass that parses, because parsing twice would double the hook's cost -- but
+# that makes the indexer an orchestrator, not a data structure. The rule was right and the
+# layer assignment was wrong; the file moved layers rather than the contract being weakened.
+layers:
+  surfaces: ["src/oxn/cli.py", "src/oxn/_app.py", "src/oxn/report.py", "src/oxn/check.py", "src/oxn/init.py"]
+  orchestration: ["src/oxn/graph/indexer.py"]
+  analysis: ["src/oxn/metrics/*", "src/oxn/resolve/*", "src/oxn/volume/*", "src/oxn/vcs/*", "src/oxn/scip/*"]
+  graph: ["src/oxn/graph/*"]
+
+contracts:
+  - name: surfaces-analysis-graph
+    kind: layered
+    order: [surfaces, orchestration, analysis, graph]
+
+# Fixtures are source files on purpose -- a hand-built shred is supposed to look bad.
+advisory:
+  - "tests/fixtures/*"

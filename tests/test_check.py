@@ -272,3 +272,40 @@ def _finding(**overrides) -> Finding:
         "ceiling": 12.0,
     }
     return Finding(**{**fields, **overrides})
+
+
+# ---- the calibration surface ----------------------------------------------------------
+
+
+def test_every_gated_threshold_states_its_provenance() -> None:
+    """A number with no stated provenance is folklore, and folklore gets a gate switched off.
+
+    This fails when someone adds a threshold to `thresholds.py` without recording where it
+    came from -- which is the moment the omission is cheap to fix.
+    """
+    from oxn import thresholds
+    from oxn.calibration import parameters
+    from oxn.config import GATED_METRICS
+
+    documented = {parameter.name for parameter in parameters()}
+    gated = {gate.threshold for gate in GATED_METRICS.values()}
+    assert gated <= documented, f"gated but undocumented: {sorted(gated - documented)}"
+    for name in documented:
+        if hasattr(thresholds, name):
+            recorded = next(p for p in parameters() if p.name == name)
+            assert recorded.value == float(getattr(thresholds, name)), (
+                f"{name} is documented as {recorded.value} but is actually "
+                f"{getattr(thresholds, name)}"
+            )
+
+
+def test_a_measured_parameter_says_how_many_observations_back_it() -> None:
+    """`TRIVIAL_HELPER` is fitted to two examples, and that must be visible, not implied."""
+    from oxn.calibration import Evidence, parameters
+
+    for parameter in parameters():
+        if parameter.evidence is Evidence.MEASURED:
+            assert parameter.observations > 0
+            assert parameter.fit_when, "a measured parameter should say what would improve it"
+        else:
+            assert parameter.observations == 0

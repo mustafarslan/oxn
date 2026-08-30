@@ -105,6 +105,72 @@ def baseline(
 
 
 @app.command()
+def init(
+    no_hook: bool = typer.Option(
+        False, "--no-hook", help="Write config and docs but do not install the hook."
+    ),
+) -> None:
+    """Wire OXN into this repository. Additive and idempotent -- run it twice safely.
+
+    Nothing is overwritten. `oxn.yaml` is written only if absent, the `CLAUDE.md` section
+    lives between markers, and an existing `.claude/settings.json` is merged rather than
+    replaced.
+    """
+    from oxn.init import run_init
+
+    console = _console()
+    report = run_init(with_hook=not no_hook)
+    for label, paths in (
+        ("created", report.created),
+        ("updated", report.updated),
+        ("unchanged", report.unchanged),
+    ):
+        for path in paths:
+            colour = {"created": "green", "updated": "cyan"}.get(label, "dim")
+            console.print(f"[{colour}]{label:9}[/{colour}] {path}")
+    for note in report.notes:
+        console.print(f"[yellow]note[/yellow]      {note}")
+    console.print(
+        "\n[dim]next: `oxn check` to see where you stand, `oxn baseline` to accept it[/dim]"
+    )
+
+
+@app.command()
+def calibration(
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """List every tunable threshold with the evidence behind it.
+
+    A number with no stated provenance is folklore, and folklore is what makes developers
+    distrust a gate. This is also the surface P10's calibration work optimises over.
+    """
+    from oxn.calibration import parameters as _parameters
+    from oxn.calibration import summary
+
+    console = _console()
+    report = summary()
+    if json_output:
+        import json
+
+        console.print_json(json.dumps(report))
+        return
+
+    for parameter in _parameters():
+        marker = (
+            "[yellow]provisional[/yellow]" if parameter.is_provisional else "[green]fitted[/green]"
+        )
+        console.print(
+            f"[bold]{parameter.name}[/bold] = {parameter.value:g}  "
+            f"{marker} {parameter.evidence.value} n={parameter.observations}"
+        )
+        console.print(f"  [dim]{parameter.provenance}[/dim]")
+        if parameter.fit_when:
+            console.print(f"  [dim]fit when: {parameter.fit_when}[/dim]")
+    console.print(f"\n[dim]{report['provisional']}/{report['total']} provisional[/dim]")
+    console.print(f"[dim]{report['note']}[/dim]")
+
+
+@app.command()
 def parse(
     paths: list[str] = typer.Argument(None, help="Files or directories to parse."),
     json_output: bool = typer.Option(False, "--json", help="Machine-readable output."),
