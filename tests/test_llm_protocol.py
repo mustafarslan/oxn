@@ -109,9 +109,28 @@ def test_an_error_frame_is_reported_as_itself(patched: Any) -> None:
         _client().generate("prompt")
 
 
-def test_a_stream_with_no_completion_is_an_error(patched: Any) -> None:
+def test_a_stream_that_never_carries_a_response_field_is_an_error(patched: Any) -> None:
+    """Distinct from an empty `response`: here the field never appears at all."""
     patched([{"thinking": "hmm", "done": True}])
-    with pytest.raises(OllamaError, match="no completion"):
+    with pytest.raises(OllamaError, match="empty completion"):
+        _client().generate("prompt")
+
+
+def test_an_empty_completion_is_an_error_not_an_empty_string(patched: Any) -> None:
+    """A live run produced exactly this: 67 seconds of thinking, then nothing.
+
+    Returning "" pushes the failure downstream, where it wears the caller's face -- the
+    repair harness read the empty reply as the model having deleted the function it was
+    asked to simplify, and logged it as a model failure.
+    """
+    patched([{"thinking": "considering the options"}, {"response": "", "done": True}])
+    with pytest.raises(OllamaError, match="empty completion"):
+        _client().generate("prompt")
+
+
+def test_whitespace_only_is_equally_empty(patched: Any) -> None:
+    patched([{"response": "  \n\n  "}, {"response": "", "done": True}])
+    with pytest.raises(OllamaError, match="empty completion"):
         _client().generate("prompt")
 
 

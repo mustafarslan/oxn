@@ -165,6 +165,13 @@ class OllamaClient:
         except json.JSONDecodeError as error:
             raise OllamaError(f"Ollama returned invalid JSON: {error}") from error
 
-        if not saw_completion:
-            raise OllamaError(f"Ollama returned no completion for {self.model}")
-        return "".join(chunks).strip()
+        text = "".join(chunks).strip()
+        if not saw_completion or not text:
+            # An empty completion is not an answer, and it is not a rare one: a reasoning
+            # model can spend a minute thinking and then emit nothing at all. Returning ""
+            # pushes that failure downstream, where it looks like the caller's bug -- a
+            # repair harness read it as "the model deleted the function".
+            raise OllamaError(
+                f"{self.model} returned an empty completion after {len(chunks)} chunk(s)"
+            )
+        return text
