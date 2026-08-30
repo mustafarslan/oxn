@@ -24,9 +24,14 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
-#: Default endpoint and model. Overridable via ``OXN_OLLAMA_HOST`` / ``OXN_OLLAMA_MODEL``.
+#: Default endpoint and models. Overridable through the environment.
+#:
+#: The **actor** writes code and the **judge** assesses it, and they are deliberately
+#: different models: a model grading its own output is not an independent check, and the
+#: agreement rate between judge and deterministic gauntlet is itself a result worth having.
 DEFAULT_HOST = "http://localhost:11434"
 DEFAULT_MODEL = "glm-5.3:cloud"
+DEFAULT_JUDGE_MODEL = "deepseek-v4-pro:cloud"
 
 
 class OllamaError(RuntimeError):
@@ -43,11 +48,43 @@ class OllamaClient:
 
     @classmethod
     def from_env(cls) -> OllamaClient:
+        """The actor: the model that writes."""
         return cls(
             host=os.environ.get("OXN_OLLAMA_HOST", DEFAULT_HOST),
             model=os.environ.get("OXN_OLLAMA_MODEL", DEFAULT_MODEL),
-            timeout=int(os.environ.get("OXN_OLLAMA_TIMEOUT", "180")),
+            timeout=int(os.environ.get("OXN_OLLAMA_TIMEOUT", "600")),
         )
+
+    @classmethod
+    def judge_from_env(cls) -> OllamaClient:
+        """The judge: a *different* model, so an assessment is not a self-assessment."""
+        return cls(
+            host=os.environ.get("OXN_OLLAMA_HOST", DEFAULT_HOST),
+            model=os.environ.get("OXN_OLLAMA_JUDGE_MODEL", DEFAULT_JUDGE_MODEL),
+            timeout=int(os.environ.get("OXN_OLLAMA_TIMEOUT", "600")),
+        )
+
+    def generate_json(self, prompt: str, *, system: str = "") -> dict[str, object]:
+        """A completion parsed as JSON, tolerating the fences models like to add.
+
+        Structured output is what makes a judge's verdict usable: "is this good?" gives an
+        opinion, while explicit fields give something that can be tabulated and calibrated.
+        """
+        text = self.generate(prompt, system=system)
+        cleaned = text.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("```")[1]
+            cleaned = cleaned[4:] if cleaned.startswith("json") else cleaned
+        start, end = cleaned.find("{"), cleaned.rfind("}")
+        if start == -1 or end == -1:
+            raise OllamaError(f"expected JSON, got: {text[:200]!r}")
+        try:
+            parsed = json.loads(cleaned[start : end + 1])
+        except json.JSONDecodeError as error:
+            raise OllamaError(f"invalid JSON from {self.model}: {error}") from error
+        if not isinstance(parsed, dict):
+            raise OllamaError(f"expected a JSON object, got {type(parsed).__name__}")
+        return parsed
 
     def available(self) -> bool:
         """True when the host answers. Used to skip rather than fail a test lane."""

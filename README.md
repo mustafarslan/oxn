@@ -80,6 +80,32 @@ python scripts/fetch_corpora.py --list
 python scripts/fetch_corpora.py --use eval
 ```
 
+## Self-repair
+
+OXN gates coding agents on complexity, and violates its own ceilings. `scripts/dogfood.py`
+drives the loop OXN exists to create, on OXN itself:
+
+```sh
+python scripts/dogfood.py plan               # what is over the ceiling, and why
+python scripts/dogfood.py repair --limit 3   # attempt repairs, write diffs for review
+python scripts/dogfood.py repair --dry-run   # exercise the loop with no model calls
+python scripts/dogfood.py report             # convergence across all attempts so far
+```
+
+Two models, deliberately different: **glm-5.3** writes the repair, **deepseek-v4-pro**
+assesses it. A model grading its own output is not an independent check.
+
+**The judge never overrules the deterministic gauntlet.** A candidate that fails tests,
+types, lint, or the shredding detector is rejected before a judge sees it — because "the
+score went down" is precisely the gaming a per-function ceiling invites, and detecting it
+needs the file's total complexity mass, not an opinion.
+
+Nothing touches the working tree. Every attempt runs in a throwaway copy with its own
+virtualenv, and the loop emits diffs plus a JSONL log for a human to review and commit.
+That log is also the convergence evidence: LLM refactoring is known to fail to reach
+complexity thresholds ([arXiv 2508.11958](https://arxiv.org/abs/2508.11958)), so measuring
+it on a real codebase is worth having.
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).

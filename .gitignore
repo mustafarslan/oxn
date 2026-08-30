@@ -34,3 +34,6 @@ tests/oracles/package-lock.json
 
 # Oracle tools are downloaded, never vendored.
 tools/
+
+# Self-repair attempts are a run artifact; the harness is the source.
+benchmarks/dogfood-log.jsonl
