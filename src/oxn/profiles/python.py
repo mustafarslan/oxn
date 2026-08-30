@@ -13,6 +13,7 @@ from oxn.profiles.spec import (
     HalsteadSpec,
     ImportSpec,
     MetricSpec,
+    ScopeSpec,
     SizeSpec,
 )
 
@@ -152,6 +153,36 @@ PYTHON_METRICS = MetricSpec(
         type_only_token=None,
         dynamic_callees=frozenset({"importlib.import_module", "__import__"}),
         call_kinds=frozenset({"call"}),
+    ),
+    scopes=ScopeSpec(
+        style="python",
+        scope_kinds={
+            "module": "module",
+            "class_definition": "class",
+            "function_definition": "function",
+            "lambda": "lambda",
+            "list_comprehension": "comprehension",
+            "set_comprehension": "comprehension",
+            "dictionary_comprehension": "comprehension",
+            "generator_expression": "comprehension",
+        },
+        declaration_kinds=frozenset({"function_definition", "class_definition"}),
+        parameter_containers=frozenset({"parameters", "lambda_parameters"}),
+        assignment_kinds=frozenset(
+            {
+                "assignment",
+                "augmented_assignment",
+                "for_statement",
+                "for_in_clause",
+                "named_expression",
+            }
+        ),
+        alias_kinds=frozenset({"as_pattern", "aliased_import", "except_clause"}),
+        rebinding_kinds=frozenset({"global_statement", "nonlocal_statement"}),
+        attribute_kind="attribute",
+        attribute_object_field="object",
+        attribute_name_field="attribute",
+        identifier_kind="identifier",
     ),
 )
 

@@ -24,6 +24,7 @@ is nested. Getting either wrong skews every score in the codebase.
 
 from __future__ import annotations
 
+from collections.abc import Mapping  # noqa: TC003 - used in a runtime default
 from dataclasses import dataclass, field
 
 
@@ -176,6 +177,39 @@ class ImportSpec:
 
 
 @dataclass(frozen=True)
+class ScopeSpec:
+    """How one language introduces scopes and binds names.
+
+    Like :class:`ImportSpec`, this is organised by *style* rather than per language, because
+    scoping rules cluster into families: ``python`` (function-scoped, comprehensions get
+    their own scope, no block scope) and ``ecmascript`` (block-scoped ``let``/``const``,
+    function-scoped ``var``).
+    """
+
+    style: str = "python"
+    #: Node kind -> the kind of scope it opens.
+    scope_kinds: Mapping[str, str] = field(default_factory=dict)
+    #: Node kinds that declare a name in the *enclosing* scope.
+    declaration_kinds: frozenset[str] = frozenset()
+    #: Node kinds holding a callable's parameters.
+    parameter_containers: frozenset[str] = frozenset()
+    #: Node kinds that bind on the left of an assignment or loop.
+    assignment_kinds: frozenset[str] = frozenset()
+    #: Node kinds for ``x as y`` bindings (``with``, ``except``, imports).
+    alias_kinds: frozenset[str] = frozenset()
+    #: Statements that rebind a name to an outer scope.
+    rebinding_kinds: frozenset[str] = frozenset()
+    #: Node kind for attribute access, used to find ``self.x`` field writes.
+    attribute_kind: str = "attribute"
+    #: Field on the attribute node holding the receiver.
+    attribute_object_field: str = "object"
+    #: Field holding the attribute name.
+    attribute_name_field: str = "attribute"
+    #: Node kind of a plain identifier.
+    identifier_kind: str = "identifier"
+
+
+@dataclass(frozen=True)
 class MetricSpec:
     """All metric tables for one language."""
 
@@ -184,3 +218,4 @@ class MetricSpec:
     size: SizeSpec = field(default_factory=SizeSpec)
     halstead: HalsteadSpec = field(default_factory=HalsteadSpec)
     imports: ImportSpec = field(default_factory=ImportSpec)
+    scopes: ScopeSpec = field(default_factory=ScopeSpec)

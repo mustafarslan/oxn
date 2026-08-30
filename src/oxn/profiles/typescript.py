@@ -20,6 +20,7 @@ from oxn.profiles.spec import (
     HalsteadSpec,
     ImportSpec,
     MetricSpec,
+    ScopeSpec,
     SizeSpec,
 )
 
@@ -151,6 +152,42 @@ _TS_METRICS = MetricSpec(
         type_only_token="type",
         dynamic_callees=frozenset({"require", "import"}),
         call_kinds=frozenset({"call_expression"}),
+    ),
+    scopes=ScopeSpec(
+        style="ecmascript",
+        scope_kinds={
+            "program": "module",
+            "class_declaration": "class",
+            "abstract_class_declaration": "class",
+            "class_body": "class",
+            "function_declaration": "function",
+            "generator_function_declaration": "function",
+            "function_expression": "function",
+            "method_definition": "function",
+            "arrow_function": "lambda",
+            "statement_block": "block",
+            "for_statement": "block",
+            "for_in_statement": "block",
+            "catch_clause": "block",
+        },
+        declaration_kinds=frozenset(
+            {
+                "function_declaration",
+                "generator_function_declaration",
+                "class_declaration",
+                "abstract_class_declaration",
+            }
+        ),
+        parameter_containers=frozenset({"formal_parameters"}),
+        assignment_kinds=frozenset(
+            {"variable_declarator", "assignment_expression", "for_in_statement"}
+        ),
+        alias_kinds=frozenset({"import_specifier", "namespace_import", "catch_clause"}),
+        rebinding_kinds=frozenset(),
+        attribute_kind="member_expression",
+        attribute_object_field="object",
+        attribute_name_field="property",
+        identifier_kind="identifier",
     ),
 )
 

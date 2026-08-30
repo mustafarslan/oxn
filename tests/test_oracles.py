@@ -606,3 +606,41 @@ def test_scip_ingest_covers_a_real_corpus(tmp_path) -> None:
     assert report.call_coverage >= 0.85, f"{report.call_coverage:.1%}"
     assert report.seconds < 60
     assert report.edges > 1000
+
+
+# ---- L0/L1 measured against L2 --------------------------------------------------------------
+
+
+@requires_scip_python
+@pytest.mark.skipif(not CORPUS.exists(), reason="corpora not fetched")
+@pytest.mark.slow
+def test_l0_l1_accuracy_against_scip_ground_truth(tmp_path) -> None:
+    """The published L0/L1 accuracy table, re-measured.
+
+    Measured on httpx: 99.8% precision at 65.6% recall when L1 is *certain*, 70.3% precision
+    at 100% recall when it also guesses. That split is the gating policy in ADR-0002 -- only
+    certain answers may block.
+
+    30.5% of call sites are excluded because scip-python 0.6.6 contradicts the source it
+    indexed, naming an alphabetically adjacent symbol for names re-exported through a
+    package `__init__.py`. Grading against a ground truth wrong one time in five would
+    measure the oracle rather than us.
+    """
+    from oxn.resolve.measure import measure_corpus
+    from oxn.scip.runner import run_indexer
+
+    corpus = CORPUS.resolve()
+    index = run_indexer(
+        "python", corpus, tmp_path / "httpx.scip", project_name="httpx", project_version="0.28"
+    )
+    accuracy = measure_corpus(corpus, index)
+
+    assert accuracy.graded_call_sites > 500, "corpus too small to mean anything"
+    assert accuracy.confident_precision >= 0.95, (
+        f"confident precision {accuracy.confident_precision:.1%}; "
+        f"first disagreements: {accuracy.disagreements[:3]}"
+    )
+    assert accuracy.confident_recall >= 0.50, f"confident recall {accuracy.confident_recall:.1%}"
+    assert accuracy.precision >= 0.60, f"overall precision {accuracy.precision:.1%}"
+    # The oracle's own error rate is worth watching: a jump means scip-python changed.
+    assert accuracy.excluded_share <= 0.45, f"{accuracy.excluded_share:.1%} excluded"
