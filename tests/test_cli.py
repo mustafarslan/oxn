@@ -96,3 +96,17 @@ def test_module_invocation_supports_the_json_fast_path() -> None:
     )
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["oxn_version"] == oxn.__version__
+
+
+def test_unknown_granularity_is_rejected_not_silently_defaulted(tmp_path) -> None:
+    """A typo must not produce plausible-looking output for the wrong granularity."""
+    (tmp_path / "m.py").write_text("def f():\n    pass\n")
+    result = subprocess.run(
+        [sys.executable, "-m", "oxn", "arch", "--json", "--by", "nonsense", "."],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+    )
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ERROR"
+    assert "nonsense" in payload["errors"]

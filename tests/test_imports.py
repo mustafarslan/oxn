@@ -236,3 +236,66 @@ def test_tsconfig_path_aliases_resolve(ts_tree) -> None:
 
 def test_unknown_package_is_external(ts_tree) -> None:
     assert resolve("app/main.ts", "typescript", ts_tree, 'import a from "rxjs";\n') == [None]
+
+
+# ---- tsconfig is JSONC, not JSON -----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("name", "raw"),
+    [
+        (
+            "trailing line comment after a value",
+            '{\n "compilerOptions": {\n  "baseUrl": "./src", // where sources live\n'
+            '  "paths": {"@a/*": ["a/*"]}\n }\n}',
+        ),
+        ("full-line comment", '{\n // note\n "compilerOptions": {"baseUrl": "."}\n}'),
+        ("block comment", '{\n /* a note\n spanning lines */\n "compilerOptions": {}\n}'),
+        ("trailing comma in an object", '{"compilerOptions":{"baseUrl":".",}}'),
+        ("trailing comma in an array", '{"compilerOptions":{"paths":{"@a/*":["a/*",]}}}'),
+        ("comment marker inside a string", '{"compilerOptions":{"baseUrl":"a//b"}}'),
+        (
+            "escaped quote before a comment marker",
+            r'{"compilerOptions":{"baseUrl":"say \"hi\" // not a comment"}}',
+        ),
+    ],
+)
+def test_jsonc_shapes_that_appear_in_real_tsconfigs(name: str, raw: str) -> None:
+    """A tsconfig is JSONC: comments and trailing commas are legal in it.
+
+    A line-level heuristic gets this wrong in both directions -- it strips a URL inside a
+    string, and it fails to strip a comment that follows a value on the same line. Either
+    way every path alias in the file is silently lost.
+    """
+    import json
+
+    from oxn.graph.resolve import _strip_jsonc
+
+    json.loads(_strip_jsonc(raw))  # must not raise
+
+
+def test_a_url_inside_a_string_is_not_treated_as_a_comment() -> None:
+    import json
+
+    from oxn.graph.resolve import _strip_jsonc
+
+    raw = '{"compilerOptions":{"paths":{"@x/*":["http://example.com/*"]}}}'
+    parsed = json.loads(_strip_jsonc(raw))
+    assert parsed["compilerOptions"]["paths"]["@x/*"] == ["http://example.com/*"]
+
+
+def test_tsconfig_aliases_survive_comments(tmp_path) -> None:
+    """End to end: a commented tsconfig must still yield working path aliases."""
+    from oxn.graph.resolve import ResolutionContext
+
+    (tmp_path / "tsconfig.json").write_text(
+        "{\n"
+        "  // paths for the monorepo\n"
+        '  "compilerOptions": {\n'
+        '    "baseUrl": ".", // repo root\n'
+        '    "paths": {"@core/*": ["packages/core/*"],}\n'
+        "  }\n"
+        "}\n"
+    )
+    context = ResolutionContext.build(tmp_path, {"packages/core/index.ts"})
+    assert context.ts_aliases == {"@core": ("packages/core",)}

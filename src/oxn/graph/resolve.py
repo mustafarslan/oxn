@@ -246,19 +246,60 @@ def _tsconfig_aliases(root: Path) -> dict[str, tuple[str, ...]]:
 
 
 def _strip_jsonc(text: str) -> str:
-    """Remove ``//`` comments and trailing commas -- both legal in a tsconfig."""
-    lines = []
-    for line in text.splitlines():
-        stripped = line.split("//")[0] if "//" in line and '"' not in line.split("//")[0] else line
-        lines.append(stripped)
-    joined = "\n".join(lines)
+    """Remove comments and trailing commas from JSON-with-comments.
+
+    A ``tsconfig.json`` is JSONC, not JSON: it legally contains ``//`` and ``/* */``
+    comments and trailing commas. Stripping those needs a real scan rather than a
+    line-level heuristic, because a comment marker can appear *inside a string*
+    (``"paths": {"@x/*": ["http://example.com/*"]}``) and a comment can follow a value on
+    the same line (``"baseUrl": "./src", // where sources live``). Getting either wrong
+    silently discards every path alias in the file.
+    """
     out: list[str] = []
-    for index, char in enumerate(joined):
-        if char == ",":
-            rest = joined[index + 1 :].lstrip()
-            if rest[:1] in {"}", "]"}:
+    index = 0
+    length = len(text)
+    in_string = False
+
+    while index < length:
+        char = text[index]
+
+        if in_string:
+            out.append(char)
+            if char == "\\" and index + 1 < length:
+                out.append(text[index + 1])  # an escape consumes the next character
+                index += 2
                 continue
+            if char == '"':
+                in_string = False
+            index += 1
+            continue
+
+        if char == '"':
+            in_string = True
+            out.append(char)
+            index += 1
+            continue
+
+        if text.startswith("//", index):
+            newline = text.find("\n", index)
+            index = length if newline == -1 else newline
+            continue
+
+        if text.startswith("/*", index):
+            close = text.find("*/", index + 2)
+            index = length if close == -1 else close + 2
+            continue
+
+        if char == ",":
+            # A trailing comma is legal in JSONC and fatal to `json.loads`.
+            rest = text[index + 1 :].lstrip()
+            if rest[:1] in {"}", "]"}:
+                index += 1
+                continue
+
         out.append(char)
+        index += 1
+
     return "".join(out)
 
 

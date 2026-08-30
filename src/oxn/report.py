@@ -302,11 +302,22 @@ def run_arch(
         parts = PurePosixPath(path).parts
         return parts[0] if parts else "<root>"
 
-    component_of = {
+    granularities = {
         "directory": directory_component,
         "file": lambda path: path,
         "top": top_component,
-    }.get(granularity, directory_component)
+    }
+    if granularity not in granularities:
+        # Silently falling back to the default would hide a typo behind plausible output.
+        failure = {
+            "status": "ERROR",
+            "errors": {
+                granularity: f"unknown granularity; choose one of {', '.join(granularities)}"
+            },
+        }
+        _emit(failure, json_output, console)
+        return failure
+    component_of = granularities[granularity]
 
     with Indexer() as indexer:
         indexer.index(targets)
