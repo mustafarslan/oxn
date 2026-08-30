@@ -1,0 +1,284 @@
+"""Tier-2 architecture metrics and conformance, against constructed fixtures.
+
+Arcan's published smell labels are for Java corpora, and no equivalent labelled corpus
+exists for Python or TypeScript. So correctness is established on graphs whose answers can
+be computed by hand, and behaviour on real code is *characterised* in docs/divergences.md
+rather than asserted against labels that do not exist.
+"""
+
+from __future__ import annotations
+
+import math
+
+import pytest
+
+from oxn.graph.architecture import LakosMetrics, analyse
+from oxn.graph.contracts import Contract, Layer, assign_layers, check_contracts
+
+# ---- Martin metrics ---------------------------------------------------------------------
+
+
+def test_instability_of_a_pure_consumer_is_one() -> None:
+    graph = {"consumer": {"library"}, "library": set()}
+    report = analyse(graph)
+    assert report.martin["consumer"].instability == 1.0
+    assert report.martin["library"].instability == 0.0
+
+
+def test_instability_is_efferent_over_total() -> None:
+    graph = {"a": {"b", "c"}, "b": {"c"}, "c": set(), "d": {"a"}}
+    report = analyse(graph)
+    a = report.martin["a"]
+    assert (a.afferent, a.efferent) == (1, 2)
+    assert a.instability == pytest.approx(2 / 3)
+
+
+def test_isolated_component_is_stable_by_convention() -> None:
+    assert analyse({"lonely": set()}).martin["lonely"].instability == 0.0
+
+
+def test_abstractness_is_none_without_types() -> None:
+    """Reporting 0.0 would place a type-free component at the concrete end of the main
+    sequence purely for having no classes, which is a false signal."""
+    report = analyse({"a": set()}, types={})
+    assert report.martin["a"].abstractness is None
+    assert report.martin["a"].distance is None
+
+
+def test_distance_from_the_main_sequence() -> None:
+    # Fully abstract and fully stable: A=1, I=0 -> D=0, right on the sequence.
+    report = analyse({"a": set()}, types={"a": (4, 4)})
+    assert report.martin["a"].abstractness == 1.0
+    assert report.martin["a"].distance == pytest.approx(0.0)
+
+    # Concrete and stable: A=0, I=0 -> D=1, the "zone of pain".
+    report = analyse({"a": set()}, types={"a": (0, 4)})
+    assert report.martin["a"].distance == pytest.approx(1.0)
+
+
+# ---- Lakos -------------------------------------------------------------------------------
+
+
+def test_ccd_of_a_chain_is_triangular() -> None:
+    """A three-link chain: each component depends on itself plus everything downstream."""
+    graph = {"a": {"b"}, "b": {"c"}, "c": set()}
+    report = analyse(graph)
+    assert report.lakos is not None
+    assert report.lakos.ccd == 3 + 2 + 1
+    assert report.lakos.acd == pytest.approx(2.0)
+
+
+def test_nccd_compares_against_a_balanced_binary_tree() -> None:
+    metrics = LakosMetrics(ccd=10, component_count=7)
+    expected = (7 + 1) * math.log2(8) - 7
+    assert metrics.ccd_balanced_binary_tree == pytest.approx(expected)
+    assert metrics.nccd == pytest.approx(10 / expected)
+
+
+def test_a_cycle_inflates_ccd() -> None:
+    """Everything in a cycle depends on everything else in it -- which is the point."""
+    acyclic = analyse({"a": {"b"}, "b": {"c"}, "c": set()})
+    cyclic = analyse({"a": {"b"}, "b": {"c"}, "c": {"a"}})
+    assert cyclic.lakos.ccd > acyclic.lakos.ccd
+    assert cyclic.lakos.ccd == 9  # every one of three reaches all three
+
+
+def test_levels_follow_the_dependency_depth() -> None:
+    report = analyse({"a": {"b"}, "b": {"c"}, "c": set()})
+    assert report.levels == {"a": 2, "b": 1, "c": 0}
+
+
+# ---- propagation cost --------------------------------------------------------------------
+
+
+def test_propagation_cost_of_independent_components_is_minimal() -> None:
+    """N isolated components: each reaches only itself, so the density is 1/N."""
+    report = analyse({name: set() for name in "abcd"})
+    assert report.propagation_cost == pytest.approx(4 / 16)
+
+
+def test_propagation_cost_of_a_fully_connected_graph_is_one() -> None:
+    names = list("abc")
+    graph = {name: {other for other in names if other != name} for name in names}
+    assert analyse(graph).propagation_cost == pytest.approx(1.0)
+
+
+# ---- smells ------------------------------------------------------------------------------
+
+
+def smells_of(report, kind: str):
+    return [smell for smell in report.smells if smell.kind == kind]
+
+
+def test_cyclic_dependency_is_detected() -> None:
+    report = analyse({"a": {"b"}, "b": {"c"}, "c": {"a"}, "d": set()})
+    found = smells_of(report, "cyclic_dependency")
+    assert len(found) == 1
+    assert set(found[0].members) == {"a", "b", "c"}
+
+
+def test_hub_like_dependency_needs_balance_not_just_popularity() -> None:
+    """A component everything imports is not a hub; a hub also imports everything."""
+    popular = {"hub": set()} | {f"c{i}": {"hub"} for i in range(8)}
+    assert smells_of(analyse(popular), "hub_like_dependency") == []
+
+    balanced = {"hub": {f"out{i}" for i in range(6)}}
+    balanced |= {f"in{i}": {"hub"} for i in range(6)}
+    balanced |= {f"out{i}": set() for i in range(6)}
+    found = smells_of(analyse(balanced), "hub_like_dependency")
+    assert [smell.component for smell in found] == ["hub"]
+
+
+def test_unstable_dependency_is_detected() -> None:
+    """A stable component depending on less stable ones violates Martin's SDP.
+
+    `core` is depended on by three components and depends on two, so its instability is
+    low; both of its dependencies depend on things while nothing depends on them, so theirs
+    is maximal. Depending *downhill* in stability is the smell.
+    """
+    graph = {
+        "core": {"volatile_a", "volatile_b"},
+        "volatile_a": {"leaf"},
+        "volatile_b": {"leaf"},
+        "leaf": set(),
+        "user_a": {"core"},
+        "user_b": {"core"},
+        "user_c": {"core"},
+    }
+    report = analyse(graph)
+    assert report.martin["core"].instability < report.martin["volatile_a"].instability
+    found = smells_of(report, "unstable_dependency")
+    assert "core" in {smell.component for smell in found}
+
+
+def test_god_component_uses_the_floor_when_there_are_too_few_components() -> None:
+    """A percentile over three points is not a percentile: the p90 *is* the maximum, so
+    nothing could ever exceed it. Small systems fall back to the published floor."""
+    sizes = {"huge": 20_000, "small": 100, "medium": 400}
+    graph = {name: set() for name in sizes}
+    found = smells_of(analyse(graph, sizes=sizes), "god_component")
+    assert [smell.component for smell in found] == ["huge"]
+
+
+def test_god_component_uses_the_percentile_when_there_are_enough_components() -> None:
+    sizes = {f"c{index}": 100 for index in range(12)} | {"huge": 90_000}
+    graph = {name: set() for name in sizes}
+    found = smells_of(analyse(graph, sizes=sizes), "god_component")
+    assert [smell.component for smell in found] == ["huge"]
+
+
+def test_no_smells_in_a_clean_layered_graph() -> None:
+    graph = {"web": {"service"}, "service": {"repo"}, "repo": set()}
+    assert analyse(graph, sizes={"web": 100, "service": 120, "repo": 90}).smells == []
+
+
+# ---- conformance --------------------------------------------------------------------------
+
+
+LAYERS = [
+    Layer("infrastructure", ("src/infra/*",)),
+    Layer("application", ("src/app/*",)),
+    Layer("domain", ("src/domain/*",)),
+]
+LAYERED = Contract(name="clean", kind="layered", order=("infrastructure", "application", "domain"))
+
+
+def test_layers_are_assigned_by_glob() -> None:
+    assignment = assign_layers(["src/app/a.py", "src/domain/b.py", "scripts/c.py"], LAYERS)
+    assert assignment == {
+        "src/app/a.py": "application",
+        "src/domain/b.py": "domain",
+        "scripts/c.py": None,
+    }
+
+
+def test_a_conforming_graph_passes() -> None:
+    graph = {
+        "src/infra/db.py": {"src/app/svc.py"},
+        "src/app/svc.py": {"src/domain/order.py"},
+        "src/domain/order.py": set(),
+    }
+    report = check_contracts(graph, LAYERS, [LAYERED])
+    assert report.passed
+    assert report.convergent == 2
+
+
+def test_an_inward_layer_reaching_outward_is_a_violation() -> None:
+    graph = {
+        "src/domain/order.py": {"src/infra/db.py"},
+        "src/infra/db.py": set(),
+    }
+    report = check_contracts(graph, LAYERS, [LAYERED])
+    assert not report.passed
+    assert report.divergent[0].source == "domain"
+    assert report.divergent[0].target == "infrastructure"
+
+
+def test_a_violation_carries_the_import_chain_that_proves_it() -> None:
+    """ "domain depends on infrastructure" is not actionable; the chain names the edge.
+
+    The chain starts at the file that actually crosses the boundary -- the one to change --
+    not at some earlier file that merely reaches it.
+    """
+    graph = {
+        "src/domain/order.py": {"src/domain/repo.py"},
+        "src/domain/repo.py": {"src/infra/db.py"},
+        "src/infra/db.py": set(),
+    }
+    report = check_contracts(graph, LAYERS, [LAYERED])
+    assert report.divergent[0].chain == ("src/domain/repo.py", "src/infra/db.py")
+
+
+def test_an_indirect_violation_reports_every_hop() -> None:
+    """When the boundary is crossed through an intermediary, the route shows the hops."""
+    graph = {
+        "src/domain/order.py": {"src/app/helper.py"},
+        "src/app/helper.py": {"src/infra/db.py"},
+        "src/infra/db.py": set(),
+    }
+    report = check_contracts(graph, LAYERS, [LAYERED])
+    chains = {violation.chain for violation in report.divergent}
+    assert ("src/domain/order.py", "src/app/helper.py") in chains
+
+
+def test_forbidden_contract() -> None:
+    graph = {"src/domain/a.py": {"src/infra/b.py"}, "src/infra/b.py": set()}
+    contract = Contract(
+        name="no-infra", kind="forbidden", source="domain", forbidden=("infrastructure",)
+    )
+    assert not check_contracts(graph, LAYERS, [contract]).passed
+
+
+def test_independence_contract_is_symmetric() -> None:
+    graph = {"src/app/a.py": {"src/domain/b.py"}, "src/domain/b.py": set()}
+    contract = Contract(name="split", kind="independence", modules=("application", "domain"))
+    assert not check_contracts(graph, LAYERS, [contract]).passed
+
+
+def test_deep_import_contract_allows_declared_entrypoints() -> None:
+    graph = {
+        "src/app/ok.py": {"src/domain/ports.py"},
+        "src/app/bad.py": {"src/domain/internal.py"},
+        "src/domain/ports.py": set(),
+        "src/domain/internal.py": set(),
+    }
+    contract = Contract(
+        name="ports-only",
+        kind="deep_import",
+        package="domain",
+        allowed_entrypoints=("src/domain/ports.py",),
+    )
+    report = check_contracts(graph, LAYERS, [contract])
+    assert [violation.target for violation in report.divergent] == ["src/domain/internal.py"]
+
+
+def test_absent_edges_surface_stale_rules() -> None:
+    """A declared dependency nothing exercises is usually a rule that stopped meaning something."""
+    graph = {"src/app/a.py": {"src/domain/b.py"}, "src/domain/b.py": set()}
+    report = check_contracts(graph, LAYERS, [LAYERED])
+    assert ("infrastructure", "application") in report.absent
+
+
+def test_files_outside_every_layer_are_reported() -> None:
+    graph = {"scripts/tool.py": set()}
+    assert check_contracts(graph, LAYERS, [LAYERED]).unassigned == ["scripts/tool.py"]

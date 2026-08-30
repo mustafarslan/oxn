@@ -122,6 +122,33 @@ def volume(
 
 
 @app.command()
+def arch(
+    paths: list[str] = typer.Argument(None, help="Files or directories to analyse."),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    granularity: str = typer.Option(
+        "directory", "--by", help="Component granularity: directory | file | top."
+    ),
+    show_unresolved: bool = typer.Option(
+        False, "--unresolved", help="List imports that could not be resolved."
+    ),
+) -> None:
+    """Report the dependency graph: cycles, Martin metrics, Lakos levels, smells.
+
+    Report-path only. Building the graph compares every file against every other, so it
+    never runs on the hook's per-edit budget.
+    """
+    from oxn.report import run_arch
+
+    run_arch(
+        paths or ["."],
+        granularity=granularity,
+        show_unresolved=show_unresolved,
+        json_output=json_output,
+        console=None if json_output else _console(),
+    )
+
+
+@app.command()
 def doctor() -> None:
     """Report the environment OXN found: grammars, toolchains, and indexers."""
     from oxn.doctor import run_doctor

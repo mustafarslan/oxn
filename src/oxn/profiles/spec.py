@@ -142,6 +142,40 @@ class HalsteadSpec:
 
 
 @dataclass(frozen=True)
+class ImportSpec:
+    """How one language spells an import.
+
+    Two *styles* cover the launch set, because import syntax clusters into families rather
+    than varying per language: ``python`` (dotted module paths, relative levels expressed as
+    leading dots, names imported *from* a module) and ``ecmascript`` (a quoted specifier
+    that is a path or a package). Adding Go, Rust or Java means picking a style or, where
+    the shape genuinely differs, adding one -- not editing the extractor.
+    """
+
+    style: str = "python"
+    #: Statement kinds that introduce a dependency.
+    statement_kinds: frozenset[str] = frozenset()
+    #: Field holding the module or specifier.
+    module_field: str = "module_name"
+    #: Field holding imported names (python style).
+    name_field: str = "name"
+    #: Node kind for a relative module reference (``from ..pkg import x``).
+    relative_kinds: frozenset[str] = frozenset()
+    #: Node kind marking ``from x import *``.
+    wildcard_kinds: frozenset[str] = frozenset()
+    #: Node kind for ``x as y``.
+    alias_kinds: frozenset[str] = frozenset()
+    #: Kinds whose text is a quoted specifier needing the quotes stripped.
+    string_kinds: frozenset[str] = frozenset()
+    #: Token that marks a type-only import, which creates no runtime coupling.
+    type_only_token: str | None = None
+    #: Callee names that import dynamically, e.g. ``importlib.import_module``, ``require``.
+    dynamic_callees: frozenset[str] = frozenset()
+    #: Call node kinds to inspect for dynamic imports.
+    call_kinds: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True)
 class MetricSpec:
     """All metric tables for one language."""
 
@@ -149,3 +183,4 @@ class MetricSpec:
     cognitive: CognitiveSpec = field(default_factory=CognitiveSpec)
     size: SizeSpec = field(default_factory=SizeSpec)
     halstead: HalsteadSpec = field(default_factory=HalsteadSpec)
+    imports: ImportSpec = field(default_factory=ImportSpec)

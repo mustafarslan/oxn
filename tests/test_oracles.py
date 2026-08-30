@@ -468,3 +468,63 @@ def test_duplication_agrees_with_pmd_on_which_files_are_affected() -> None:
     ours = {path for path, _ in _oxn_clone_lines(directory, 50)}
     jaccard = len(ours & theirs) / len(ours | theirs)
     assert jaccard >= 0.60, f"file-level Jaccard {jaccard:.2f}: {sorted(theirs ^ ours)}"
+
+
+# ---- import graph: grimp -----------------------------------------------------------------
+
+
+def _to_module(path: str) -> str:
+    """Repo-relative path -> dotted module name, the way grimp names things."""
+    trimmed = path[len("src/") :] if path.startswith("src/") else path
+    trimmed = trimmed[:-3] if trimmed.endswith(".py") else trimmed
+    if trimmed.endswith("/__init__"):
+        trimmed = trimmed[: -len("/__init__")]
+    return trimmed.replace("/", ".")
+
+
+def _oxn_module_edges(root: Path, sources: Path, package: str) -> set[tuple[str, str]]:
+    from oxn.graph.depgraph import build_dependency_graph
+    from oxn.graph.indexer import iter_source_files
+
+    files = [
+        path
+        for path in iter_source_files([sources])
+        if "/tests/" not in str(path) and path.name != "setup.py"
+    ]
+    graph = build_dependency_graph(root, files)
+    edges = {
+        (_to_module(source), _to_module(target))
+        for source, targets in graph.files.items()
+        for target in targets
+    }
+    return {
+        (source, target)
+        for source, target in edges
+        if source.startswith(package) and target.startswith(package)
+    }
+
+
+@pytest.mark.oracle
+def test_import_graph_matches_grimp_on_oxn_itself() -> None:
+    """Edge-set equality with grimp, which builds its graph by *importing* the package.
+
+    Two entirely different mechanisms -- ours reads syntax, grimp executes imports -- so
+    agreement here is strong evidence. Measured: 100%, no divergences.
+
+    This comparison found a real modelling bug: ``from pkg import core`` reaches the package
+    *and* the submodule, and treating it as a single target silently lost edges wherever the
+    package was not imported elsewhere.
+    """
+    grimp = pytest.importorskip("grimp")
+    graph = grimp.build_graph("oxn", include_external_packages=False)
+    theirs = {
+        (module, imported)
+        for module in graph.modules
+        for imported in graph.find_modules_directly_imported_by(module)
+    }
+    ours = _oxn_module_edges(Path.cwd(), Path("src"), "oxn")
+
+    assert theirs, "grimp found no modules; oxn is not importable in this environment"
+    assert ours == theirs, (
+        f"grimp only: {sorted(theirs - ours)[:5]}; oxn only: {sorted(ours - theirs)[:5]}"
+    )

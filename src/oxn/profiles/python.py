@@ -11,6 +11,7 @@ from oxn.profiles.spec import (
     CognitiveSpec,
     CyclomaticSpec,
     HalsteadSpec,
+    ImportSpec,
     MetricSpec,
     SizeSpec,
 )
@@ -138,6 +139,19 @@ PYTHON_METRICS = MetricSpec(
         ),
         excluded_tokens=frozenset({"\n", "", ":"}),
         excluded_kinds=frozenset({"comment"}),
+    ),
+    imports=ImportSpec(
+        style="python",
+        statement_kinds=frozenset({"import_statement", "import_from_statement"}),
+        module_field="module_name",
+        name_field="name",
+        relative_kinds=frozenset({"relative_import"}),
+        wildcard_kinds=frozenset({"wildcard_import"}),
+        alias_kinds=frozenset({"aliased_import"}),
+        string_kinds=frozenset({"string"}),
+        type_only_token=None,
+        dynamic_callees=frozenset({"importlib.import_module", "__import__"}),
+        call_kinds=frozenset({"call"}),
     ),
 )
 

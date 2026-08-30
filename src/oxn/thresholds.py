@@ -75,3 +75,24 @@ CHANGE_COUPLING_MIN_CONFIDENCE: Final[float] = 0.3
 #: Bird et al. (FSE 2011) found the count of minor contributors the strongest defect
 #: correlate they measured.
 MINOR_CONTRIBUTOR_SHARE: Final[float] = 0.05
+
+# ---- Tier 2: architecture ---------------------------------------------------------------
+
+#: Fan-in plus fan-out percentile above which a component is hub-shaped. Arcan derives its
+#: threshold adaptively from the system plus a benchmark corpus; OXN uses the project's own
+#: p90 and says so, since no public percentile table exists for Python or TypeScript.
+HUB_PERCENTILE: Final[float] = 0.90
+
+#: A hub must also be *balanced* -- genuinely central rather than merely popular -- so both
+#: directions need at least this degree, and the smaller must be at least half the larger.
+HUB_MIN_DEGREE: Final[int] = 5
+
+#: Degree of Unstable Dependency: the share of a component's dependencies that are less
+#: stable than it is. 30% comes from Fontana et al., *ICSME 2016*, chosen by manual
+#: validation across projects.
+UNSTABLE_DEPENDENCY_RATIO: Final[float] = 0.30
+
+#: Floor for the God Component threshold, below which "large" is not meaningful. Lippert &
+#: Rook (*Refactoring in Large Software Projects*, 2006) use a fixed 27,000 lines; Arcan
+#: prefers an adaptive value. OXN takes the project's p90 but never less than this.
+GOD_COMPONENT_MIN_LOC: Final[int] = 5000

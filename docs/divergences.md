@@ -168,3 +168,66 @@ Jaccard ≥ 0.60.
 **Not detected:** Type-3 (gapped) clones, where an inserted or deleted statement breaks the
 run. Stated rather than hidden — a clone report that silently omits a category is worse than
 one that says what it covers.
+
+
+---
+
+## Import graph — Python (oracle: grimp 3.16)
+
+**100% edge-set agreement, no divergences**, on two independent packages:
+
+| package | grimp edges | OXN edges | agreement |
+|---|---|---|---|
+| `oxn` | 76 | 76 | **100%** |
+| `httpx` | 87 | 87 | **100%** |
+
+This is stronger evidence than the number suggests, because the two tools work by entirely
+different mechanisms: grimp *imports* the package and observes what Python loads; OXN reads
+syntax and resolves specifiers against the file tree. Agreeing exactly, twice, means the
+resolution rules are right rather than merely self-consistent.
+
+**The comparison found a real modelling bug.** `from pkg import core` reaches the package
+*and* the submodule — grimp reports edges to both `pkg` and `pkg.core`, because Python
+executes both. OXN modelled one target per import, which silently lost an edge wherever the
+package was not imported anywhere else. It matched by luck on the first corpus. Imports now
+resolve to a *set* of targets.
+
+### TypeScript resolution
+
+Not oracle-compared yet (dependency-cruiser wiring is deferred), but characterised on nest:
+**99.9% of relative imports resolve** (3,600 of 3,603), 83.7% of all imports including
+external packages. The three failures are generated files absent from the tree.
+
+One rule matters more than all the others: **TypeScript source imports the *emitted* name**,
+so `./x.js` refers to `./x.ts`. Missing it loses essentially every relative import in a
+modern TS codebase — 402 of nest's 410, measured before the fix.
+
+Deliberately **not** resolved, and reported as external rather than guessed at:
+`package.json` `exports` maps, workspace globs, and symlinked monorepo packages. A wrong
+edge is worse than one that says it is missing — the first corrupts every downstream metric
+silently, the second appears in `unresolved_imports`.
+
+---
+
+## Architectural smells — no labelled corpus exists
+
+Arcan's published smell labels are for **Java** corpora. There is no equivalent labelled
+corpus for Python or TypeScript, so "reproduce published detections on a labelled corpus"
+cannot be satisfied as written, and pretending otherwise would be theatre.
+
+What OXN does instead:
+
+* **exact assertions on constructed graphs** whose answers are computable by hand — a
+  three-component cycle, a hub with balanced fan-in and fan-out of 6, an unstable dependency
+  with hand-computed instabilities, a God Component against a known floor;
+* **characterisation** on real code, reported rather than asserted.
+
+Thresholds follow the literature where it states one (Degree of Unstable Dependency ≥ 30%,
+Fontana et al. *ICSME 2016*; the 27,000-line God Component of Lippert & Rook) and are
+otherwise OXN's own, marked as such in `src/oxn/thresholds.py`. Arcan's own defaults are
+system-adaptive, derived from percentile analysis over the system plus a benchmark corpus.
+
+**One threshold bug came out of testing this**: with fewer than ten components the p90 *is*
+the maximum, so `size > p90` could never fire and God Components were undetectable in small
+systems. Below ten components OXN now uses the fixed floor, because a percentile over three
+points is not a percentile.

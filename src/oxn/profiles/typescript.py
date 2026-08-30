@@ -18,6 +18,7 @@ from oxn.profiles.spec import (
     CognitiveSpec,
     CyclomaticSpec,
     HalsteadSpec,
+    ImportSpec,
     MetricSpec,
     SizeSpec,
 )
@@ -139,6 +140,17 @@ _TS_METRICS = MetricSpec(
         ),
         excluded_tokens=frozenset({"\n", "", ":"}),
         excluded_kinds=frozenset({"comment"}),
+    ),
+    imports=ImportSpec(
+        style="ecmascript",
+        statement_kinds=frozenset({"import_statement", "export_statement"}),
+        module_field="source",
+        string_kinds=frozenset({"string"}),
+        # `import type { T } from "x"` creates no runtime coupling, so it is excluded from
+        # DEPENDS_ON by default -- which is what Martin's metrics are about.
+        type_only_token="type",
+        dynamic_callees=frozenset({"require", "import"}),
+        call_kinds=frozenset({"call_expression"}),
     ),
 )
 
