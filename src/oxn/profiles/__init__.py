@@ -8,12 +8,16 @@ tell the graph builder what a function is.
 from __future__ import annotations
 
 from oxn.profiles.base import LanguageProfile, Wrapper
+from oxn.profiles.go import GO
+from oxn.profiles.java import JAVA
 from oxn.profiles.python import PYTHON
+from oxn.profiles.rust import RUST
 from oxn.profiles.typescript import JAVASCRIPT, TYPESCRIPT
 
-#: Profiles shipped today. P6 adds Go, Rust and Java.
+#: Every language OXN can analyse. A profile, not a grammar, is what makes a language
+#: supported: the grammar alone cannot tell the graph builder what a function is.
 PROFILES: dict[str, LanguageProfile] = {
-    profile.name: profile for profile in (PYTHON, TYPESCRIPT, JAVASCRIPT)
+    profile.name: profile for profile in (PYTHON, TYPESCRIPT, JAVASCRIPT, GO, RUST, JAVA)
 }
 
 _BY_EXTENSION: dict[str, LanguageProfile] = {

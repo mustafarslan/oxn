@@ -8,6 +8,7 @@ script is where correctness is actually established. It runs the same lanes:
     python scripts/check.py --matrix      # the fast lane on every supported Python
     python scripts/check.py --oracle      # differential tests vs third-party tools
     python scripts/check.py --corpus      # phase exit criteria on real repositories
+    python scripts/check.py --llm         # tests that call a model through Ollama
     python scripts/check.py --all         # everything
 
 Standard library only, and it never installs anything without saying so first.
@@ -159,6 +160,22 @@ def _install_pmd(lane: Lane, target: Path, version: str = "7.7.0") -> None:
         archive.unlink(missing_ok=True)
 
 
+def llm_lane() -> bool:
+    """Tests that need a language model.
+
+    OXN's metrics are deterministic on purpose, so almost nothing here needs inference --
+    these check the claims that are genuinely about a model's behaviour, chiefly that the
+    explanation trail is specific enough for an agent to act on. Skips when Ollama is down
+    rather than failing, so it never blocks the other lanes.
+    """
+    lane = Lane("llm (via Ollama)")
+    host = os.environ.get("OXN_OLLAMA_HOST", "http://localhost:11434")
+    model = os.environ.get("OXN_OLLAMA_MODEL", "glm-5.3:cloud")
+    print(f"{DIM}  model {model} at {host}{RESET}")
+    lane.run(PYTHON, "-m", "pytest", "-m", "llm", "-q", env={"OXN_OLLAMA_MODEL": model})
+    return lane.finish()
+
+
 def corpus_lane(*, fetch: bool) -> bool:
     """Phase exit criteria, measured on real repositories."""
     lane = Lane("corpus (phase exit criteria)")
@@ -184,6 +201,7 @@ def main(argv: list[str] | None = None) -> int:
         "--oracle", action="store_true", help="differential tests vs third-party tools"
     )
     parser.add_argument("--corpus", action="store_true", help="exit criteria on real repositories")
+    parser.add_argument("--llm", action="store_true", help="tests that call a model via Ollama")
     parser.add_argument("--all", action="store_true", help="every lane")
     parser.add_argument(
         "--install", action="store_true", help="fetch oracle tools and corpora as needed"
@@ -200,6 +218,8 @@ def main(argv: list[str] | None = None) -> int:
         lanes.append(oracle_lane(install=args.install or args.all))
     if args.corpus or args.all:
         lanes.append(corpus_lane(fetch=args.install))
+    if args.llm or args.all:
+        lanes.append(llm_lane())
 
     print()
     if all(lanes):

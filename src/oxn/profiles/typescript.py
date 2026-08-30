@@ -77,6 +77,7 @@ _TS_METRICS = MetricSpec(
         boolean_operators=_BOOLEAN_OPS,
         hybrid_parents=frozenset({"if_statement"}),
         # `else if` is an else_clause wrapping an if_statement, verified against the grammar.
+        alternative_style="wrapped",
         else_if_via_else_clause=True,
         else_clause_kind="else_clause",
         if_kind="if_statement",

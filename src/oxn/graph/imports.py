@@ -71,9 +71,122 @@ def extract_imports(root: Node, profile: LanguageProfile) -> list[RawImport]:
 
 
 def _from_statement(node: Node, spec: ImportSpec) -> list[RawImport]:
-    if spec.style == "python":
-        return _python_statement(node, spec)
-    return _ecmascript_statement(node, spec)
+    handler = {
+        "python": _python_statement,
+        "ecmascript": _ecmascript_statement,
+        "go": _go_statement,
+        "rust": _rust_statement,
+        "java": _java_statement,
+    }.get(spec.style)
+    return handler(node, spec) if handler else []
+
+
+def _go_statement(node: Node, spec: ImportSpec) -> list[RawImport]:
+    """``import ("fmt"; alias "os")`` -- one declaration, any number of specs.
+
+    A ``_`` alias imports purely for side effects and a ``.`` alias dot-imports; both are
+    real coupling and are recorded with the kind that says which.
+    """
+    line = node.start_point[0] + 1
+    found: list[RawImport] = []
+    for spec_node in _descend(node, "import_spec"):
+        path = spec_node.child_by_field_name("path")
+        if path is None:
+            continue
+        specifier = _strip_quotes(_text(path))
+        if not specifier:
+            continue
+        alias = spec_node.child_by_field_name("name")
+        alias_text = _text(alias) if alias is not None else ""
+        kind = "side_effect" if alias_text == "_" else "value"
+        found.append(RawImport(specifier, kind, spec_node.start_point[0] + 1 or line))
+    return found
+
+
+def _rust_statement(node: Node, spec: ImportSpec) -> list[RawImport]:
+    """``use a::b::{c, d as e};`` -- one declaration reaching several paths.
+
+    Rust paths are ``::``-separated, and are normalised to dots so every language's
+    specifiers read the same way downstream.
+    """
+    line = node.start_point[0] + 1
+    if node.type == "extern_crate_declaration":
+        name = node.child_by_field_name("name")
+        return [RawImport(_text(name), "value", line)] if name is not None else []
+
+    argument = node.child_by_field_name("argument")
+    if argument is None:
+        return []
+    return [
+        RawImport(path.replace("::", "."), kind, line)
+        for path, kind in _rust_paths(argument, prefix="")
+    ]
+
+
+def _rust_paths(node: Node, prefix: str) -> list[tuple[str, str]]:
+    """Flatten a ``use`` tree into ``(path, kind)`` pairs."""
+    if node.type == "scoped_use_list":
+        base = node.child_by_field_name("path")
+        head = f"{prefix}::{_text(base)}" if prefix and base is not None else _text(base or node)
+        body = node.child_by_field_name("list")
+        if body is None:
+            return [(head, "value")]
+        out: list[tuple[str, str]] = []
+        for child in body.named_children:
+            out.extend(_rust_paths(child, head))
+        return out
+    if node.type == "use_list":
+        out = []
+        for child in node.named_children:
+            out.extend(_rust_paths(child, prefix))
+        return out
+    if node.type == "use_as_clause":
+        path = node.child_by_field_name("path")
+        return _rust_paths(path, prefix) if path is not None else []
+    if node.type == "use_wildcard":
+        return [(prefix or _text(node), "wildcard")]
+
+    text = _text(node)
+    if not text:
+        return []
+    return [(f"{prefix}::{text}" if prefix else text, "value")]
+
+
+def _java_statement(node: Node, spec: ImportSpec) -> list[RawImport]:
+    """``import java.util.List;`` and ``import static java.lang.Math.max;``.
+
+    A wildcard import ends in ``.*``; a static import names a member rather than a type, and
+    both couple to the same package either way.
+    """
+    line = node.start_point[0] + 1
+    wildcard = any(not child.is_named and _text(child) == "*" for child in node.children)
+    static = any(not child.is_named and _text(child) == "static" for child in node.children)
+
+    for child in node.named_children:
+        if child.type in {"scoped_identifier", "identifier"}:
+            specifier = _text(child)
+            if not specifier:
+                continue
+            kind = "wildcard" if wildcard else "value"
+            names: tuple[str, ...] = ()
+            if static:
+                # `import static a.b.C.member` -- the type is the specifier's parent.
+                specifier, _, member = specifier.rpartition(".")
+                names = (member,)
+            return [RawImport(specifier, kind, line, names=names)]
+    return []
+
+
+def _descend(node: Node, kind: str) -> list[Node]:
+    """Every descendant of a given kind, including the node itself."""
+    found: list[Node] = []
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        if current.type == kind:
+            found.append(current)
+        stack.extend(current.named_children)
+    return found
 
 
 def _python_statement(node: Node, spec: ImportSpec) -> list[RawImport]:

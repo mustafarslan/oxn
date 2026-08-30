@@ -42,6 +42,8 @@ PYTHON_METRICS = MetricSpec(
                 "if_clause",
             }
         ),
+        catch_all_kinds=frozenset({"case_clause"}),
+        catch_all_pattern_kinds=frozenset({"case_pattern"}),
         boolean_node="boolean_operator",
         boolean_operators=_BOOLEAN_OPS,
     ),

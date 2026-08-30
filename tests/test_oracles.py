@@ -43,7 +43,9 @@ DOCUMENTED_CYCLOMATIC_DIVERGENCES = [
     ("def f(a):\n    assert a\n", 2, 1, 2),
     ("def f():\n    try: pass\n    finally: pass\n", 1, 2, 1),
     ("def f(a):\n    for i in a: pass\n    else: pass\n", 3, 2, 2),
-    ("def f(a):\n    match a:\n        case 1: pass\n        case _: pass\n", 2, 3, 3),
+    # `case _` is the fall-through, not a branch: OXN scores this the same as the
+    # `if`/`else` it is equivalent to, agreeing with radon against lizard.
+    ("def f(a):\n    match a:\n        case 1: pass\n        case _: pass\n", 2, 3, 2),
 ]
 
 

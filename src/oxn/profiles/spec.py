@@ -39,6 +39,24 @@ class CyclomaticSpec:
 
     #: Node kinds that add one decision point each.
     decision_points: frozenset[str] = frozenset()
+    #: Multiway constructs the language makes **exhaustive**, so there is no implicit
+    #: "nothing matched" path. Such a construct with ``n`` branches has ``n`` paths and
+    #: therefore ``n - 1`` decision points -- a two-arm Rust ``match`` is exactly an
+    #: ``if``/``else`` and must score the same. A C-style ``switch`` is *not* exhaustive:
+    #: its cases plus the implicit fall-through give ``n`` paths for ``n`` cases, which is
+    #: why ``default`` is excluded there instead.
+    exhaustive_multiway_kinds: frozenset[str] = frozenset()
+    #: Branch kinds counted inside an exhaustive multiway construct.
+    multiway_branch_kinds: frozenset[str] = frozenset()
+
+    #: Decision kinds that must be skipped when they are a catch-all: a ``match`` arm of
+    #: ``_``, a ``case _``. A default branch is the fall-through, not a branch of its own --
+    #: the same rule that already excludes ``default`` from a ``switch``. Counting it makes
+    #: a two-arm ``match`` score higher than the ``if``/``else`` it is equivalent to.
+    catch_all_kinds: frozenset[str] = frozenset()
+    #: Pattern kinds that make a branch a catch-all.
+    catch_all_pattern_kinds: frozenset[str] = frozenset()
+
     #: Binary-operator node kind whose operator field is inspected (``&&``, ``and``, ...).
     boolean_node: str | None = None
     #: Operators inside :attr:`boolean_node` that count. Each occurrence adds one.
@@ -87,9 +105,20 @@ class CognitiveSpec:
     #: ``alternative`` holds ``elif``/``else``, which must not be nested under their ``if``.
     same_nesting_fields: frozenset[str] = frozenset({"alternative"})
 
-    #: True when the grammar expresses ``else if`` as an ``else_clause`` wrapping an
-    #: ``if_statement`` (TypeScript, JavaScript) rather than a dedicated node (Python's
-    #: ``elif_clause``). The pair then counts as *one* hybrid increment, not two.
+    #: How the grammar spells ``else`` and ``else if``. Three shapes exist among the launch
+    #: languages, verified against each grammar rather than assumed:
+    #:
+    #: * ``"clause"`` -- Python: dedicated ``elif_clause`` and ``else_clause`` nodes sit in
+    #:   the ``alternative`` field, and there may be several of them.
+    #: * ``"wrapped"`` -- TypeScript, JavaScript, Rust: ``alternative`` holds an
+    #:   ``else_clause`` which *contains* the next ``if``. The pair is one hybrid increment.
+    #: * ``"direct"`` -- Go, Java: ``alternative`` holds the next ``if`` node itself, or a
+    #:   bare block for a plain ``else``. There is no ``else`` node to match on at all.
+    alternative_style: str = "clause"
+    #: Kinds appearing in ``alternative`` that mean a plain ``else`` under ``"direct"``.
+    plain_else_kinds: frozenset[str] = frozenset({"block", "statement_block"})
+
+    #: Legacy alias for ``alternative_style == "wrapped"``.
     else_if_via_else_clause: bool = False
     #: The wrapper kind for the rule above.
     else_clause_kind: str = "else_clause"

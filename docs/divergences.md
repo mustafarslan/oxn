@@ -24,7 +24,7 @@ graph.* Measured on identical snippets:
 | `assert x` | 2 | 1 | **2** | `assert` raises or continues — a genuine branch. Agrees with radon. |
 | `try/finally` | 1 | 2 | **1** | `finally` runs unconditionally; it branches nothing. Agrees with radon. |
 | `for/else` | 3 | 2 | **2** | OXN counts no `else` of any kind, by rule. Agrees with lizard. |
-| `match/case` | 2 | 3 | **3** | Each `case` is a branch. Agrees with lizard. |
+| `match/case` | 2 | 3 | **2** | Each `case` is a branch **except the catch-all**: `case _` is the fall-through, exactly like `default` in a switch. A `match` with one case and a wildcard therefore scores the same as the `if`/`else` it is equivalent to. Agrees with radon. |
 | nested functions | parent 2 + closure 2, reported separately | flat, 4 total | **separate entities** | A nested function is its own entity in the code graph with its own score; a parent's number stays about the parent. |
 
 Comprehension clauses (`for_in_clause`, `if_clause`) each add one decision point. radon and lizard
@@ -375,3 +375,73 @@ unreached functions are comparable. OXN treats tests, `main`, and public module-
 as roots — without that, a dead-code report on any real project is almost entirely noise.
 Findings are **candidates** and never block: reflection, dependency injection and framework
 entry points make false positives unavoidable.
+
+
+---
+
+## Six languages, one engine
+
+The acceptance gate for a language profile is **agreement**, not parsing. Identical logic
+transliterated into all six launch languages must score identically, and that test found
+three bugs here that no single-language test could.
+
+### Three grammars spell `else if` three different ways
+
+| language | shape |
+|---|---|
+| Python | a dedicated `elif_clause` in the `alternative` field, alongside `else_clause` |
+| TypeScript, JavaScript, Rust | `alternative` holds an `else_clause` that *contains* the next `if` |
+| Go, Java | `alternative` holds the next `if` **directly** — there is no `else` node at all |
+
+All three now route through one `alternative_style` setting, and the matrix asserts they
+agree on five constructs including the three-level nest, the `else if` chain, and an
+`else if` containing an `if`.
+
+### Cyclomatic complexity vs lizard, per language
+
+| language | compared | raw agreement | dominant divergence |
+|---|---|---|---|
+| Go | 1,877 | **100%** | — |
+| Java | 29 | **100%** | — |
+| TypeScript | 3,538 | 97.1% | closure attribution |
+| Rust | 2,286 | 89.9% | the `?` operator, counted deliberately |
+| Python | 1,134 | 56.2% | `assert`, 100% explained (see above) |
+
+### Three bugs found by cross-language comparison
+
+1. **Rust `if let` was counted twice** — once for the `if_expression` and once for the
+   `let_condition`, doubling every `if let` in a Rust codebase.
+2. **A catch-all branch was counted as a decision.** `case _`, `_ =>` and `default:` are the
+   fall-through, not a branch. Counting them made a two-arm `match` score *higher* than the
+   `if`/`else` it is exactly equivalent to. Fixed uniformly in Python, Rust and Java; the
+   rule is now "a default is never a decision" in every language.
+3. **Rust's `match` is exhaustive, and a `switch` is not.** The compiler guarantees a Rust
+   `match` covers every case, so `n` arms give `n` paths and `n-1` decisions. A C-style
+   `switch` has an implicit "nothing matched" path, so `n` cases give `n+1` paths and `n`
+   decisions. Treating them alike overcounted every `match`. Fixing it took Rust from 80.7%
+   to 89.9% agreement.
+
+A fourth was found and *not* changed: OXN scores an `if` inside an `else` block as nested,
+where gocognit collapses it into an `else if`. The white paper makes that collapse a
+**COBOL-specific** exception, granted because COBOL has no `else if`. Go has one, so the
+exception does not apply. Agreement with gocognit is 99.2% on 598 real Go functions, and
+this is the only divergence class.
+
+---
+
+## Tests that call a language model
+
+Almost none. `idea.md` §1.1 is the project's founding argument: computing a metric with a
+model gets you an approximation of something a parser knows exactly. So a model is never
+used to *check* a metric — it is used to check the claims that are genuinely about a model's
+behaviour.
+
+The claim under test is the product's central one: that the explanation trail makes a
+violation actionable where a bare score does not. Given the trail, the model names a line
+the trail lists; given only the number, it correctly answers `UNKNOWN`. Run via Ollama
+(`glm-5.3:cloud` by default, `OXN_OLLAMA_MODEL` to override), marked `llm`, and skipped when
+the host is unreachable so the default lane never depends on a model being up.
+
+One lesson from writing them: an *opinion* question ("is this actionable? YES/NO") produces
+an opinion answer and a brittle test. Asserting **capability** — can the model name a line
+it was given, and does it decline when it was not — is stable.

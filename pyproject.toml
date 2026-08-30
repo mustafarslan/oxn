@@ -69,6 +69,7 @@ addopts = "-q --strict-markers"
 markers = [
     "oracle: differential tests against third-party tools (radon, lizard, ...). CI-only lane; these tools are never runtime dependencies.",
     "slow: tests that clone or scan large corpora.",
+    "llm: tests that call a language model through Ollama. Opt-in; skipped when the host is unreachable.",
 ]
 
 [tool.ruff]

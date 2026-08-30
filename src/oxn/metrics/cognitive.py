@@ -123,7 +123,9 @@ def _walk(
             continue
 
         # `else if` where the grammar spells it as an else_clause wrapping an if_statement.
-        if spec.else_if_via_else_clause and kind == spec.else_clause_kind:
+        if (
+            spec.else_if_via_else_clause or spec.alternative_style == "wrapped"
+        ) and kind == spec.else_clause_kind:
             inner = _sole_if(target, spec)
             if inner is not None:
                 result.add(target, 1, "hybrid", "`else if` (hybrid: no nesting increment)")
@@ -342,25 +344,100 @@ def _descend_conditional(
     Fields named in ``same_nesting_fields`` hold the alternative branches. Nesting them
     under their own ``if`` would double-count every ``else if`` chain in a codebase.
     """
-    alternatives = {
-        child.id
+    alternatives = [
+        child
         for field_name in spec.same_nesting_fields
         for child in node.children_by_field_name(field_name)
-    }
+    ]
+    alternative_ids = {child.id for child in alternatives}
 
     for child in node.named_children:
-        at_parent_level = child.id in alternatives
+        if child.id in alternative_ids:
+            continue
         _walk(
             _Wrapper(child),  # type: ignore[arg-type]
             profile,
             spec,
             result,
-            nesting=nesting - 1 if at_parent_level else nesting,
+            nesting=nesting,
             counted_bools=counted_bools,
             function_name=function_name,
             suppress_nesting=suppress_nesting,
             is_root=False,
         )
+
+    for child in alternatives:
+        _visit_alternative(
+            child,
+            profile,
+            spec,
+            result,
+            nesting=nesting - 1,
+            counted_bools=counted_bools,
+            function_name=function_name,
+            suppress_nesting=suppress_nesting,
+        )
+
+
+def _visit_alternative(
+    node: Node,
+    profile: LanguageProfile,
+    spec: CognitiveSpec,
+    result: CognitiveResult,
+    *,
+    nesting: int,
+    counted_bools: set[int],
+    function_name: str | None,
+    suppress_nesting: bool,
+) -> None:
+    """Score whatever sits in an ``if``'s ``alternative`` slot.
+
+    Three grammar shapes reach here (see :attr:`CognitiveSpec.alternative_style`), and all
+    three must produce the same score for the same logic -- which the cross-language
+    transliteration tests enforce.
+    """
+    if spec.alternative_style == "direct":
+        if node.type == spec.if_kind:
+            # Go and Java: `else if` is the next `if` sitting directly in the slot.
+            result.add(node, 1, "hybrid", "`else if` (hybrid: no nesting increment)")
+            _descend_conditional(
+                node,
+                profile,
+                spec,
+                result,
+                nesting=nesting + 1,
+                counted_bools=counted_bools,
+                function_name=function_name,
+                suppress_nesting=suppress_nesting,
+            )
+            return
+        if node.type in spec.plain_else_kinds:
+            # A bare block in the slot is a plain `else`, which has no node of its own.
+            result.add(node, 1, "hybrid", "`else` (hybrid: no nesting increment)")
+            _walk(
+                node,
+                profile,
+                spec,
+                result,
+                nesting=nesting + 1,
+                counted_bools=counted_bools,
+                function_name=function_name,
+                suppress_nesting=suppress_nesting,
+                is_root=False,
+            )
+            return
+
+    _walk(
+        _Wrapper(node),  # type: ignore[arg-type]
+        profile,
+        spec,
+        result,
+        nesting=nesting,
+        counted_bools=counted_bools,
+        function_name=function_name,
+        suppress_nesting=suppress_nesting,
+        is_root=False,
+    )
 
 
 class _Wrapper:
