@@ -175,6 +175,31 @@ def index(
 
 
 @app.command()
+def classes(
+    paths: list[str] = typer.Argument(None, help="Files or directories to analyse."),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    sort_by: str = typer.Option(
+        "lcom_star", "--sort-by", help="lcom_star | lcom4 | wmc | cbo | rfc"
+    ),
+    limit: int = typer.Option(20, "--limit", help="How many classes to show."),
+) -> None:
+    """Report class cohesion (LCOM) and coupling (the CK suite).
+
+    These are the metrics that detect the "Modular Mirage" -- file-level modularity with no
+    semantic cohesion -- which is the documented signature of agent-written code.
+    """
+    from oxn.report import run_classes
+
+    run_classes(
+        paths or ["."],
+        sort_by=sort_by,
+        limit=limit,
+        json_output=json_output,
+        console=None if json_output else _console(),
+    )
+
+
+@app.command()
 def doctor() -> None:
     """Report the environment OXN found: grammars, toolchains, and indexers."""
     from oxn.doctor import run_doctor

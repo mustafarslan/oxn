@@ -330,3 +330,48 @@ measures the oracle's defects rather than ours. Before that filter the same run 
 
 The exclusion rate is itself asserted in CI: if it moves sharply, `scip-python` has changed
 and the table needs revisiting.
+
+
+---
+
+## Tier 3: cohesion and coupling
+
+### LCOM has six published definitions and they disagree
+
+OXN computes all of them and labels which is which, because "LCOM = 4" means nothing without
+saying whose LCOM. Two properties are worth stating before anyone reads a number:
+
+* **A constructor that initialises every field joins every cluster.** A class that is really
+  two classes still reports `LCOM3 = 1` if its `__init__` touches both halves. That is what
+  the definition says, not a defect, and it is why LCOM\* is the headline rather than LCOM3.
+* **LCOM\* exceeds 1 when fields are declared but no method touches them** — a data class
+  with six attributes and two helpers scores about 1.7, bounded by 2. Clamping it to [0, 1]
+  would discard a real signal about unused state.
+
+### The exactness model gained a third state, and it is load-bearing
+
+Cognitive complexity's specification increments for "each method in a recursion cycle,
+whether direct or indirect". Without a resolved call graph only *direct* self-recursion is
+visible, so any function that makes a call is **understated — never overstated**.
+
+Stamping that plainly `APPROX` would have disabled this project's headline gate for almost
+every non-trivial function, since only `EXACT` values may block. So metric values now carry
+a `bound ∈ {exact, lower, upper}`, and the gate policy reads: *only `EXACT` values, or
+`APPROX` values whose error has a known direction, may block.* A lower bound that already
+exceeds a ceiling proves the true value exceeds it too.
+
+### Only confident edges enter the call graph
+
+A low-confidence L1 guess admitted to the call graph would invent a recursion cycle, and a
+phantom cycle inflates the cognitive-complexity score of everything inside it — corrupting
+the metric this project measures most carefully. Edges qualify only at L2, or at L1 where
+the target was certain (99.8% precision, measured). Rejected edges are counted, not dropped.
+
+### Dead code is characterised against vulture, never equated
+
+vulture reports unused variables, imports and attributes as well as functions, and works
+per-file with no call graph; OXN reports entities unreachable from declared roots. Only
+unreached functions are comparable. OXN treats tests, `main`, and public module-level names
+as roots — without that, a dead-code report on any real project is almost entirely noise.
+Findings are **candidates** and never block: reflection, dependency injection and framework
+entry points make false positives unavoidable.

@@ -44,6 +44,7 @@ oracle = [
     "complexipy>=2.0",
     "grimp>=3.0",       # import-graph oracle for Python
     "networkx>=3.0",    # graph-algorithm oracle; never a runtime dependency
+    "vulture>=2.11",    # dead-code oracle
 ]
 
 [project.scripts]

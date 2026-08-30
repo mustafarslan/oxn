@@ -66,9 +66,43 @@ def test_metric_values_declare_exactness_and_resolution() -> None:
     _, results = measured()
     handle = next(m for m in results if m.qualified_name.endswith("handle"))
     payload = handle.as_dict()["metrics"]["cognitive_complexity"]
-    assert payload["exactness"] == "EXACT"
     assert payload["resolution"] == "L0"
     assert "explanation" in payload
+    # `handle` calls `range`, so indirect recursion cannot be ruled out without a call
+    # graph. The value is therefore a lower bound rather than final.
+    assert payload["exactness"] == "APPROX"
+    assert payload["bound"] == "lower"
+
+
+def test_a_function_that_calls_nothing_is_exact() -> None:
+    """The recursion rule is the only thing between a Tier-1 score and exactness."""
+    from oxn.graph.builder import build_file
+    from oxn.languages import get_parser
+    from oxn.metrics.engine import measure_file
+    from oxn.profiles import get_profile
+
+    profile = get_profile("python")
+    data = b"def leaf(a):\n    if a:\n        return 1\n    return 2\n"
+    tree = get_parser("python").parse(data)
+    parsed = build_file("leaf.py", data, profile, tree.root_node)
+    # Match on kind: the module entity is also called `leaf`, and carries no complexity.
+    measured_leaf = next(
+        m
+        for m in measure_file(list(parsed.entities), data, profile, tree.root_node)
+        if m.kind is EntityKind.FUNCTION
+    )
+    value = measured_leaf.values["cognitive_complexity"]
+    assert value.exactness == "EXACT"
+    assert value.bound == "exact"
+
+
+def test_a_lower_bound_may_still_block_a_ceiling_gate() -> None:
+    """A value that can only grow already proves it exceeds a ceiling it exceeds."""
+    _, results = measured()
+    handle = next(m for m in results if m.qualified_name.endswith("handle"))
+    value = handle.values["cognitive_complexity"]
+    assert value.exactness == "APPROX"
+    assert value.can_block_ceiling
 
 
 def test_metrics_round_trip_through_the_store(tmp_path) -> None:

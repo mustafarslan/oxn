@@ -36,12 +36,24 @@ class MetricValue:
     resolution: Resolution = Resolution.L0
     #: Human-readable trail, where the metric can produce one.
     explanation: tuple[str, ...] = ()
+    #: ``"exact"`` | ``"lower"`` | ``"upper"``. An approximate value is still useful when
+    #: its direction of error is known: a *lower bound* that already exceeds a ceiling
+    #: proves the true value does too, so a ceiling gate can act on it soundly even though
+    #: the number itself is not final. Without this, "only EXACT may block" would disable
+    #: the project's headline gate for every function that makes a call.
+    bound: str = "exact"
+
+    @property
+    def can_block_ceiling(self) -> bool:
+        """Whether a "must not exceed" gate may act on this value."""
+        return self.exactness == "EXACT" or self.bound == "lower"
 
     def as_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "value": self.value,
             "exactness": self.exactness,
             "resolution": self.resolution.value,
+            "bound": self.bound,
         }
         if self.explanation:
             payload["explanation"] = list(self.explanation)
@@ -128,15 +140,18 @@ def _measure_callable(
     measured.add(MetricValue("cyclomatic_complexity", cyclomatic))
 
     cognitive = cognitive_complexity(node, profile, function_name=entity.name)
+    # The specification increments for "each method in a recursion cycle, whether direct or
+    # indirect". Without a resolved call graph only *direct* self-recursion is visible, so
+    # a function that calls anything might be understated -- but never overstated, which is
+    # what makes the value a sound lower bound for a ceiling gate.
+    makes_calls = _contains_call(node, profile)
     measured.add(
         MetricValue(
             "cognitive_complexity",
             cognitive.score,
-            # The specification counts every method in a recursion *cycle*; without a call
-            # graph only direct self-recursion is visible, so the value is approximate
-            # whenever recursion could be involved. ADR-0002 keeps this machine-readable.
-            exactness="EXACT",
+            exactness="APPROX" if makes_calls else "EXACT",
             explanation=tuple(cognitive.explain()),
+            bound="lower" if makes_calls else "exact",
         )
     )
     measured.add(MetricValue("max_nesting_depth", max_nesting_depth(node, profile)))
@@ -149,6 +164,20 @@ def _measure_callable(
     index = maintainability_index(volume, cyclomatic, sloc, density)
     # Reported for compatibility, never gated on -- see docs/metrics.md section 3.7.
     measured.add(MetricValue("maintainability_index", round(index.visual_studio, 2)))
+
+
+def _contains_call(node: Node, profile: LanguageProfile) -> bool:
+    """True when a function calls anything, so indirect recursion cannot be ruled out."""
+    call_kinds = profile.metrics.cognitive.call_kinds
+    if not call_kinds:
+        return False
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        if current.type in call_kinds:
+            return True
+        stack.extend(current.named_children)
+    return False
 
 
 def _index_nodes(root: Node, profile: LanguageProfile) -> dict[tuple[int, int], Node]:

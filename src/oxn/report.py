@@ -533,3 +533,98 @@ def _emit_index(payload: dict[str, Any], json_output: bool, console: Console | N
         console.print(
             f"\n[dim]skipped {len(report['skipped'])} document(s) OXN does not parse[/dim]"
         )
+
+
+def run_classes(
+    paths: list[str],
+    *,
+    sort_by: str = "lcom_star",
+    limit: int = 20,
+    json_output: bool = False,
+    console: Console | None = None,
+) -> dict[str, Any]:
+    """Cohesion and coupling for every class under ``paths``."""
+    from oxn.graph.builder import build_file
+    from oxn.graph.depgraph import build_dependency_graph
+    from oxn.graph.indexer import Indexer, iter_source_files
+    from oxn.languages import get_parser
+    from oxn.metrics.cohesion import cohesion
+    from oxn.metrics.coupling import build_hierarchy, ck_metrics
+    from oxn.profiles import profile_for_path
+    from oxn.resolve.members import build_class_models
+    from oxn.resolve.scopes import build_scopes
+    from oxn.resolve.symbols import build_project_symbols
+
+    targets = [Path(raw) for raw in paths]
+    missing = [str(target) for target in targets if not target.exists()]
+    if missing:
+        failure: dict[str, Any] = {
+            "status": "ERROR",
+            "errors": dict.fromkeys(missing, "no such file or directory"),
+        }
+        _emit(failure, json_output, console)
+        return failure
+
+    with Indexer() as indexer:
+        files = list(iter_source_files(targets))
+        graph = build_dependency_graph(indexer.root, files)
+        models_by_file: dict[str, Any] = {}
+        entities_by_file: dict[str, Any] = {}
+        scopes_by_file: dict[str, Any] = {}
+
+        for path in files:
+            profile = profile_for_path(str(path))
+            if profile is None:
+                continue
+            relative = indexer.relative(path)
+            source = path.read_bytes()
+            tree = get_parser(profile.name).parse(source)
+            if tree.root_node.has_error:
+                continue
+            scopes = build_scopes(tree.root_node, profile)
+            models_by_file[relative] = build_class_models(tree.root_node, profile, scopes)
+            entities_by_file[relative] = list(
+                build_file(relative, source, profile, tree.root_node).entities
+            )
+            scopes_by_file[relative] = scopes
+
+        symbols = build_project_symbols(entities_by_file, scopes_by_file, graph)
+        hierarchy = build_hierarchy(models_by_file)
+
+        rows: list[dict[str, Any]] = []
+        for relative, models in models_by_file.items():
+            for model in models.values():
+                measures = cohesion(model)
+                ck = ck_metrics(model, hierarchy, path=relative, symbols=symbols)
+                rows.append({"path": relative, **measures.as_dict(), **ck.as_dict()})
+
+    rows.sort(key=lambda row: (row.get(sort_by) is None, -(row.get(sort_by) or 0)))
+    payload: dict[str, Any] = {
+        "status": "OK",
+        "sort_by": sort_by,
+        "classes": rows[:limit],
+        "total_classes": len(rows),
+    }
+    _emit_classes(payload, json_output, console)
+    return payload
+
+
+def _emit_classes(payload: dict[str, Any], json_output: bool, console: Console | None) -> None:
+    if json_output or console is None:
+        json.dump(payload, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return
+
+    console.print(
+        f"[bold]{payload['total_classes']} classes[/bold], ranked by {payload['sort_by']}"
+        "  [dim](LCOM* 0 = cohesive, 1 = none; LCOM4 = how many classes this really is)[/dim]\n"
+    )
+    for row in payload["classes"]:
+        star = "  -  " if row["lcom_star"] is None else f"{row['lcom_star']:.2f}"
+        flag = "" if row["exactness"] == "EXACT" else " [yellow]~[/yellow]"
+        console.print(
+            f"  LCOM*={star} LCOM4={row['lcom4']:<2} WMC={row['wmc']:<3} CBO={row['cbo']:<2}"
+            f" RFC={row['rfc']:<3} DIT={row['dit']:<2}  {row['class']:<26}"
+            f" [dim]{row['path']}[/dim]{flag}"
+        )
+    console.print("\n[dim]~ marks a value computed from an inherited or dynamic access[/dim]")
