@@ -198,3 +198,45 @@ def test_json_replies_are_parsed_over_the_stream(patched: Any) -> None:
     )
     verdict = _client().generate_json("prompt")
     assert verdict == {"behaviour_preserved": True, "readability": 4}
+
+
+# ---- an empty answer must say why -------------------------------------------------------
+
+
+def test_reasoning_that_hits_the_token_limit_says_so(patched: Any) -> None:
+    """The failure that took three live attempts to understand.
+
+    `glm-5.3:cloud` streamed 11,928 frames on a repair prompt and never emitted a single
+    character of `response`. The old message -- "empty completion after 11928 chunk(s)" --
+    could not distinguish that from a crash, a bad model name or a refusal, so the run had
+    to be reproduced by hand to learn anything. The three cases need different fixes, so
+    the message names which one happened.
+    """
+    patched(
+        [
+            {"thinking": "x" * 4000, "response": ""},
+            {"thinking": "y" * 4000, "response": ""},
+            {"response": "", "done": True, "done_reason": "length"},
+        ]
+    )
+    with pytest.raises(OllamaError, match="token limit while reasoning"):
+        _client().generate("prompt")
+
+
+def test_the_message_counts_the_reasoning_it_threw_away(patched: Any) -> None:
+    patched([{"thinking": "z" * 1234, "response": ""}, {"response": "", "done": True}])
+    with pytest.raises(OllamaError, match="1,234 characters of reasoning"):
+        _client().generate("prompt")
+
+
+def test_nothing_at_all_is_reported_differently_from_reasoning(patched: Any) -> None:
+    """No reasoning and no text is a different problem from reasoning without an answer."""
+    patched([{"response": "", "done": True, "done_reason": "stop"}])
+    with pytest.raises(OllamaError, match="no reasoning and no text"):
+        _client().generate("prompt")
+
+
+def test_reasoning_chunks_do_not_count_as_an_answer(patched: Any) -> None:
+    """`thinking` resets the read clock; it is never spliced into a repair."""
+    patched([{"thinking": "long deliberation", "response": ""}, {"response": "OK", "done": True}])
+    assert _client().generate("prompt") == "OK"

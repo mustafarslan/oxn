@@ -22,7 +22,12 @@ import json
 import os
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # pragma: no cover
+    from collections.abc import Iterable
+
 
 #: Default endpoint and models. Overridable through the environment.
 #:
@@ -133,23 +138,9 @@ class OllamaClient:
             data=json.dumps(payload).encode(),
             headers={"Content-Type": "application/json"},
         )
-        chunks: list[str] = []
-        saw_completion = False
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                for line in response:
-                    stripped = line.strip()
-                    if not stripped:
-                        continue
-                    frame = json.loads(stripped.decode())
-                    if error_text := frame.get("error"):
-                        raise OllamaError(f"{self.model} reported: {error_text}")
-                    piece = frame.get("response")
-                    if isinstance(piece, str):
-                        saw_completion = True
-                        chunks.append(piece)
-                    if frame.get("done"):
-                        break
+                reply = self._consume(response)
         except TimeoutError as error:
             raise OllamaError(
                 f"{self.model} sent nothing for {self.timeout}s -- it may still be "
@@ -165,13 +156,85 @@ class OllamaClient:
         except json.JSONDecodeError as error:
             raise OllamaError(f"Ollama returned invalid JSON: {error}") from error
 
-        text = "".join(chunks).strip()
-        if not saw_completion or not text:
+        if not reply.saw_completion or not reply.text:
             # An empty completion is not an answer, and it is not a rare one: a reasoning
             # model can spend a minute thinking and then emit nothing at all. Returning ""
             # pushes that failure downstream, where it looks like the caller's bug -- a
             # repair harness read it as "the model deleted the function".
-            raise OllamaError(
-                f"{self.model} returned an empty completion after {len(chunks)} chunk(s)"
+            raise OllamaError(f"{self.model} returned an empty completion: {reply.why_empty}")
+        return reply.text
+
+    def _consume(self, response: Iterable[bytes]) -> _Reply:
+        """Fold the streamed frames into one reply.
+
+        Chunks carrying only ``thinking`` still count as progress: they reset the read
+        clock by arriving, and contribute nothing to the completion.
+        """
+        reply = _Reply()
+        for line in response:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            frame = json.loads(stripped.decode())
+            if error_text := frame.get("error"):
+                raise OllamaError(f"{self.model} reported: {error_text}")
+            reply.take(frame)
+            if frame.get("done"):
+                reply.stopped_because = str(frame.get("done_reason") or "")
+                break
+        return reply
+
+
+@dataclass
+class _Reply:
+    """What one streamed generation produced, including what it produced *instead* of text.
+
+    The reasoning is kept for the failure message and never for the answer. A model that
+    never leaves its scratchpad emits thousands of frames and an empty completion, and
+    "empty completion" alone cannot say whether it crashed, was cut off, or simply thought
+    until it ran out of room -- three problems with three different fixes.
+    """
+
+    chunks: list[str] = field(default_factory=list)
+    saw_completion: bool = False
+    thinking_chars: int = 0
+    frames: int = 0
+    stopped_because: str = ""
+
+    def take(self, frame: dict[str, Any]) -> None:
+        self.frames += 1
+        reasoning = frame.get("thinking")
+        if isinstance(reasoning, str):
+            self.thinking_chars += len(reasoning)
+        piece = frame.get("response")
+        if isinstance(piece, str):
+            self.saw_completion = True
+            self.chunks.append(piece)
+
+    @property
+    def text(self) -> str:
+        return "".join(self.chunks).strip()
+
+    @property
+    def why_empty(self) -> str:
+        """Say what the model actually did, so an empty answer is diagnosable.
+
+        Measured: `glm-5.3:cloud` produced 11,928 frames of reasoning and no completion on
+        a repair prompt, and the old message -- "empty completion after 11928 chunk(s)" --
+        said none of that, so the run had to be reproduced by hand to learn anything.
+        """
+        if not self.thinking_chars:
+            detail = f"{self.frames} frame(s), no reasoning and no text"
+        else:
+            detail = (
+                f"{self.thinking_chars:,} characters of reasoning across "
+                f"{self.frames} frame(s), then no answer"
             )
-        return text
+        if self.stopped_because == "length":
+            return (
+                f"{detail}. It hit the token limit while reasoning -- raise `num_predict` "
+                f"or `num_ctx`, or use a model that reasons less."
+            )
+        if self.stopped_because:
+            return f"{detail} (done_reason={self.stopped_because})."
+        return f"{detail} (the stream ended without a done frame)."

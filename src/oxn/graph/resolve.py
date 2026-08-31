@@ -22,7 +22,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
     from oxn.graph.imports import RawImport
 
@@ -180,38 +180,39 @@ def _python_candidates(
     A path may name a module, or a package -- and when it names a package, any imported
     name that is itself a submodule is reached too, because importing it executes both.
     """
-    found: list[str] = []
+    if module := _known_module(context, candidate):
+        return (module,)  # a module file; imported names are symbols within it
 
-    for extension in _PY_EXTENSIONS:
-        if (path := f"{candidate}{extension}") in context.known:
-            return (path,)  # a module file; imported names are symbols within it
+    package = _known_module(context, f"{candidate}/__init__")
+    if package is None and candidate:
+        return ()
 
-    is_package = False
-    for extension in _PY_EXTENSIONS:
-        if (path := f"{candidate}/__init__{extension}") in context.known:
-            found.append(path)
-            is_package = True
-            break
-
-    if is_package or not candidate:
-        for name in raw.names:
-            for extension in _PY_EXTENSIONS:
-                if (
-                    path := f"{candidate}/{name}{extension}" if candidate else f"{name}{extension}"
-                ) in context.known:
-                    found.append(path)
-                    break
-            else:
-                for extension in _PY_EXTENSIONS:
-                    sub = (
-                        f"{candidate}/{name}/__init__{extension}"
-                        if candidate
-                        else f"{name}/__init__{extension}"
-                    )
-                    if sub in context.known:
-                        found.append(sub)
-                        break
+    found = [package] if package else []
+    found.extend(_imported_submodules(candidate, raw, context))
     return tuple(dict.fromkeys(found))
+
+
+def _known_module(context: ResolutionContext, stem: str) -> str | None:
+    """The first extension of `stem` that exists in the tree, or None."""
+    for extension in _PY_EXTENSIONS:
+        if (path := f"{stem}{extension}") in context.known:
+            return path
+    return None
+
+
+def _imported_submodules(
+    candidate: str, raw: RawImport, context: ResolutionContext
+) -> Iterator[str]:
+    """Imported names that are themselves modules or packages under `candidate`.
+
+    `from pkg import sub` reaches `pkg/sub.py` as well as `pkg/__init__.py`, because
+    importing the name executes both.
+    """
+    for name in raw.names:
+        base = f"{candidate}/{name}" if candidate else name
+        found = _known_module(context, base) or _known_module(context, f"{base}/__init__")
+        if found:
+            yield found
 
 
 # ---- TypeScript / JavaScript --------------------------------------------------------------

@@ -12,7 +12,7 @@ import math
 
 import pytest
 
-from oxn.graph.architecture import LakosMetrics, analyse
+from oxn.graph.architecture import LakosMetrics, analyse, detect_smells
 from oxn.graph.contracts import Contract, Layer, assign_layers, check_contracts
 
 # ---- Martin metrics ---------------------------------------------------------------------
@@ -282,3 +282,50 @@ def test_absent_edges_surface_stale_rules() -> None:
 def test_files_outside_every_layer_are_reported() -> None:
     graph = {"scripts/tool.py": set()}
     assert check_contracts(graph, LAYERS, [LAYERED]).unassigned == ["scripts/tool.py"]
+
+
+# ---- reports must be diffable ---------------------------------------------------------
+
+
+def _peers_graph(order: list[str]) -> dict[str, set[str]]:
+    """Symmetric peers, each with its own volatile dependencies.
+
+    Each peer is depended on by three users (low instability) and depends on two components
+    that depend on three leaves and nothing depends on (high instability), so every peer is
+    an equally severe Unstable Dependency. They differ only by name.
+    """
+    graph: dict[str, set[str]] = {}
+    for peer in order:
+        graph[peer] = {f"{peer}_v1", f"{peer}_v2"}
+        for volatile in (f"{peer}_v1", f"{peer}_v2"):
+            graph[volatile] = {"l1", "l2", "l3"}
+        for user in ("u1", "u2", "u3"):
+            graph.setdefault(user, set()).add(peer)
+    for leaf in ("l1", "l2", "l3"):
+        graph[leaf] = set()
+    return graph
+
+
+def test_equally_severe_smells_come_back_in_a_stable_order() -> None:
+    """`oxn arch` must produce the same bytes for the same code, every run.
+
+    Found by a differential test that was checking something else: three consecutive runs
+    of `oxn arch --json` over an unchanged corpus produced three different outputs. The
+    smell sort keyed on `(kind, -severity)` only, so components tying on both -- the common
+    case, since severity is a coarse ratio -- fell back to insertion order, and insertion
+    order came out of set iteration, which varies with the per-process hash seed.
+
+    A report that cannot be diffed against the previous commit cannot show a trend, and
+    trend is most of what a report is for.
+
+    The peers are inserted in reverse-alphabetical order deliberately. Without the
+    tie-break they come back in that order; with it they come back sorted, so this test
+    fails against the code that shipped before it.
+    """
+    graph = _peers_graph(["zeta", "yankee", "xray"])
+    smells = detect_smells(graph, analyse(graph), dict.fromkeys(graph, 10))
+    tied = [smell.component for smell in smells if smell.kind == "unstable_dependency"]
+    assert tied == ["xray", "yankee", "zeta"], "equal severities must break ties by name"
+
+    rows = [(smell.kind, -smell.severity, smell.component) for smell in smells]
+    assert rows == sorted(rows), "the sort key must be total, or the order is hash-dependent"

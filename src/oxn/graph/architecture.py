@@ -331,5 +331,10 @@ def detect_smells(
                     )
                 )
 
-    smells.sort(key=lambda smell: (smell.kind, -smell.severity))
+    # `component` breaks ties, and it is not cosmetic: without it the order of equally
+    # severe smells fell out of set and dict iteration, so `oxn arch` produced a different
+    # report on every run of the same code -- three runs of typescript-nest gave three
+    # different outputs. A report that cannot be diffed against the previous commit cannot
+    # show a trend, which is most of what a report is for.
+    smells.sort(key=lambda smell: (smell.kind, -smell.severity, smell.component))
     return smells
