@@ -122,6 +122,26 @@ class Indexer:
 
         return parsed, False
 
+    def _record(self, path: Path, rel: str, report: IndexReport, *, force: bool) -> None:
+        """Index one file into `report`, turning an unreadable file into a counted error.
+
+        `OSError` only: a file that cannot be read is a fact about the tree, not a bug in
+        OXN, and one unreadable file must not abandon the other nine thousand. Anything
+        else propagates, because a parser or profile failure is ours and should be loud.
+        """
+        try:
+            parsed, was_cached = self.index_file(path, force=force)
+        except OSError as exc:
+            report.failed += 1
+            report.errors[rel] = f"{type(exc).__name__}: {exc}"
+            return
+        if was_cached:
+            report.cached += 1
+            return
+        report.parsed += 1
+        if parsed is not None and parsed.parse_incomplete:
+            report.incomplete.append(rel)
+
     def index(self, roots: Iterable[Path] | None = None, *, force: bool = False) -> IndexReport:
         """Index a tree, pruning cache entries for files that no longer exist."""
         targets = list(roots) if roots is not None else [self.root]
@@ -131,18 +151,7 @@ class Indexer:
         for path in iter_source_files(targets):
             rel = self.relative(path)
             seen.add(rel)
-            try:
-                parsed, was_cached = self.index_file(path, force=force)
-            except OSError as exc:
-                report.failed += 1
-                report.errors[rel] = f"{type(exc).__name__}: {exc}"
-                continue
-            if was_cached:
-                report.cached += 1
-            else:
-                report.parsed += 1
-                if parsed is not None and parsed.parse_incomplete:
-                    report.incomplete.append(rel)
+            self._record(path, rel, report, force=force)
 
         if roots is None:
             for stale in self.store.known_paths() - seen:

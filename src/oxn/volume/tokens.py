@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
+    from collections.abc import Iterator
+
     from tree_sitter import Node
 
     from oxn.profiles.base import LanguageProfile
@@ -65,30 +67,41 @@ def normalized_tokens(node: Node, profile: LanguageProfile) -> list[Token]:
     since the opening delimiter already marks the structure.
     """
     spec = profile.metrics.halstead
-    tokens: list[Token] = []
+    return [
+        Token(
+            text=text,
+            kind=leaf.type,
+            is_operand=leaf.type in spec.operand_kinds,
+            start_byte=leaf.start_byte,
+            end_byte=leaf.end_byte,
+            line=leaf.start_point[0] + 1,
+        )
+        for leaf, text in iter_leaves(node, profile)
+    ]
 
-    def walk(current: Node) -> None:
+
+def iter_leaves(node: Node, profile: LanguageProfile) -> Iterator[tuple[Node, str]]:
+    """Every leaf token that counts, with its text, in source order.
+
+    Shared with `oxn.metrics.halstead`, which asks the same question for a different
+    purpose. The rule for *which* leaves count -- comments dropped, excluded subtrees
+    pruned rather than walked into, a closing delimiter dropped because a matched pair is
+    one operator -- has to be the same in both, or a token stream and its Halstead
+    classification would disagree about what the file contains.
+
+    Iterative: a deeply nested expression is enough to reach Python's recursion limit, and
+    the crash says nothing about which file did it.
+    """
+    spec = profile.metrics.halstead
+    stack = [node]
+    while stack:
+        current = stack.pop()
         if current.type in spec.excluded_kinds or current.type in profile.comment_kinds:
-            return
+            continue
         if current.child_count:
-            for child in current.children:
-                walk(child)
-            return
-
+            stack.extend(reversed(current.children))
+            continue
         text = current.text.decode("utf-8", "replace") if current.text else ""
         if current.type in spec.close_delimiters or text in spec.excluded_tokens:
-            return
-
-        tokens.append(
-            Token(
-                text=text,
-                kind=current.type,
-                is_operand=current.type in spec.operand_kinds,
-                start_byte=current.start_byte,
-                end_byte=current.end_byte,
-                line=current.start_point[0] + 1,
-            )
-        )
-
-    walk(node)
-    return tokens
+            continue
+        yield current, text

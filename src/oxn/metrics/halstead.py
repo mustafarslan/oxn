@@ -18,13 +18,12 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Iterator
+from oxn.volume.tokens import iter_leaves
 
+if TYPE_CHECKING:  # pragma: no cover
     from tree_sitter import Node
 
     from oxn.profiles.base import LanguageProfile
-    from oxn.profiles.spec import HalsteadSpec
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,11 +88,7 @@ def halstead(node: Node, profile: LanguageProfile) -> Halstead:
     operators: dict[str, int] = {}
     operands: dict[str, int] = {}
 
-    for leaf in _leaves(node, profile, spec):
-        text = leaf.text.decode("utf-8", "replace") if leaf.text else ""
-        # A matched delimiter pair is one operator, so the closing token is skipped.
-        if leaf.type in spec.close_delimiters or text in spec.excluded_tokens:
-            continue
+    for leaf, text in iter_leaves(node, profile):
         bucket = operands if leaf.type in spec.operand_kinds else operators
         bucket[text] = bucket.get(text, 0) + 1
 
@@ -104,24 +99,6 @@ def halstead(node: Node, profile: LanguageProfile) -> Halstead:
         total_operands=sum(operands.values()),
         spec_version=spec.spec_version,
     )
-
-
-def _leaves(node: Node, profile: LanguageProfile, spec: HalsteadSpec) -> Iterator[Node]:
-    """Every leaf token under `node`, skipping comments and whole excluded subtrees.
-
-    Excluded *kinds* are pruned rather than filtered, because a docstring's contents are
-    not operands and walking into one to discard each token would be both slower and a
-    chance to get it wrong.
-    """
-    stack = [node]
-    while stack:
-        current = stack.pop()
-        if current.type in spec.excluded_kinds or current.type in profile.comment_kinds:
-            continue
-        if current.child_count:
-            stack.extend(current.children)
-        else:
-            yield current
 
 
 @dataclass(frozen=True, slots=True)
