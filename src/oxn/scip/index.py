@@ -144,10 +144,30 @@ def _parse_document(data: bytes) -> ScipDocument:
 
 
 def _parse_occurrence(data: bytes) -> ScipOccurrence | None:
+    """One occurrence: a symbol, where it appears, and the role it plays there."""
+    span, symbol, roles = _occurrence_fields(data)
+    if not symbol or not span:
+        return None
+    bounds = _span_bounds(span)
+    if bounds is None:  # pragma: no cover - malformed
+        return None
+    start_line, start_char, end_line, end_char = bounds
+    return ScipOccurrence(
+        symbol=symbol,
+        start_line=start_line,
+        start_char=start_char,
+        end_line=end_line,
+        end_char=end_char,
+        roles=roles,
+    )
+
+
+def _occurrence_fields(data: bytes) -> tuple[list[int], str, int]:
+    """The three fields an occurrence carries, in whichever order they were written."""
     span: list[int] = []
     symbol = ""
     roles = 0
-    for number, wire_type, value in iter_fields(data):
+    for number, _wire_type, value in iter_fields(data):
         if number == _RANGE:
             if isinstance(value, bytes):
                 span = read_packed_varints(value)
@@ -157,29 +177,21 @@ def _parse_occurrence(data: bytes) -> ScipOccurrence | None:
             symbol = text(value)
         elif number == _SYMBOL_ROLES and isinstance(value, int):
             roles = value
-        del wire_type
+    return span, symbol, roles
 
-    if not symbol or not span:
-        return None
 
-    # A range is 3 elements when it stays on one line and 4 when it spans lines. Handling
-    # only the 4-element form silently drops most occurrences in real code.
+def _span_bounds(span: list[int]) -> tuple[int, int, int, int] | None:
+    """A range is 3 elements when it stays on one line and 4 when it spans lines.
+
+    Handling only the 4-element form silently drops most occurrences in real code.
+    """
     if len(span) == 3:
         start_line, start_char, end_char = span
-        end_line = start_line
-    elif len(span) >= 4:
+        return start_line, start_char, start_line, end_char
+    if len(span) >= 4:
         start_line, start_char, end_line, end_char = span[:4]
-    else:  # pragma: no cover - malformed
-        return None
-
-    return ScipOccurrence(
-        symbol=symbol,
-        start_line=start_line,
-        start_char=start_char,
-        end_line=end_line,
-        end_char=end_char,
-        roles=roles,
-    )
+        return start_line, start_char, end_line, end_char
+    return None
 
 
 def _parse_symbol(data: bytes) -> ScipSymbol:

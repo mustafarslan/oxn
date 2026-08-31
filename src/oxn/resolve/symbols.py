@@ -101,26 +101,31 @@ def build_project_symbols(
 ) -> ProjectSymbols:
     """Index every declaration, plus the import edges that make cross-file lookup possible."""
     symbols = ProjectSymbols()
-
     for path, entities in entities_by_file.items():
-        declared: dict[str, Entity] = {}
-        for entity in entities:
-            if entity.name is None or entity.kind.value == "module":
-                continue
-            # A method belongs to its class, not to the file's top level, so only
-            # file-level declarations are reachable by a bare name.
-            if entity.parent_id is None or _is_top_level(entity, entities):
-                declared.setdefault(entity.name, entity)
-            symbols.by_name[entity.name].append(entity)
-        symbols.by_file[path] = declared
-
+        symbols.by_file[path] = _declared_in(entities, symbols)
     for path, tree in scopes_by_file.items():
         symbols.aliases[path] = dict(tree.import_aliases)
-
     if graph is not None:
         symbols.imports = {path: set(targets) for path, targets in graph.files.items()}
-
     return symbols
+
+
+def _declared_in(entities: list[Entity], symbols: ProjectSymbols) -> dict[str, Entity]:
+    """One file's bare-name declarations, indexing every entity by name as it goes.
+
+    Only *file-level* declarations answer to a bare name: a method belongs to its class, so
+    `handle` in one class must not resolve a call to `handle` written in another. Every
+    entity still enters `by_name`, which is what makes the project-wide fallback possible
+    when a file-local lookup finds nothing.
+    """
+    declared: dict[str, Entity] = {}
+    for entity in entities:
+        if entity.name is None or entity.kind.value == "module":
+            continue
+        if entity.parent_id is None or _is_top_level(entity, entities):
+            declared.setdefault(entity.name, entity)
+        symbols.by_name[entity.name].append(entity)
+    return declared
 
 
 def _is_top_level(entity: Entity, entities: list[Entity]) -> bool:

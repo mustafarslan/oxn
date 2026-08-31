@@ -136,9 +136,7 @@ def _method_access(context: _Members, method_node: Node, method_name: str) -> Me
     )
     receiver = _receiver_of(method_node, context.profile, context.scopes)
     if receiver is not None:
-        _collect_accesses(
-            method_node, context.profile, context.spec, receiver, access, context.method_names
-        )
+        _collect_accesses(context, method_node, receiver, access)
     return access
 
 
@@ -256,40 +254,48 @@ def _receiver_of(method: Node, profile: LanguageProfile, scopes: ScopeTree) -> s
     return None
 
 
-def _collect_accesses(
-    method: Node,
-    profile: LanguageProfile,
-    spec: ScopeSpec,
-    receiver: str,
-    access: MethodAccess,
-    method_names: set[str],
-) -> None:
+def _collect_accesses(context: _Members, method: Node, receiver: str, access: MethodAccess) -> None:
     """Record every ``receiver.name`` in the method, classified as read, write or call."""
-    call_kinds = profile.metrics.cognitive.call_kinds
     stack = [method]
     while stack:
         node = stack.pop()
         stack.extend(node.named_children)
-        if node.type != spec.attribute_kind:
-            continue
+        name = _receiver_attribute(node, context.spec, receiver)
+        if name:
+            _classify_access(context, node, name, access)
 
-        obj = node.child_by_field_name(spec.attribute_object_field)
-        name_node = node.child_by_field_name(spec.attribute_name_field)
-        if obj is None or name_node is None or _text(obj) != receiver:
-            continue
 
-        name = _text(name_node)
-        if not name:
-            continue
+def _receiver_attribute(node: Node, spec: ScopeSpec, receiver: str) -> str:
+    """The attribute name when this node is `receiver.name`, else an empty string.
 
-        parent = node.parent
-        if parent is not None and parent.type in call_kinds and name in method_names:
-            access.calls.add(name)
-            continue
-        if _is_write_target(node, spec):
-            access.writes.add(name)
-        else:
-            access.reads.add(name)
+    The receiver is whatever the method's first parameter is actually called -- read from
+    the scope tree, never assumed to be `self`, which is the crux of correct LCOM
+    (docs/metrics.md 6.1).
+    """
+    if node.type != spec.attribute_kind:
+        return ""
+    obj = node.child_by_field_name(spec.attribute_object_field)
+    name_node = node.child_by_field_name(spec.attribute_name_field)
+    if obj is None or name_node is None or _text(obj) != receiver:
+        return ""
+    return _text(name_node)
+
+
+def _classify_access(context: _Members, node: Node, name: str, access: MethodAccess) -> None:
+    """A call to a sibling method, a write to a field, or a read of one.
+
+    The call case is checked first and only for *siblings*: `self.helper()` where `helper`
+    is a method of this class is cohesion evidence of a different kind from `self.helper`
+    as a field, and LCOM4 joins on it.
+    """
+    parent = node.parent
+    call_kinds = context.profile.metrics.cognitive.call_kinds
+    if parent is not None and parent.type in call_kinds and name in context.method_names:
+        access.calls.add(name)
+    elif _is_write_target(node, context.spec):
+        access.writes.add(name)
+    else:
+        access.reads.add(name)
 
 
 def _is_write_target(node: Node, spec: ScopeSpec) -> bool:
