@@ -356,6 +356,12 @@ the decoding; only a real artifact proves the field numbers.
 The point of building L2 first: L0 and L1 can now be *graded* rather than described as
 "approximate". Measured on httpx against a `scip-python` 0.6.6 index.
 
+**Re-measured 2026-08-31 and reproduced exactly** — 1,453 graded call sites, 637 excluded,
+953 confident answers of which 951 correct. Every figure below came back identical to three
+decimal places, which matters for two separate reasons: the numbers ADR-0002's gating policy
+rests on are reproducible rather than a one-off, and the `grade_file` refactor in this cycle
+is verified against the authority rather than only against a synthetic differential.
+
 | | precision | recall |
 |---|---|---|
 | every answer L1 offers | 70.3% | 100% |
