@@ -299,3 +299,69 @@ def test_tsconfig_aliases_survive_comments(tmp_path) -> None:
     )
     context = ResolutionContext.build(tmp_path, {"packages/core/index.ts"})
     assert context.ts_aliases == {"@core": ("packages/core",)}
+
+
+# ---- Rust `use` trees ---------------------------------------------------------------------
+#
+# `use` is a tree, not a statement: one statement can name several paths at several depths.
+# `_rust_paths` recurses over five node shapes and had no direct test -- the grimp oracle is
+# Python-only, and the Rust corpus exercised it without asserting anything about it. Writing
+# these found two bugs; see `_rust_wildcard_path`.
+#
+# Specifiers are normalised to `.` separators across every language, so `std::io` is
+# `std.io` here.
+
+
+def test_rust_simple_and_nested_use() -> None:
+    assert specs("rust", "use std::io;\n") == ["std.io"]
+    assert sorted(specs("rust", "use std::io::{Read, Write};\n")) == [
+        "std.io.Read",
+        "std.io.Write",
+    ]
+
+
+def test_rust_brace_groups_nest_to_any_depth() -> None:
+    """`a::{b, c::{d, e}}` is one statement naming three paths at two depths."""
+    assert sorted(specs("rust", "use a::{b, c::{d, e}};\n")) == ["a.b", "a.c.d", "a.c.e"]
+
+
+def test_rust_alias_couples_to_the_path_not_the_alias() -> None:
+    """`use a::b as c` depends on `a::b`; `c` is a local name, not a dependency."""
+    assert specs("rust", "use a::b as c;\n") == ["a.b"]
+
+
+def test_a_rust_glob_names_the_module_not_the_glob() -> None:
+    """`use a::b::*` couples to `a::b`, matching `from a.b import *` in Python.
+
+    The `*` used to be left in the specifier, which made Rust the only language whose
+    wildcard names something that is not a module -- and `a.b.*` resolves to nothing.
+    """
+    found = list(imports("rust", "use a::b::*;\n"))
+    assert [(item.specifier, item.kind) for item in found] == [("a.b", "wildcard")]
+
+
+def test_a_glob_inside_a_group_keeps_its_own_segment() -> None:
+    """`use std::{io::*, fmt}` couples to `std::io`, not to `std`.
+
+    It reported `std` before: the glob's own path segment was dropped whenever it appeared
+    inside a brace group, so the dependency was attributed to the parent module. Coupling
+    attributed to the wrong module is worse than none -- a layer contract can be satisfied
+    or violated by it.
+    """
+    found = {(item.specifier, item.kind) for item in imports("rust", "use std::{io::*, fmt};\n")}
+    assert found == {("std.io", "wildcard"), ("std.fmt", "value")}
+
+
+def test_rust_mixed_group_keeps_every_branch() -> None:
+    """Every node shape in one statement: plain, nested group, alias, and glob."""
+    found = {
+        (item.specifier, item.kind)
+        for item in imports("rust", "use a::{b, c::{d, e}, f as g, h::*};\n")
+    }
+    assert found == {
+        ("a.b", "value"),
+        ("a.c.d", "value"),
+        ("a.c.e", "value"),
+        ("a.f", "value"),
+        ("a.h", "wildcard"),
+    }

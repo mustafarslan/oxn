@@ -157,28 +157,59 @@ def _rust_statement(node: Node, spec: ImportSpec) -> list[RawImport]:
 
 
 def _rust_paths(node: Node, prefix: str) -> list[tuple[str, str]]:
-    """Flatten a ``use`` tree into ``(path, kind)`` pairs."""
+    """Flatten a ``use`` tree into ``(path, kind)`` pairs.
+
+    Rust's `use` is a tree, not a statement: `use a::{b, c::{d, e}, f as g, h::*}` is one
+    statement naming five paths at three depths. Each node kind below is one shape that
+    tree can take, and every one of them recurses except the leaf.
+    """
     if node.type == "scoped_use_list":
-        base = node.child_by_field_name("path")
-        head = f"{prefix}::{_text(base)}" if prefix and base is not None else _text(base or node)
-        body = node.child_by_field_name("list")
-        if body is None:
-            return [(head, "value")]
-        out: list[tuple[str, str]] = []
-        for child in body.named_children:
-            out.extend(_rust_paths(child, head))
-        return out
+        return _rust_scoped_list(node, prefix)
     if node.type == "use_list":
-        out = []
-        for child in node.named_children:
-            out.extend(_rust_paths(child, prefix))
-        return out
+        return [pair for child in node.named_children for pair in _rust_paths(child, prefix)]
     if node.type == "use_as_clause":
+        # `use a::b as c` couples to `a::b`; the local alias is not a dependency.
         path = node.child_by_field_name("path")
         return _rust_paths(path, prefix) if path is not None else []
     if node.type == "use_wildcard":
-        return [(prefix or _text(node), "wildcard")]
+        return [(_rust_wildcard_path(node, prefix), "wildcard")]
+    return _rust_leaf(node, prefix)
 
+
+def _rust_scoped_list(node: Node, prefix: str) -> list[tuple[str, str]]:
+    """``a::{b, c}`` -- a path segment that opens a brace group, or ends the path."""
+    base = node.child_by_field_name("path")
+    head = f"{prefix}::{_text(base)}" if prefix and base is not None else _text(base or node)
+    body = node.child_by_field_name("list")
+    if body is None:
+        return [(head, "value")]
+    return [pair for child in body.named_children for pair in _rust_paths(child, head)]
+
+
+def _rust_wildcard_path(node: Node, prefix: str) -> str:
+    """The module a glob import couples to: ``use a::b::*`` depends on ``a::b``.
+
+    Two bugs lived here, both invisible on the Rust corpus because nothing in ripgrep
+    writes a glob inside a brace group:
+
+    * the ``*`` was left in the specifier, making Rust the only language whose wildcard
+      names something other than a module -- Python's ``from a.b import *`` yields ``a.b``
+      -- and ``a::b::*`` resolves to nothing at all;
+    * a glob *inside* a group lost its own segment, so ``use std::{io::*, fmt}`` reported a
+      dependency on ``std`` rather than ``std::io``. Coupling attributed to the wrong module
+      is worse than no coupling: a layer contract can be satisfied or violated by it.
+
+    The grammar gives the path no field name, but it is the first named child, and it is
+    absent for a bare ``use *``.
+    """
+    own = _text(node.named_children[0]) if node.named_children else ""
+    if prefix and own:
+        return f"{prefix}::{own}"
+    return prefix or own or _text(node)
+
+
+def _rust_leaf(node: Node, prefix: str) -> list[tuple[str, str]]:
+    """A plain path segment: the end of one branch of the tree."""
     text = _text(node)
     if not text:
         return []
