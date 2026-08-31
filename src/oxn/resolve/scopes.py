@@ -130,67 +130,89 @@ def build_scopes(root: Node, profile: LanguageProfile) -> ScopeTree:
     spec = profile.metrics.scopes
     module = Scope(kind="module", start_byte=root.start_byte, end_byte=root.end_byte)
     tree = ScopeTree(root=module)
-    _walk(root, module, tree, profile, spec, class_name=None)
+    _walk(_Context(tree, profile, spec), root, module, class_name=None)
     return tree
 
 
-def _walk(
-    node: Node,
-    scope: Scope,
-    tree: ScopeTree,
-    profile: LanguageProfile,
-    spec: ScopeSpec,
-    *,
-    class_name: str | None,
-) -> None:
+@dataclass(frozen=True, slots=True)
+class _Context:
+    """What stays the same for one file's whole scope walk.
+
+    The tree being filled in, and the two tables that say what the grammar means. Threading
+    these as three separate arguments through a mutually recursive walk cost seven
+    parameters and said nothing; only `node`, `scope` and `class_name` actually vary.
+    """
+
+    tree: ScopeTree
+    profile: LanguageProfile
+    spec: ScopeSpec
+
+
+def _walk(context: _Context, node: Node, scope: Scope, *, class_name: str | None) -> None:
+    """Every child: declare what it binds, then either open a scope or look inside it."""
     for child in node.named_children:
-        target = profile.unwrap(child)
+        target = context.profile.unwrap(child)
         kind = target.type
 
-        if kind in spec.rebinding_kinds:
-            # `global x` / `nonlocal x`: the name belongs to an outer scope, so recording it
-            # here would create a phantom local that shadows the real binding.
+        # `global x` / `nonlocal x`: the name belongs to an outer scope, so recording it
+        # here would create a phantom local that shadows the real binding.
+        if kind in context.spec.rebinding_kinds:
             continue
 
-        if kind in spec.declaration_kinds or profile.is_definition(target):
-            name = profile.entity_name(target)
-            if name:
-                scope.declare(
-                    Binding(
-                        name,
-                        "class" if kind in profile.class_like else "function",
-                        target.start_point[0] + 1,
-                        target.start_byte,
-                        target.end_byte,
-                    )
-                )
+        _declare(context, target, kind, scope)
 
-        scope_kind = spec.scope_kinds.get(kind)
+        scope_kind = context.spec.scope_kinds.get(kind)
         if scope_kind is not None and scope_kind != "module":
-            inner = Scope(
-                kind=scope_kind,
-                start_byte=target.start_byte,
-                end_byte=target.end_byte,
-                parent=scope,
-                owner=profile.entity_name(target),
-            )
-            scope.children.append(inner)
-
-            # `global`/`nonlocal` apply to the whole scope regardless of where they appear
-            # in it, so they must be collected before any binding is recorded.
-            inner.rebound = _rebound_names(target, profile, spec)
-            if scope_kind in {"function", "lambda"}:
-                inner.receiver = _bind_parameters(target, inner, profile, spec, class_name)
-            next_class = inner.owner if scope_kind == "class" else class_name
-            if scope_kind == "class" and inner.owner:
-                tree.class_members.setdefault(inner.owner, {})
-
-            _walk(target, inner, tree, profile, spec, class_name=next_class)
-            _collect_class_members(inner, tree, class_name=next_class)
+            _enter(context, target, scope, scope_kind, class_name)
             continue
 
-        _bind_from(target, scope, tree, profile, spec)
-        _walk(target, scope, tree, profile, spec, class_name=class_name)
+        _bind_from(target, scope, context.tree, context.profile, context.spec)
+        _walk(context, target, scope, class_name=class_name)
+
+
+def _declare(context: _Context, target: Node, kind: str, scope: Scope) -> None:
+    """Record the name a definition or declaration introduces in the current scope."""
+    if kind not in context.spec.declaration_kinds and not context.profile.is_definition(target):
+        return
+    name = context.profile.entity_name(target)
+    if not name:
+        return
+    scope.declare(
+        Binding(
+            name,
+            "class" if kind in context.profile.class_like else "function",
+            target.start_point[0] + 1,
+            target.start_byte,
+            target.end_byte,
+        )
+    )
+
+
+def _enter(
+    context: _Context, target: Node, scope: Scope, scope_kind: str, class_name: str | None
+) -> None:
+    """Open a nested scope, populate it, and walk what it contains."""
+    inner = Scope(
+        kind=scope_kind,
+        start_byte=target.start_byte,
+        end_byte=target.end_byte,
+        parent=scope,
+        owner=context.profile.entity_name(target),
+    )
+    scope.children.append(inner)
+
+    # `global`/`nonlocal` apply to the whole scope regardless of where they appear in it,
+    # so they must be collected before any binding is recorded.
+    inner.rebound = _rebound_names(target, context.profile, context.spec)
+    if scope_kind in {"function", "lambda"}:
+        inner.receiver = _bind_parameters(target, inner, context.profile, context.spec, class_name)
+
+    next_class = inner.owner if scope_kind == "class" else class_name
+    if scope_kind == "class" and inner.owner:
+        context.tree.class_members.setdefault(inner.owner, {})
+
+    _walk(context, target, inner, class_name=next_class)
+    _collect_class_members(inner, context.tree, class_name=next_class)
 
 
 def _rebound_names(node: Node, profile: LanguageProfile, spec: ScopeSpec) -> set[str]:
@@ -250,45 +272,54 @@ def _bind_parameters(
 def _bind_from(
     node: Node, scope: Scope, tree: ScopeTree, profile: LanguageProfile, spec: ScopeSpec
 ) -> None:
-    """Record the names a statement introduces."""
+    """Record the names a statement introduces.
+
+    Three unrelated statement shapes bind names, and they share nothing but the scope they
+    bind into -- an assignment names its targets, an `as` clause names one alias, and an
+    import names whatever it brings in and remembers where it came from.
+    """
     kind = node.type
-
     if kind in spec.assignment_kinds:
-        for name_node in _binding_targets(node, spec):
-            text = _text(name_node)
-            if text:
-                scope.declare(
-                    Binding(
-                        text,
-                        "local",
-                        name_node.start_point[0] + 1,
-                        name_node.start_byte,
-                        name_node.end_byte,
-                    )
-                )
-        return
+        _bind_assignment(node, scope, spec)
+    elif kind in spec.alias_kinds:
+        _bind_alias(node, scope)
+    elif kind in profile.metrics.imports.statement_kinds:
+        _bind_import(node, scope, tree, profile)
 
-    if kind in spec.alias_kinds:
-        alias = node.child_by_field_name("alias") or node.child_by_field_name("name")
-        if alias is not None and _text(alias):
+
+def _bind_assignment(node: Node, scope: Scope, spec: ScopeSpec) -> None:
+    """Every identifier an assignment or loop binds, destructuring included."""
+    for name_node in _binding_targets(node, spec):
+        text = _text(name_node)
+        if text:
             scope.declare(
                 Binding(
-                    _text(alias),
-                    "alias",
-                    alias.start_point[0] + 1,
-                    alias.start_byte,
-                    alias.end_byte,
+                    text,
+                    "local",
+                    name_node.start_point[0] + 1,
+                    name_node.start_byte,
+                    name_node.end_byte,
                 )
             )
-        return
 
-    imports = profile.metrics.imports
-    if kind in imports.statement_kinds:
-        for name, source in _imported_names(node, profile):
-            scope.declare(
-                Binding(name, "import", node.start_point[0] + 1, node.start_byte, node.end_byte)
-            )
-            tree.import_aliases[name] = source
+
+def _bind_alias(node: Node, scope: Scope) -> None:
+    """`with x as y`, `except E as e`: the alias is the name that enters the scope."""
+    alias = node.child_by_field_name("alias") or node.child_by_field_name("name")
+    if alias is None or not _text(alias):
+        return
+    scope.declare(
+        Binding(_text(alias), "alias", alias.start_point[0] + 1, alias.start_byte, alias.end_byte)
+    )
+
+
+def _bind_import(node: Node, scope: Scope, tree: ScopeTree, profile: LanguageProfile) -> None:
+    """Imported names, plus the alias table that maps `np` back to `numpy`."""
+    for name, source in _imported_names(node, profile):
+        scope.declare(
+            Binding(name, "import", node.start_point[0] + 1, node.start_byte, node.end_byte)
+        )
+        tree.import_aliases[name] = source
 
 
 def _binding_targets(node: Node, spec: ScopeSpec) -> Iterator[Node]:

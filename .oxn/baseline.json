@@ -26,8 +26,6 @@
     "cognitive_complexity|src/oxn/resolve/members.py|src.oxn.resolve.members._collect_accesses": 14.0,
     "cognitive_complexity|src/oxn/resolve/members.py|src.oxn.resolve.members._declared_fields": 22.0,
     "cognitive_complexity|src/oxn/resolve/members.py|src.oxn.resolve.members.build_class_models": 17.0,
-    "cognitive_complexity|src/oxn/resolve/scopes.py|src.oxn.resolve.scopes._bind_from": 14.0,
-    "cognitive_complexity|src/oxn/resolve/scopes.py|src.oxn.resolve.scopes._walk": 28.0,
     "cognitive_complexity|src/oxn/resolve/symbols.py|src.oxn.resolve.symbols.build_project_symbols": 15.0,
     "cognitive_complexity|src/oxn/scip/index.py|src.oxn.scip.index._parse_occurrence": 16.0,
     "cognitive_complexity|src/oxn/vcs/log.py|src.oxn.vcs.log.parse_log": 17.0,
@@ -49,7 +47,6 @@
     "cyclomatic_complexity|src/oxn/resolve/members.py|src.oxn.resolve.members._base_names": 12.0,
     "cyclomatic_complexity|src/oxn/resolve/members.py|src.oxn.resolve.members._collect_accesses": 11.0,
     "cyclomatic_complexity|src/oxn/resolve/members.py|src.oxn.resolve.members._declared_fields": 12.0,
-    "cyclomatic_complexity|src/oxn/resolve/scopes.py|src.oxn.resolve.scopes._walk": 13.0,
     "cyclomatic_complexity|src/oxn/scip/index.py|src.oxn.scip.index._parse_occurrence": 13.0,
     "cyclomatic_complexity|src/oxn/volume/clones.py|src.oxn.volume.clones._extend": 17.0,
     "function_sloc|scripts/dogfood.py|scripts.dogfood.repair": 64.0,
@@ -65,7 +62,6 @@
     "parameter_count|src/oxn/report.py|src.oxn.report.run_parse": 6.0,
     "parameter_count|src/oxn/resolve/measure.py|src.oxn.resolve.measure.grade_file": 7.0,
     "parameter_count|src/oxn/resolve/members.py|src.oxn.resolve.members._collect_accesses": 6.0,
-    "parameter_count|src/oxn/resolve/scopes.py|src.oxn.resolve.scopes._walk": 7.0,
     "parameter_count|src/oxn/scip/runner.py|src.oxn.scip.runner.run_indexer": 7.0,
     "parameter_count|src/oxn/vcs/log.py|src.oxn.vcs.log.read_log": 6.0
   }
