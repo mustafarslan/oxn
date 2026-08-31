@@ -12,7 +12,8 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Iterable, Iterator, Mapping, Sequence  # noqa: TC003 - runtime alias
-from typing import TypeVar
+from dataclasses import dataclass, field
+from typing import Generic, TypeVar
 
 Node = TypeVar("Node")
 #: Any adjacency mapping. Callers pass plain dicts; nothing here mutates the input.
@@ -25,56 +26,91 @@ def strongly_connected_components(graph: Graph[Node]) -> list[list[Node]]:
     Returns components in reverse topological order. A component of size > 1 -- or a single
     node with a self-loop -- is a dependency cycle.
     """
-    index_of: dict[Node, int] = {}
-    low: dict[Node, int] = {}
-    on_stack: set[Node] = set()
-    stack: list[Node] = []
-    components: list[list[Node]] = []
-    counter = 0
+    return _Tarjan(graph).run()
 
-    for start in graph:
-        if start in index_of:
-            continue
 
-        # Each frame is (node, iterator over successors). Explicit, so deep graphs are fine.
-        work: list[tuple[Node, Iterator[Node]]] = [(start, iter(graph.get(start, ())))]
-        index_of[start] = low[start] = counter
-        counter += 1
-        stack.append(start)
-        on_stack.add(start)
+@dataclass
+class _Tarjan(Generic[Node]):
+    """Tarjan's algorithm and the six pieces of state it threads.
+
+    A class rather than a function because the state is the algorithm: `index_of`, `low`,
+    the stack and the on-stack set are mutated by every step, and passing six mutable
+    structures between free functions would say less about the algorithm than this does.
+    Iterative throughout -- Python's 1000-frame recursion limit is reached by real
+    dependency chains, and the resulting crash gives no clue what happened.
+    """
+
+    graph: Graph[Node]
+    index_of: dict[Node, int] = field(default_factory=dict)
+    low: dict[Node, int] = field(default_factory=dict)
+    on_stack: set[Node] = field(default_factory=set)
+    stack: list[Node] = field(default_factory=list)
+    components: list[list[Node]] = field(default_factory=list)
+    counter: int = 0
+
+    def run(self) -> list[list[Node]]:
+        for start in self.graph:
+            if start not in self.index_of:
+                self._visit(start)
+        return self.components
+
+    def _visit(self, start: Node) -> None:
+        """Depth-first from one root, with the call stack made explicit.
+
+        Each frame is (node, iterator over successors), so a frame resumes where it left
+        off rather than restarting the successor scan.
+        """
+        self._discover(start)
+        work: list[tuple[Node, Iterator[Node]]] = [(start, self._successors(start))]
 
         while work:
             node, successors = work[-1]
-            advanced = False
-            for successor in successors:
-                if successor not in index_of:
-                    index_of[successor] = low[successor] = counter
-                    counter += 1
-                    stack.append(successor)
-                    on_stack.add(successor)
-                    work.append((successor, iter(graph.get(successor, ()))))
-                    advanced = True
-                    break
-                if successor in on_stack:
-                    low[node] = min(low[node], index_of[successor])
-            if advanced:
+            pushed = self._advance(node, successors)
+            if pushed is not None:
+                work.append((pushed, self._successors(pushed)))
                 continue
 
             work.pop()
             if work:
                 parent = work[-1][0]
-                low[parent] = min(low[parent], low[node])
-            if low[node] == index_of[node]:
-                component: list[Node] = []
-                while True:
-                    member = stack.pop()
-                    on_stack.discard(member)
-                    component.append(member)
-                    if member == node:
-                        break
-                components.append(component)
+                self.low[parent] = min(self.low[parent], self.low[node])
+            if self.low[node] == self.index_of[node]:
+                self._close(node)
 
-    return components
+    def _advance(self, node: Node, successors: Iterator[Node]) -> Node | None:
+        """Consume successors until one needs visiting; return it, or None when exhausted.
+
+        Returning the node rather than pushing the frame here keeps the work stack owned by
+        `_visit` alone.
+        """
+        for successor in successors:
+            if successor not in self.index_of:
+                self._discover(successor)
+                return successor
+            if successor in self.on_stack:
+                self.low[node] = min(self.low[node], self.index_of[successor])
+        return None
+
+    def _discover(self, node: Node) -> None:
+        """First visit: number it, and put it on the component stack."""
+        self.index_of[node] = self.low[node] = self.counter
+        self.counter += 1
+        self.stack.append(node)
+        self.on_stack.add(node)
+
+    def _close(self, root: Node) -> None:
+        """`root` is a component root: everything above it on the stack is its component."""
+        component: list[Node] = []
+        while True:
+            member = self.stack.pop()
+            self.on_stack.discard(member)
+            component.append(member)
+            if member == root:
+                break
+        self.components.append(component)
+
+    def _successors(self, node: Node) -> Iterator[Node]:
+        return iter(self.graph.get(node, ()))
 
 
 def cycles(graph: Graph[Node]) -> list[list[Node]]:
