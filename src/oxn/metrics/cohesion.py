@@ -29,6 +29,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
+    from collections.abc import Iterable
+
     from oxn.resolve.members import ClassModel
 
 
@@ -91,40 +93,70 @@ def cohesion(model: ClassModel) -> Cohesion:
     )
 
 
+class _DisjointSet:
+    """Union-find over method names, with path halving.
+
+    A class rather than two closures inside `_components`: a nested function raises the
+    nesting level of everything around it, so the whole component scan was scored two
+    levels deep for a reason that was about scoping rather than about the algorithm.
+    """
+
+    __slots__ = ("parent",)
+
+    def __init__(self, names: Iterable[str]) -> None:
+        self.parent = {name: name for name in names}
+
+    def __contains__(self, name: str) -> bool:
+        return name in self.parent
+
+    def find(self, name: str) -> str:
+        while self.parent[name] != name:
+            self.parent[name] = self.parent[self.parent[name]]
+            name = self.parent[name]
+        return name
+
+    def union(self, first: str, second: str) -> None:
+        left, right = self.find(first), self.find(second)
+        if left != right:
+            self.parent[right] = left
+
+    def count(self) -> int:
+        return len({self.find(name) for name in self.parent})
+
+
 def _components(model: ClassModel, *, include_calls: bool) -> int:
     """Connected components of the method graph.
 
     Two methods are joined when they touch a common field, and -- for LCOM4 -- when one
     calls the other. A class that is really two classes shows up as two components.
     """
-    methods = sorted(model.methods)
-    if not methods:
+    if not model.methods:
         return 0
 
-    parent = {name: name for name in methods}
+    groups = _DisjointSet(sorted(model.methods))
+    _join_shared_fields(model, groups)
+    if include_calls:
+        _join_callers(model, groups)
+    return groups.count()
 
-    def find(name: str) -> str:
-        while parent[name] != name:
-            parent[name] = parent[parent[name]]
-            name = parent[name]
-        return name
 
-    def union(first: str, second: str) -> None:
-        left, right = find(first), find(second)
-        if left != right:
-            parent[right] = left
-
+def _join_shared_fields(model: ClassModel, groups: _DisjointSet) -> None:
+    """Two methods that touch a common field belong to the same component (LCOM1-5)."""
     for first, second in model.method_pairs():
         if model.methods[first].touches & model.methods[second].touches:
-            union(first, second)
+            groups.union(first, second)
 
-    if include_calls:
-        for name, access in model.methods.items():
-            for callee in access.calls:
-                if callee in parent:
-                    union(name, callee)
 
-    return len({find(name) for name in methods})
+def _join_callers(model: ClassModel, groups: _DisjointSet) -> None:
+    """LCOM4 additionally joins a method to the siblings it calls.
+
+    Only siblings: a call to something outside the class says nothing about *this* class's
+    cohesion, which is why the membership test is against the group rather than the name.
+    """
+    for name, access in model.methods.items():
+        for callee in access.calls:
+            if callee in groups:
+                groups.union(name, callee)
 
 
 def _lcom_star(model: ClassModel) -> float | None:
