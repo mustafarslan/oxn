@@ -18,7 +18,10 @@ from oxn.graph.resolve import ResolutionContext, resolve_import
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Callable, Iterable, Sequence
 
+    from tree_sitter import Node
+
     from oxn.graph.imports import RawImport
+    from oxn.profiles.base import LanguageProfile
 
 #: Import kinds that create *runtime* coupling. A `type_only` import is erased at compile
 #: time, so counting it would misstate exactly what Martin's metrics are about.
@@ -77,9 +80,6 @@ def build_dependency_graph(
     include_type_only: bool = False,
 ) -> DependencyGraph:
     """Parse, resolve and aggregate. ``root`` anchors every path in the result."""
-    from oxn.languages import get_parser
-    from oxn.profiles import profile_for_path
-
     relative_paths = [_relative(path, root) for path in files]
     context = ResolutionContext.build(root, set(relative_paths))
 
@@ -87,34 +87,68 @@ def build_dependency_graph(
     kinds = RUNTIME_KINDS | ({"type_only"} if include_type_only else set())
 
     for path, relative in zip(files, relative_paths, strict=True):
-        profile = profile_for_path(str(path))
-        if profile is None:
+        parsed = _parsed_tree(path)
+        if parsed is None:
             continue
-        tree = get_parser(profile.name).parse(path.read_bytes())
-        if tree.root_node.has_error:
-            continue
-
+        profile, tree_root = parsed
         graph.files.setdefault(relative, set())
         graph.membership[relative] = component_of(relative)
-
-        for raw in extract_imports(tree.root_node, profile):
-            graph.import_count += 1
-            resolved = resolve_import(relative, raw, context, profile.name)
-            if not resolved.resolved:
-                graph.external_count += 1
-                if _is_internal_looking(raw):
-                    graph.unresolved.append(
-                        UnresolvedImport(relative, raw.specifier, raw.kind, raw.line)
-                    )
-                continue
-            if raw.kind not in kinds:
-                continue
-            for target in resolved.targets:
-                if target != relative:
-                    graph.files[relative].add(target)
+        _add_imports(graph, _Scan(relative, tree_root, profile, context, kinds))
 
     _aggregate(graph, component_of)
     return graph
+
+
+def _parsed_tree(path: Path) -> tuple[LanguageProfile, Node] | None:
+    """The parse tree for one file, or None when it cannot contribute edges.
+
+    A file with a syntax error is skipped rather than half-read: a partial tree yields a
+    partial import list, and a *missing* edge silently weakens every architectural claim
+    made from this graph.
+    """
+    from oxn.languages import get_parser
+    from oxn.profiles import profile_for_path
+
+    profile = profile_for_path(str(path))
+    if profile is None:
+        return None
+    tree = get_parser(profile.name).parse(path.read_bytes())
+    if tree.root_node.has_error:
+        return None
+    return profile, tree.root_node
+
+
+@dataclass(frozen=True, slots=True)
+class _Scan:
+    """One file's imports, and everything needed to resolve them."""
+
+    relative: str
+    tree_root: Node
+    profile: LanguageProfile
+    context: ResolutionContext
+    kinds: frozenset[str]
+
+
+def _add_imports(graph: DependencyGraph, scan: _Scan) -> None:
+    """Resolve every import in one file into edges, counting what does not resolve."""
+    for raw in extract_imports(scan.tree_root, scan.profile):
+        graph.import_count += 1
+        resolved = resolve_import(scan.relative, raw, scan.context, scan.profile.name)
+        if not resolved.resolved:
+            _record_external(graph, scan.relative, raw)
+            continue
+        if raw.kind not in scan.kinds:
+            continue
+        for target in resolved.targets:
+            if target != scan.relative:
+                graph.files[scan.relative].add(target)
+
+
+def _record_external(graph: DependencyGraph, relative: str, raw: RawImport) -> None:
+    """Unresolved is usually third-party; only the internal-looking ones are reported."""
+    graph.external_count += 1
+    if _is_internal_looking(raw):
+        graph.unresolved.append(UnresolvedImport(relative, raw.specifier, raw.kind, raw.line))
 
 
 def _is_internal_looking(raw: RawImport) -> bool:
