@@ -56,30 +56,54 @@ def _oxn_cyclomatic(source: str) -> int:
 
 
 def _oxn_functions(path: Path) -> dict[str, int] | None:
-    """Leaf name -> cognitive score for every function in a file."""
+    """Leaf name -> cognitive score for every function in a file.
+
+    **Same-named functions collapse, and the last one in source order wins.** A file with
+    four `__init__` methods reports one score. That is not ideal, but it is deliberate and
+    must stay stable: complexipy keys its own output the same way, so both sides collapse
+    identically and the comparison stays honest. Changing the traversal order silently
+    changes *which* `__init__` is compared -- measured, 32 of httpx's 962 functions --
+    without changing the count, so a refactor here looks free and is not.
+    """
     profile = get_profile("python")
     root = get_parser("python").parse(path.read_bytes()).root_node
     if root.has_error:
         return None
-    scores: dict[str, int] = {}
+    return {
+        name: cognitive_complexity(node, profile, function_name=name).score
+        for name, node in _named_functions(root, profile)
+    }
 
-    def walk(node) -> None:
-        for child in node.named_children:
-            definition = profile.unwrap(child)
-            if definition.type in profile.function_like or definition.type in profile.class_like:
-                name = profile.entity_name(definition)
-                if name and definition.type in profile.function_like:
-                    scores[name] = cognitive_complexity(
-                        definition, profile, function_name=name
-                    ).score
-                body = definition.child_by_field_name(profile.body_field)
-                if body is not None:
-                    walk(body)
-            else:
-                walk(child)
 
-    walk(root)
-    return scores
+def _function_nodes(root, profile):
+    """Every function-like definition in the tree, in source order, classes descended into.
+
+    Yields the node whether or not it is named -- a lambda is a function for the purposes
+    of comparing against a tool that reports one. A definition's *body* is what gets
+    descended into, not the definition node: entering the node again would re-find the
+    definition itself and never terminate.
+
+    Recursive, and deliberately so: definition nesting is bounded by how deeply a person
+    will nest a class in a function, which is nothing like the depth of an expression tree.
+    Source order is load-bearing for `_oxn_functions` below -- see the note there.
+    """
+    for child in root.named_children:
+        definition = profile.unwrap(child)
+        if definition.type in profile.function_like:
+            yield definition
+        if definition.type in (profile.function_like | profile.class_like):
+            body = definition.child_by_field_name(profile.body_field)
+            yield from _function_nodes(body if body is not None else child, profile)
+        else:
+            yield from _function_nodes(child, profile)
+
+
+def _named_functions(root, profile):
+    """The subset of `_function_nodes` that carries a name, paired with it."""
+    for definition in _function_nodes(root, profile):
+        name = profile.entity_name(definition)
+        if name:
+            yield name, definition
 
 
 @pytest.mark.parametrize(
@@ -102,6 +126,34 @@ def test_documented_cyclomatic_divergences_still_hold(
 
 @pytest.mark.skipif(not CORPUS.exists(), reason="corpora not fetched")
 @pytest.mark.slow
+def _complexipy_functions(path: Path) -> dict[str, int] | None:
+    """complexipy's score per function name, or None when the oracle could not read the file.
+
+    A broken oracle must not fail our suite -- it is evidence, not an authority -- so the
+    file is skipped and the comparison simply has one fewer data point.
+    """
+    try:
+        return {fn.name: fn.complexity for fn in complexipy.file_complexity(str(path)).functions}
+    except Exception:  # noqa: BLE001 -- see the docstring
+        return None
+
+
+def _paired_scores(path: Path):
+    """Functions *both* implementations scored, with both scores.
+
+    Only the intersection is compared. complexipy reports things we do not treat as
+    functions and vice versa, and counting a name only one side knows about would measure
+    the difference in what each calls a function rather than how each scores one.
+    """
+    ours = _oxn_functions(path)
+    theirs = _complexipy_functions(path)
+    if ours is None or theirs is None:
+        return
+    for name, expected in theirs.items():
+        if name in ours:
+            yield name, ours[name], expected
+
+
 def test_cognitive_agrees_with_complexipy_on_a_real_codebase() -> None:
     """Exit criterion for the cognitive-complexity implementation: >= 95% agreement.
 
@@ -113,23 +165,12 @@ def test_cognitive_agrees_with_complexipy_on_a_real_codebase() -> None:
     disagreements: list[str] = []
 
     for path in sorted(CORPUS.rglob("*.py")):
-        ours = _oxn_functions(path)
-        if ours is None:
-            continue
-        try:
-            theirs = {
-                fn.name: fn.complexity for fn in complexipy.file_complexity(str(path)).functions
-            }
-        except Exception:  # noqa: BLE001 -- an oracle failure must not fail our suite
-            continue
-        for name, expected in theirs.items():
-            if name not in ours:
-                continue
+        for name, ours, theirs in _paired_scores(path):
             compared += 1
-            if ours[name] == expected:
+            if ours == theirs:
                 agreed += 1
             else:
-                disagreements.append(f"{path.name}::{name} oxn={ours[name]} complexipy={expected}")
+                disagreements.append(f"{path.name}::{name} oxn={ours} complexipy={theirs}")
 
     assert compared > 300, f"only {compared} functions compared; corpus too small to be meaningful"
     ratio = agreed / compared
@@ -314,6 +355,32 @@ def _count_kinds(node, profile, kinds: set[str]) -> int:
 
 @pytest.mark.skipif(not CORPUS.exists(), reason="corpora not fetched")
 @pytest.mark.slow
+def _lizard_by_line(source: str) -> dict[int, int]:
+    """lizard's cyclomatic score per function, keyed by the line the function starts on.
+
+    `setdefault` rather than assignment: lizard occasionally reports two entries for one
+    line, and the first is the outer function.
+    """
+    by_line: dict[int, int] = {}
+    for function in lizard.analyze_file.analyze_source_code("t.py", source).function_list:
+        by_line.setdefault(function.start_line, function.cyclomatic_complexity)
+    return by_line
+
+
+def _reduces_to_a_rule(definition, profile, theirs: int) -> tuple[bool, int]:
+    """Does the difference from lizard reduce to the two enumerated rules?
+
+        lizard == oxn - (asserts) + (finally clauses)
+
+    Both are in docs/divergences.md with the reasoning. Returns the verdict and our score,
+    because a failure has to name the number it disagreed about.
+    """
+    ours = cyclomatic_complexity(definition, profile)
+    asserts = _count_kinds(definition, profile, {"assert_statement"})
+    finallys = _count_kinds(definition, profile, {"finally_clause"})
+    return ours - asserts + finallys == theirs, ours
+
+
 def test_every_cyclomatic_divergence_from_lizard_is_explained() -> None:
     """Raw agreement is meaningless here; explained divergence is the real criterion.
 
@@ -336,33 +403,18 @@ def test_every_cyclomatic_divergence_from_lizard_is_explained() -> None:
         root = parser.parse(source.encode()).root_node
         if root.has_error:
             continue
-        by_line: dict[int, int] = {}
-        for function in lizard.analyze_file.analyze_source_code("t.py", source).function_list:
-            by_line.setdefault(function.start_line, function.cyclomatic_complexity)
+        by_line = _lizard_by_line(source)
 
-        def visit(node, by_line: dict[int, int], name: str) -> None:
-            nonlocal compared, explained
-            for child in node.named_children:
-                definition = profile.unwrap(child)
-                if definition.type in profile.function_like:
-                    line = definition.start_point[0] + 1
-                    if line in by_line:
-                        compared += 1
-                        ours = cyclomatic_complexity(definition, profile)
-                        asserts = _count_kinds(definition, profile, {"assert_statement"})
-                        finallys = _count_kinds(definition, profile, {"finally_clause"})
-                        if ours - asserts + finallys == by_line[line]:
-                            explained += 1
-                        else:
-                            unexplained.append(f"{name}:{line} oxn={ours} lizard={by_line[line]}")
-                body = (
-                    definition.child_by_field_name(profile.body_field)
-                    if definition.type in (profile.function_like | profile.class_like)
-                    else None
-                )
-                visit(body if body is not None else child, by_line, name)
-
-        visit(root, by_line, path.name)
+        for definition in _function_nodes(root, profile):
+            line = definition.start_point[0] + 1
+            if line not in by_line:
+                continue
+            compared += 1
+            agrees, ours = _reduces_to_a_rule(definition, profile, by_line[line])
+            if agrees:
+                explained += 1
+            else:
+                unexplained.append(f"{path.name}:{line} oxn={ours} lizard={by_line[line]}")
 
     assert compared > 500, f"only {compared} functions compared"
     ratio = explained / compared

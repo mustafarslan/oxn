@@ -2,12 +2,5 @@
   "oxn_version": "0.0.1",
   "scope": "repository",
   "note": "Accepted debt: these violations do not fail the build, but they may not get worse, and a new one anywhere fails. Regenerate with `oxn baseline`.",
-  "violations": {
-    "cognitive_complexity|tests/test_oracles.py|tests.test_oracles._oxn_functions": 17.0,
-    "cognitive_complexity|tests/test_oracles.py|tests.test_oracles._oxn_functions.walk": 14.0,
-    "cognitive_complexity|tests/test_oracles.py|tests.test_oracles.test_cognitive_agrees_with_complexipy_on_a_real_codebase": 16.0,
-    "cognitive_complexity|tests/test_oracles.py|tests.test_oracles.test_every_cyclomatic_divergence_from_lizard_is_explained": 32.0,
-    "cognitive_complexity|tests/test_oracles.py|tests.test_oracles.test_every_cyclomatic_divergence_from_lizard_is_explained.visit": 16.0,
-    "max_nesting_depth|tests/test_oracles.py|tests.test_oracles.test_every_cyclomatic_divergence_from_lizard_is_explained.visit": 5.0
-  }
+  "violations": {}
 }
