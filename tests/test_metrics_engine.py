@@ -171,8 +171,8 @@ def test_a_file_reports_its_own_entities_whatever_else_is_indexed(tmp_path, monk
     (tmp_path / "tangled.py").write_text("\n\n".join(_tangled(f"tangled{n}") for n in range(12)))
     (tmp_path / "calm.py").write_text(CALM)
 
-    run_metrics(["tangled.py", "calm.py"], json_output=True)
-    payload = run_metrics(["calm.py"], limit=2, json_output=True)
+    run_metrics(["tangled.py", "calm.py"])
+    payload = run_metrics(["calm.py"], limit=2)
 
     names = {row["qualified_name"].split(".")[-1] for row in payload["entities"]}
     assert names, "the requested file's entities must not be crowded out by other files"
@@ -187,8 +187,8 @@ def test_every_function_is_reported_when_the_limit_allows(tmp_path, monkeypatch)
     (tmp_path / "tangled.py").write_text("\n\n".join(_tangled(f"tangled{n}") for n in range(12)))
     (tmp_path / "calm.py").write_text(CALM)
 
-    run_metrics(["tangled.py", "calm.py"], json_output=True)
-    payload = run_metrics(["calm.py"], json_output=True)
+    run_metrics(["tangled.py", "calm.py"])
+    payload = run_metrics(["calm.py"])
 
     names = {row["qualified_name"].split(".")[-1] for row in payload["entities"]}
     assert names == {"one", "two", "three"}

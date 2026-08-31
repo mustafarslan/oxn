@@ -193,7 +193,7 @@ PYTHON = LanguageProfile(
     name="python",
     grammar="python",
     extensions=frozenset({".py", ".pyi"}),
-    version=3,
+    version=4,
     privacy="underscore",
     function_like=frozenset({"function_definition", "lambda"}),
     class_like=frozenset({"class_definition"}),
@@ -213,13 +213,14 @@ PYTHON = LanguageProfile(
             "typed_default_parameter",
             "list_splat_pattern",
             "dictionary_splat_pattern",
-            "keyword_separator",
-            "positional_separator",
         }
     ),
-    # Python has no syntactic receiver: `self` is an ordinary first parameter. Receiver
-    # identification is therefore semantic (is this a method? is this its first param?)
-    # and lives in the LCOM work of P6, not here.
+    # `*` and `/` are *markers*, not parameters -- nobody passes them. Listing them here
+    # charged every keyword-only signature one extra parameter, so `f(a, b, *, c, d, e)`
+    # measured six against a ceiling of five. That is a bias against the more explicit
+    # style, which is the opposite of what the ceiling is for.
+    # Python has no syntactic receiver: `self` is an ordinary first parameter, so there is
+    # no node kind to match. `receiver_names` below carries it instead.
     receiver_kinds=frozenset(),
     receiver_names=frozenset({"self", "cls"}),
     comment_kinds=frozenset({"comment"}),

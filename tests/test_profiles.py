@@ -167,3 +167,32 @@ def _parameter_counts(source: str) -> dict[str, int]:
         for measured in measure_file(list(parsed.entities), data, profile, tree.root_node)
         if measured.get("parameter_count") is not None
     }
+
+
+def test_the_keyword_only_marker_is_not_a_parameter() -> None:
+    """`*` and `/` are markers, not parameters -- nobody passes them.
+
+    They were listed in `parameter_kinds`, so `f(a, b, *, c, d, e)` measured six against a
+    ceiling of five: a bias against the more explicit style, which is the opposite of what
+    the ceiling is for. They also entered the scope tree as bindings literally named `*` --
+    84 of them across 31 files in this repo alone.
+    """
+    counts = _parameter_counts(
+        "def positional(a, b, c, d, e):\n"
+        "    return a\n"
+        "\n"
+        "\n"
+        "def keyword_only(a, b, *, c, d, e):\n"
+        "    return a\n"
+        "\n"
+        "\n"
+        "def positional_only(a, b, /, c, d):\n"
+        "    return a\n"
+    )
+    assert counts["positional"] == counts["keyword_only"] == 5
+    assert counts["positional_only"] == 4
+
+
+def test_star_args_and_kwargs_are_still_parameters() -> None:
+    """`*args` and `**kwargs` are things a caller passes; the bare markers are not."""
+    assert _parameter_counts("def f(a, *args, **kwargs):\n    return a\n")["f"] == 3

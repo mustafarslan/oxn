@@ -26,16 +26,10 @@
     "cyclomatic_complexity|src/oxn/resolve/members.py|src.oxn.resolve.members._collect_accesses": 11.0,
     "cyclomatic_complexity|src/oxn/scip/index.py|src.oxn.scip.index._parse_occurrence": 13.0,
     "function_sloc|scripts/dogfood.py|scripts.dogfood.repair": 64.0,
-    "function_sloc|src/oxn/report.py|src.oxn.report.run_arch": 71.0,
+    "function_sloc|src/oxn/report.py|src.oxn.report.run_arch": 70.0,
     "max_nesting_depth|tests/test_oracles.py|tests.test_oracles.test_every_cyclomatic_divergence_from_lizard_is_explained.visit": 5.0,
-    "parameter_count|scripts/dogfood.py|scripts.dogfood.repair": 9.0,
-    "parameter_count|src/oxn/report.py|src.oxn.report.run_arch": 6.0,
-    "parameter_count|src/oxn/report.py|src.oxn.report.run_classes": 6.0,
-    "parameter_count|src/oxn/report.py|src.oxn.report.run_index": 6.0,
-    "parameter_count|src/oxn/report.py|src.oxn.report.run_metrics": 7.0,
-    "parameter_count|src/oxn/report.py|src.oxn.report.run_parse": 6.0,
+    "parameter_count|scripts/dogfood.py|scripts.dogfood.repair": 8.0,
     "parameter_count|src/oxn/resolve/members.py|src.oxn.resolve.members._collect_accesses": 6.0,
-    "parameter_count|src/oxn/scip/runner.py|src.oxn.scip.runner.run_indexer": 7.0,
-    "parameter_count|src/oxn/vcs/log.py|src.oxn.vcs.log.read_log": 6.0
+    "parameter_count|src/oxn/scip/runner.py|src.oxn.scip.runner.run_indexer": 6.0
   }
 }

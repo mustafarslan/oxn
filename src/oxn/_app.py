@@ -182,14 +182,14 @@ def parse(
     A debugging surface for the parse layer: it shows the containment skeleton the metric
     engine will read, and whether a run hit the cache.
     """
+    from oxn.render import Output
     from oxn.report import run_parse
 
     run_parse(
         paths or ["."],
-        json_output=json_output,
+        Output(console=None if json_output else _console()),
         force=force,
         stats_only=stats,
-        console=None if json_output else _console(),
     )
 
 
@@ -208,15 +208,15 @@ def metrics(
     Every point of a cognitive-complexity score can be traced to a line and a reason:
     ``oxn metrics --explain`` prints that trail.
     """
+    from oxn.render import Output
     from oxn.report import run_metrics
 
     run_metrics(
         paths or ["."],
+        Output(console=None if json_output else _console()),
         sort_by=sort_by,
         limit=limit,
         explain=explain,
-        json_output=json_output,
-        console=None if json_output else _console(),
     )
 
 
@@ -231,13 +231,13 @@ def volume(
     These are the signals agent-written code degrades: volume correlates with
     architectural decay where prompt specificity does not.
     """
+    from oxn.render import Output
     from oxn.report import run_volume
 
     run_volume(
         paths or ["."],
-        json_output=json_output,
+        Output(console=None if json_output else _console()),
         include_history=not no_history,
-        console=None if json_output else _console(),
     )
 
 
@@ -257,14 +257,14 @@ def arch(
     Report-path only. Building the graph compares every file against every other, so it
     never runs on the hook's per-edit budget.
     """
+    from oxn.render import Output
     from oxn.report import run_arch
 
     run_arch(
         paths or ["."],
+        Output(console=None if json_output else _console()),
         granularity=granularity,
         show_unresolved=show_unresolved,
-        json_output=json_output,
-        console=None if json_output else _console(),
     )
 
 
@@ -283,14 +283,14 @@ def index(
     rather than heuristic. It needs a per-language indexer, which OXN detects but never
     installs -- run `oxn doctor` to see what is available.
     """
+    from oxn.render import Output
     from oxn.report import run_index
 
     run_index(
         paths or ["."],
+        Output(console=None if json_output else _console()),
         language=language,
         index_file=reuse or None,
-        json_output=json_output,
-        console=None if json_output else _console(),
     )
 
 
@@ -308,14 +308,14 @@ def classes(
     These are the metrics that detect the "Modular Mirage" -- file-level modularity with no
     semantic cohesion -- which is the documented signature of agent-written code.
     """
+    from oxn.render import Output
     from oxn.report import run_classes
 
     run_classes(
         paths or ["."],
+        Output(console=None if json_output else _console()),
         sort_by=sort_by,
         limit=limit,
-        json_output=json_output,
-        console=None if json_output else _console(),
     )
 
 

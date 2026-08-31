@@ -13,14 +13,40 @@ from __future__ import annotations
 
 import json
 import sys
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover
     from rich.console import Console
 
 
-def _emit(payload: dict[str, Any], json_output: bool, console: Console | None) -> None:
-    if json_output or console is None:
+@dataclass(frozen=True, slots=True)
+class Output:
+    """Where a report goes: a console for a person, or JSON for a machine.
+
+    This was two parameters -- `json_output` and `console` -- that were always passed
+    together and always agreed. `_app.py` computed `console=None if json_output else
+    _console()` and then passed *both*, and `_emit` already treated a missing console as
+    "write JSON". The pair also admitted a fourth state, JSON requested *with* a console,
+    which no caller produced and no renderer had an answer for.
+    """
+
+    console: Console | None = None
+
+    @property
+    def as_json(self) -> bool:
+        return self.console is None
+
+
+#: The default for every `run_*`: no console, so the payload is written as JSON. A module
+#: constant rather than `Output()` in a default argument, so the signature does not evaluate
+#: a call and the body does not need a `None` branch to undo one.
+TO_JSON = Output()
+
+
+def _emit(payload: dict[str, Any], output: Output) -> None:
+    console = output.console
+    if console is None:
         json.dump(payload, sys.stdout, indent=2)
         sys.stdout.write("\n")
         return
@@ -52,8 +78,9 @@ def _emit(payload: dict[str, Any], json_output: bool, console: Console | None) -
         )
 
 
-def _emit_metrics(payload: dict[str, Any], json_output: bool, console: Console | None) -> None:
-    if json_output or console is None:
+def _emit_metrics(payload: dict[str, Any], output: Output) -> None:
+    console = output.console
+    if console is None:
         json.dump(payload, sys.stdout, indent=2)
         sys.stdout.write("\n")
         return
@@ -81,8 +108,9 @@ def _emit_metrics(payload: dict[str, Any], json_output: bool, console: Console |
             console.print(f"  [dim]{line}[/dim]")
 
 
-def _emit_volume(payload: dict[str, Any], json_output: bool, console: Console | None) -> None:
-    if json_output or console is None:
+def _emit_volume(payload: dict[str, Any], output: Output) -> None:
+    console = output.console
+    if console is None:
         json.dump(payload, sys.stdout, indent=2)
         sys.stdout.write("\n")
         return
@@ -115,9 +143,10 @@ def _emit_volume(payload: dict[str, Any], json_output: bool, console: Console | 
             )
 
 
-def _emit_arch(payload: dict[str, Any], json_output: bool, console: Console | None) -> None:
+def _emit_arch(payload: dict[str, Any], output: Output) -> None:
     """Five sections, each its own function -- the report reads as its own table of contents."""
-    if json_output or console is None:
+    console = output.console
+    if console is None:
         json.dump(payload, sys.stdout, indent=2)
         sys.stdout.write("\n")
         return
@@ -194,8 +223,9 @@ def _arch_unresolved(payload: dict[str, Any], console: Console) -> None:
         console.print(f"  {item['source']}:{item['line']} -> [yellow]{item['specifier']}[/yellow]")
 
 
-def _emit_index(payload: dict[str, Any], json_output: bool, console: Console | None) -> None:
-    if json_output or console is None:
+def _emit_index(payload: dict[str, Any], output: Output) -> None:
+    console = output.console
+    if console is None:
         json.dump(payload, sys.stdout, indent=2)
         sys.stdout.write("\n")
         return
@@ -233,8 +263,9 @@ def _emit_index(payload: dict[str, Any], json_output: bool, console: Console | N
         )
 
 
-def _emit_classes(payload: dict[str, Any], json_output: bool, console: Console | None) -> None:
-    if json_output or console is None:
+def _emit_classes(payload: dict[str, Any], output: Output) -> None:
+    console = output.console
+    if console is None:
         json.dump(payload, sys.stdout, indent=2)
         sys.stdout.write("\n")
         return

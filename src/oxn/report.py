@@ -9,21 +9,27 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from oxn.render import _emit, _emit_arch, _emit_classes, _emit_index, _emit_metrics, _emit_volume
+from oxn.render import (
+    TO_JSON,
+    Output,
+    _emit,
+    _emit_arch,
+    _emit_classes,
+    _emit_index,
+    _emit_metrics,
+    _emit_volume,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
-    from rich.console import Console
-
     from oxn.graph.indexer import Indexer
 
 
 def run_parse(
     paths: list[str],
+    output: Output = TO_JSON,
     *,
-    json_output: bool = False,
     force: bool = False,
     stats_only: bool = False,
-    console: Console | None = None,
 ) -> dict[str, Any]:
     """Index ``paths`` and render the result. Returns the payload either way."""
     from oxn.graph.indexer import Indexer
@@ -35,7 +41,7 @@ def run_parse(
             "status": "ERROR",
             "errors": dict.fromkeys(missing, "no such file or directory"),
         }
-        _emit(failure, json_output, console)
+        _emit(failure, output)
         return failure
 
     with Indexer() as indexer:
@@ -48,7 +54,7 @@ def run_parse(
         if not stats_only:
             payload["files"] = _file_entries(indexer, targets)
 
-    _emit(payload, json_output, console)
+    _emit(payload, output)
     return payload
 
 
@@ -78,12 +84,11 @@ def _file_entries(indexer: Indexer, targets: list[Path]) -> list[dict[str, Any]]
 
 def run_metrics(
     paths: list[str],
+    output: Output = TO_JSON,
     *,
     sort_by: str = "cognitive_complexity",
     limit: int = 20,
     explain: bool = False,
-    json_output: bool = False,
-    console: Console | None = None,
 ) -> dict[str, Any]:
     """Index ``paths`` and rank their entities by one metric."""
     from oxn.graph.indexer import Indexer
@@ -96,7 +101,7 @@ def run_metrics(
             "status": "ERROR",
             "errors": dict.fromkeys(missing, "no such file or directory"),
         }
-        _emit(failure, json_output, console)
+        _emit(failure, output)
         return failure
 
     with Indexer() as indexer:
@@ -131,7 +136,7 @@ def run_metrics(
     if trail:
         payload["explanation"] = trail
 
-    _emit_metrics(payload, json_output, console)
+    _emit_metrics(payload, output)
     return payload
 
 
@@ -151,10 +156,9 @@ def _explain_worst(indexer: Any, row: dict[str, Any]) -> list[str]:
 
 def run_volume(
     paths: list[str],
+    output: Output = TO_JSON,
     *,
-    json_output: bool = False,
     include_history: bool = True,
-    console: Console | None = None,
 ) -> dict[str, Any]:
     """Duplication, erosion and hotspots for ``paths``."""
     from oxn.graph.indexer import Indexer
@@ -167,7 +171,7 @@ def run_volume(
             "status": "ERROR",
             "errors": dict.fromkeys(missing, "no such file or directory"),
         }
-        _emit(failure, json_output, console)
+        _emit(failure, output)
         return failure
 
     with Indexer() as indexer:
@@ -176,17 +180,16 @@ def run_volume(
         persist(indexer, report)
         payload: dict[str, Any] = {"status": "OK", **report.as_dict()}
 
-    _emit_volume(payload, json_output, console)
+    _emit_volume(payload, output)
     return payload
 
 
 def run_arch(
     paths: list[str],
+    output: Output = TO_JSON,
     *,
     granularity: str = "directory",
     show_unresolved: bool = False,
-    json_output: bool = False,
-    console: Console | None = None,
 ) -> dict[str, Any]:
     """Build the dependency graph for ``paths`` and report its architecture."""
     from pathlib import PurePosixPath
@@ -203,7 +206,7 @@ def run_arch(
             "status": "ERROR",
             "errors": dict.fromkeys(missing, "no such file or directory"),
         }
-        _emit(failure, json_output, console)
+        _emit(failure, output)
         return failure
 
     def top_component(path: str) -> str:
@@ -223,7 +226,7 @@ def run_arch(
                 granularity: f"unknown granularity; choose one of {', '.join(granularities)}"
             },
         }
-        _emit(failure, json_output, console)
+        _emit(failure, output)
         return failure
     component_of = granularities[granularity]
 
@@ -257,7 +260,7 @@ def run_arch(
             for item in graph.unresolved
         ]
 
-    _emit_arch(payload, json_output, console)
+    _emit_arch(payload, output)
     return payload
 
 
@@ -309,11 +312,10 @@ def _component_types(indexer: Any, component_of: Any) -> dict[str, tuple[int, in
 
 def run_index(
     paths: list[str],
+    output: Output = TO_JSON,
     *,
     language: str = "python",
     index_file: str | None = None,
-    json_output: bool = False,
-    console: Console | None = None,
 ) -> dict[str, Any]:
     """Generate or ingest a SCIP index, merging its symbols into the graph."""
     import tempfile
@@ -325,7 +327,7 @@ def run_index(
     target = Path(paths[0]).resolve()
     if not target.exists():
         failure: dict[str, Any] = {"status": "ERROR", "errors": {str(target): "no such path"}}
-        _emit(failure, json_output, console)
+        _emit(failure, output)
         return failure
 
     with Indexer(root=target) as indexer:
@@ -343,24 +345,23 @@ def run_index(
                     )
                 except IndexerNotFound as error:
                     failure = {"status": "ERROR", "errors": {language: str(error)}}
-                    _emit(failure, json_output, console)
+                    _emit(failure, output)
                     return failure
 
             report = ingest_index(indexer, scip_path)
             stats = indexer.store.edge_stats()
 
     payload: dict[str, Any] = {"status": "OK", "index": report.as_dict(), "edges": stats}
-    _emit_index(payload, json_output, console)
+    _emit_index(payload, output)
     return payload
 
 
 def run_classes(
     paths: list[str],
+    output: Output = TO_JSON,
     *,
     sort_by: str = "lcom_star",
     limit: int = 20,
-    json_output: bool = False,
-    console: Console | None = None,
 ) -> dict[str, Any]:
     """Cohesion and coupling for every class under ``paths``."""
     from oxn.graph.depgraph import build_dependency_graph
@@ -377,7 +378,7 @@ def run_classes(
             "status": "ERROR",
             "errors": dict.fromkeys(missing, "no such file or directory"),
         }
-        _emit(failure, json_output, console)
+        _emit(failure, output)
         return failure
 
     with Indexer() as indexer:
@@ -413,7 +414,7 @@ def run_classes(
         "classes": rows[:limit],
         "total_classes": len(rows),
     }
-    _emit_classes(payload, json_output, console)
+    _emit_classes(payload, output)
     return payload
 
 
