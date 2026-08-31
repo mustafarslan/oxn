@@ -171,3 +171,43 @@ def test_evaluation_refuses_a_malformed_rule_rather_than_skipping_it() -> None:
     bad = Rule("bad", (Compare(Var("X"), ">", 1),), Head(path="p", entity="e"))
     with pytest.raises(RuleError, match="'bad'"):
         evaluate([good, bad], _facts())
+
+
+# ---- the join must be a hash join, not a scan --------------------------------------------
+
+
+def test_a_join_probes_the_columns_already_bound() -> None:
+    """Without indexing this evaluator is quadratic, and it was.
+
+    Measured before `_Indexes` existed: **72 seconds for 60 files** against a hook budget of
+    200 ms, and a 1,913-file corpus ran for thirteen minutes without finishing. ADR-0005
+    promised hash joins on the bound columns; the first implementation scanned every tuple
+    of a relation for every binding.
+
+    The property is asymptotic, so this asserts it as work done rather than as wall clock:
+    a scan touches every row per binding, an indexed join touches only the matches.
+    """
+    rows = 4000
+    facts = Facts()
+    facts.add("left", *[(f"k{n}",) for n in range(rows)])
+    facts.add("right", *[(f"k{n}", n) for n in range(rows)])
+
+    seen = 0
+    real_get = facts.get
+
+    def counting_get(relation: str):
+        nonlocal seen
+        result = real_get(relation)
+        if relation == "right":
+            seen += len(result)
+        return result
+
+    facts.get = counting_get  # type: ignore[method-assign]
+    rule = Rule(
+        name="paired",
+        body=(Atom("left", (Var("K"),)), Atom("right", (Var("K"), Var("N")))),
+        head=Head(path=Var("K"), entity=Var("K"), value=Var("N")),
+    )
+    assert len(evaluate([rule], facts)) == rows
+    # A scan would read `right` once per binding: rows * rows == 16,000,000.
+    assert seen <= rows * 2, f"`right` was read {seen} times; the join is scanning, not probing"

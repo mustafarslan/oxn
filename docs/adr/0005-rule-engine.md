@@ -204,6 +204,23 @@ because an ADR may legitimately predate the code it governs.
 read it replaces. `test_latency.py` must time the *rule* path once it is live, or the assertion
 measures code nobody runs — the failure mode this project has hit four times in one cycle.
 
+**Measured, and the fear was justified.** The first evaluator scanned every tuple of a relation for
+every binding, which is what "join" means if nobody writes the index: **72 seconds for 60 files**,
+and a 1,913-file corpus ran thirteen minutes without finishing. The section above said "hash joins
+on the columns already bound" and the implementation simply did not have them. With the index:
+
+| corpus | files | facts | before | after |
+|---|---|---|---|---|
+| `src` | 69 | 26k | 22.06 s | **0.07 s** |
+| python-httpx | 60 | 44k | 72.20 s | **0.13 s** |
+| typescript-nest | 1,913 | 639k | never finished | **3.39 s** |
+
+Which columns to probe is a property of the *rule* rather than the data — the body is a fixed
+sequence, so the variables bound when an atom is reached are the same for every binding flowing
+into it. One index per (relation, probed columns) serves the whole evaluation. The property is
+pinned by a test that counts how often a relation is read, because 555x is the kind of number that
+quietly comes back.
+
 **The hand-coded checks are the oracle and stay importable until the exit criterion is met.**
 Old-versus-new findings must be identical across `src` and every corpus before anything is deleted,
 and the deletion is its own commit.

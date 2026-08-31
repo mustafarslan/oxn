@@ -121,36 +121,107 @@ def check_stratified(rules: list[Rule]) -> None:
             )
 
 
+class _Indexes:
+    """Hash indexes on the columns a join actually probes, built once and reused.
+
+    Without these the evaluator is a nested-loop scan: every tuple of a relation examined
+    for every binding. Measured before this existed -- **72 seconds for 60 files**, against
+    a hook budget of 200 ms, and quadratic, so a 1,900-file corpus ran for thirteen minutes
+    without finishing. ADR-0005 promised hash joins and the first implementation did not
+    have them; this is that promise kept.
+
+    Which columns are probed is a property of the *rule*, not of the data: the body is a
+    fixed sequence, so the set of variables bound when an atom is reached is the same for
+    every binding flowing into it. That makes one index per (relation, probed columns)
+    enough for the whole evaluation.
+    """
+
+    __slots__ = ("_cache", "_facts")
+
+    def __init__(self, facts: Facts) -> None:
+        self._facts = facts
+        self._cache: dict[
+            tuple[str, tuple[int, ...]], dict[tuple[Any, ...], list[tuple[Any, ...]]]
+        ] = {}
+
+    def candidates(
+        self, atom: Atom, probes: tuple[int, ...], key: tuple[Any, ...]
+    ) -> list[tuple[Any, ...]]:
+        """Rows whose probed columns equal `key`; all rows when nothing is probed."""
+        if not probes:
+            return list(self._facts.get(atom.relation))
+        return self._index(atom.relation, probes).get(key, [])
+
+    def _index(
+        self, relation: str, probes: tuple[int, ...]
+    ) -> dict[tuple[Any, ...], list[tuple[Any, ...]]]:
+        existing = self._cache.get((relation, probes))
+        if existing is not None:
+            return existing
+        built: dict[tuple[Any, ...], list[tuple[Any, ...]]] = {}
+        for row in self._facts.get(relation):
+            built.setdefault(tuple(row[i] for i in probes), []).append(row)
+        self._cache[relation, probes] = built
+        return built
+
+
 def _solve(body: tuple[Condition, ...], facts: Facts) -> Iterator[dict[str, Any]]:
     """Every binding satisfying the whole conjunction, joined left to right."""
+    indexes = _Indexes(facts)
     bindings: Iterator[dict[str, Any]] = iter([{}])
+    bound: set[str] = set()
     for condition in body:
-        bindings = _apply(condition, bindings, facts)
+        bindings = _apply(condition, bindings, indexes, _probes(condition, bound))
+        if isinstance(condition, Atom) and not condition.negated:
+            bound |= condition.variables
     return bindings
 
 
+def _probes(condition: Condition, bound: set[str]) -> tuple[int, ...]:
+    """Which columns of this atom are already known, and so can be looked up rather than
+    scanned. Constants always are; a variable is when an earlier atom bound it."""
+    if isinstance(condition, Compare):
+        return ()
+    return tuple(
+        index
+        for index, term in enumerate(condition.terms)
+        if not isinstance(term, Var) or term.name in bound
+    )
+
+
 def _apply(
-    condition: Condition, bindings: Iterator[dict[str, Any]], facts: Facts
+    condition: Condition,
+    bindings: Iterator[dict[str, Any]],
+    indexes: _Indexes,
+    probes: tuple[int, ...],
 ) -> Iterator[dict[str, Any]]:
     if isinstance(condition, Compare):
         return (b for b in bindings if _compare(condition, b))
     if condition.negated:
-        return (b for b in bindings if not _any_match(condition, b, facts))
-    return _join(condition, bindings, facts)
+        return (b for b in bindings if not _any_match(condition, b, indexes, probes))
+    return _join(condition, bindings, indexes, probes)
 
 
-def _join(atom: Atom, bindings: Iterator[dict[str, Any]], facts: Facts) -> Iterator[dict[str, Any]]:
+def _join(
+    atom: Atom, bindings: Iterator[dict[str, Any]], indexes: _Indexes, probes: tuple[int, ...]
+) -> Iterator[dict[str, Any]]:
     """Extend each binding with every tuple of `atom` that agrees with it."""
-    tuples = facts.get(atom.relation)
     for binding in bindings:
-        for row in tuples:
+        key = tuple(_resolve(atom.terms[i], binding) for i in probes)
+        for row in indexes.candidates(atom, probes, key):
             extended = _unify(atom.terms, row, binding)
             if extended is not None:
                 yield extended
 
 
-def _any_match(atom: Atom, binding: dict[str, Any], facts: Facts) -> bool:
-    return any(_unify(atom.terms, row, binding) is not None for row in facts.get(atom.relation))
+def _any_match(
+    atom: Atom, binding: dict[str, Any], indexes: _Indexes, probes: tuple[int, ...]
+) -> bool:
+    key = tuple(_resolve(atom.terms[i], binding) for i in probes)
+    return any(
+        _unify(atom.terms, row, binding) is not None
+        for row in indexes.candidates(atom, probes, key)
+    )
 
 
 def _unify(
