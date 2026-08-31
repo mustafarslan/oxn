@@ -91,6 +91,16 @@ class LanguageProfile:
     #: Node kinds that are abstract types purely by virtue of their kind.
     abstract_kinds: frozenset[str] = frozenset()
 
+    #: How the language marks a name as not part of the public surface, by *name alone*.
+    #:
+    #: * ``"underscore"`` -- Python: a leading underscore.
+    #: * ``"casing"`` -- Go: a lowercase initial letter.
+    #: * ``""`` -- the profile cannot answer from the name. Java, Rust and TypeScript spell
+    #:   visibility with modifiers (``private``, ``pub``, ``#``), which is a node-level
+    #:   question this field deliberately does not pretend to answer. The shredding rule
+    #:   needs privacy to be sound and therefore does not fire for such a language.
+    privacy: str = ""
+
     #: Metric tables: decision points, cognitive increment classes, statement kinds.
     metrics: MetricSpec = field(default_factory=MetricSpec)
 
@@ -99,6 +109,21 @@ class LanguageProfile:
     queries: Mapping[str, str] = field(default_factory=dict)
 
     # ---- helpers -------------------------------------------------------------------
+
+    def is_private(self, name: str) -> bool | None:
+        """Is this name private to its module? ``None`` when the profile cannot tell.
+
+        ``None`` is not ``False``: "called once in this file" does not prove a *public*
+        name has no callers elsewhere, so a rule that needs privacy must decline rather
+        than guess. See :attr:`privacy`.
+        """
+        if not name:
+            return None
+        if self.privacy == "underscore":
+            return name.startswith("_")
+        if self.privacy == "casing":
+            return not name[:1].isupper()
+        return None
 
     def is_definition(self, node: Node) -> bool:
         """True if this node is itself an entity OXN records."""

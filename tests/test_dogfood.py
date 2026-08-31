@@ -214,6 +214,31 @@ def gauntlet(harness, **kwargs):
     return harness.GauntletResult(**{**defaults, **kwargs})
 
 
+def test_the_harness_is_never_looser_than_the_gate(harness) -> None:
+    """Two detectors, deliberately not the same one, and the harness is the stricter.
+
+    `oxn check` sees one snapshot, so it can only ask whether a cluster of dedicated
+    helpers carries more than the ceiling allows -- which means a shred of a *marginal*
+    violation sums to under the ceiling and passes it (complexity mass evaporates under
+    extraction; docs/metrics.md section 10.5). The harness has the before-state and needs
+    no such reconstruction, so it rejects the same edit.
+
+    The asymmetry is intended. It is a bug only in the other direction, and the shared
+    thresholds now live in `oxn.thresholds` so the two cannot drift apart on what a
+    trivial helper is.
+    """
+    from oxn.thresholds import MANY_HELPERS, TRIVIAL_HELPER
+
+    assert harness.TRIVIAL_HELPER == TRIVIAL_HELPER
+    assert harness.MANY_HELPERS == MANY_HELPERS
+
+    # A split of an already-legal function: nine trivial helpers, total well under any
+    # ceiling. Nothing was evaded, so the gate is right to allow it...
+    marginal = gauntlet(harness, new_helpers={f"_h{n}": 1.0 for n in range(9)})
+    # ...and the harness still refuses it, because it can see it was one function before.
+    assert marginal.shredded
+
+
 def test_a_genuine_simplification_passes(harness) -> None:
     result = gauntlet(harness, file_mass_after=78.0)
     assert result.improved

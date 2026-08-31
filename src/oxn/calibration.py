@@ -152,21 +152,25 @@ _ANTI_GAMING: tuple[Parameter, ...] = (
     ),
     Parameter(
         name="TRIVIAL_HELPER",
-        value=2.0,
+        value=float(thresholds.TRIVIAL_HELPER),
         evidence=Evidence.MEASURED,
         observations=2,
         provenance=(
             "the median helper score separating one cohesive extraction (4, 9, 11) from one "
-            "hand-built shred (16 helpers, median 1), both of `_imported_names`"
+            "hand-built shred (16 helpers, median 1), both of `_imported_names`. Selects the "
+            "shape of a shred only: the cognitive ceiling makes the blocking decision, so "
+            "this number cannot by itself fail a build"
         ),
         fit_when=(
             "benchmarks/dogfood-log.jsonl holds ~50 labelled extractions; at that point this "
-            "is a grid search over one scalar against judge and human labels"
+            "is a grid search over one scalar against judge and human labels. Three known "
+            "tripwire edges are its job, not the rule's: helpers written just above the "
+            "threshold, helpers given a public name, and helpers given a second call site"
         ),
     ),
     Parameter(
         name="MANY_HELPERS",
-        value=3.0,
+        value=float(thresholds.MANY_HELPERS),
         evidence=Evidence.JUDGEMENT,
         observations=0,
         provenance=(

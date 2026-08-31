@@ -41,6 +41,22 @@ MAX_NESTING_DEPTH: Final[int] = 4
 MAX_FUNCTION_SLOC: Final[int] = 60
 MAX_FILE_SLOC: Final[int] = 500
 
+# ---- Anti-gaming: satisfying a ceiling without simplifying anything --------------------
+#
+# These two select the *shape* of a shred; they never block on their own. What blocks is the
+# cluster total against MAX_COGNITIVE_COMPLEXITY above -- see `oxn.metrics.shredding`.
+
+#: A helper scoring at or below this is *trivial*: a line with a name rather than a unit of
+#: work. Calibrated on n=2 (one cohesive extraction scoring 4/9/11, one hand-built shred of
+#: the same function scoring a median of 1), which is disclosed rather than implied --
+#: `oxn calibration` prints the evidence count for every number here.
+TRIVIAL_HELPER: Final[float] = 2.0
+
+#: How many dedicated helpers before a split is worth examining. Three is the smallest count
+#: that can mean "many", and a three-way dispatch legitimately extracts three -- which is
+#: why the count alone was never the discriminator.
+MANY_HELPERS: Final[int] = 3
+
 # ---- Tier 1.5: volume and erosion -----------------------------------------------------
 
 #: Minimum token run for a duplicate to count. PMD-CPD defaults to 100; OXN uses 50 with a

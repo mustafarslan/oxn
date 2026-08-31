@@ -1251,6 +1251,49 @@ are calibrated on this single pair and are expected to move as `benchmarks/dogfo
 accumulates real extractions; both live candidates are kept as regression fixtures in
 `tests/test_dogfood.py`.
 
+#### Measured 2026-08-31: the gate itself had no such rule, and the evasion worked
+
+Everything above describes the **dogfood harness**. The shipped gate had none of it: `oxn check`
+enforced six per-entity maxima, and shredding reduces every one of them. Measured on a six-branch
+router:
+
+| | functions | max cognitive | `oxn check` |
+|---|---|---|---|
+| honest | 1 | **28** | 2 violations, exit 2 |
+| shredded into dedicated helpers | 8 | **3** | **0 violations, exit 0** |
+
+Worse than the gap itself, `oxn init` wrote into every user's `CLAUDE.md` that splitting into
+one-line helpers "is detected and rejected as shredding" — a defence the gate did not have, told
+to the one reader who would test it. Both are fixed: the rule below ships in `oxn.metrics.shredding`,
+and the sentence is now true of the gate rather than of a script.
+
+**The rule, and why it is scoped to a caller rather than a file.** The first version compared
+trivial private helpers against the *file's* function count. It fired on 33 files across `src`,
+`tests`, `scripts` and a vendored httpx — `store.py`, `render.py`, `cli.py` — and, far worse, the
+same shred pasted into a 200-function module diluted below the threshold and passed. It worked on
+the demo and failed on real code. What ships instead totals a function together with the helpers
+that are *dedicated* to it — private, trivial, and called exactly once — and compares that total
+against the same `cognitive_complexity` ceiling. On the same sweep: **zero false positives across
+203 real violations**, and the shred still blocked at any file size.
+
+The ceiling, not a new number, makes the decision. That ties the rule to what is being gamed and
+keeps it from having an opinion about style: `render.py`'s five-section renderer totals 8 and
+passes, because 8 was never a violation; the same shape over the router totals 13 and does not.
+
+**Decisions are conserved under extraction; complexity mass is not.** Measured on the same pair,
+total cyclomatic complexity minus one per function — the raw decision count — is *exactly* equal
+before and after: 14 − 1 = **13** honest, 21 − 8 = **13** shredded. This is the floor predicted
+above, confirmed. It is not used as a gate: a cohesive extraction conserves decisions too, so
+gating on it would make the rule unsatisfiable by any refactoring. Reported, not enforced.
+
+**What this rule cannot see.** The cluster total is a *reconstruction*, and a low one: nesting
+increments evaporate under extraction, so 28 becomes a sum of 13. A shred of a marginal violation
+therefore sums to under the ceiling and passes. The static rule catches the flagrant case; the
+harness's differential rule, which has the before-state, catches the marginal one. Neither is a
+completeness claim. Three further tripwires are calibration, not detection, and are recorded in
+`oxn calibration` rather than chased: helpers written just above `TRIVIAL_HELPER`, helpers given a
+public name, and helpers given a second call site.
+
 Two consequences worth stating plainly:
 
 * **Mass is reported and never gated.** It remains useful context and a trend signal; it is not

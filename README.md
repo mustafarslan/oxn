@@ -98,7 +98,11 @@ assesses it. A model grading its own output is not an independent check.
 **The judge never overrules the deterministic gauntlet.** A candidate that fails tests,
 types, lint, or the shredding detector is rejected before a judge sees it — because "the
 score went down" is precisely the gaming a per-function ceiling invites, and detecting it
-needs the file's total complexity mass, not an opinion.
+needs a measurement, not an opinion. Complexity *mass* was the obvious measurement and it
+turned out to be exactly wrong — it ranks a shred above a good refactoring, for a reason
+that is a property of the metric rather than a bad threshold (`docs/metrics.md` §10.5).
+What works is what the helpers are worth: a cohesive split yields helpers with bodies, a
+shred yields lines with names.
 
 Nothing touches the working tree. Every attempt runs in a throwaway copy with its own
 virtualenv, and the loop emits diffs plus a JSONL log for a human to review and commit.

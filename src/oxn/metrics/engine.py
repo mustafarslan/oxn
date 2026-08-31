@@ -13,6 +13,7 @@ from oxn.graph.model import EntityKind, EntityMetrics, MetricValue
 from oxn.metrics.cognitive import cognitive_complexity
 from oxn.metrics.cyclomatic import cyclomatic_complexity
 from oxn.metrics.halstead import halstead, maintainability_index
+from oxn.metrics.shredding import METRIC, Cluster, Unit, cluster_totals
 from oxn.metrics.size import exit_points, line_counts, max_nesting_depth
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -35,6 +36,7 @@ def measure_file(
     """
     by_range = _index_nodes(tree_root, profile)
     results: list[EntityMetrics] = []
+    units: list[Unit] = []
 
     for entity in entities:
         node = by_range.get((entity.start_byte, entity.end_byte)) or by_range.get(
@@ -47,9 +49,48 @@ def measure_file(
         _measure_common(measured, target, source, profile)
         if entity.kind in CALLABLE_KINDS:
             _measure_callable(measured, target, entity, profile)
+            units.append(_unit(entity, measured, target, profile))
         results.append(measured)
 
+    _mark_shredding(results, units, profile)
     return results
+
+
+def _unit(entity: Entity, measured: EntityMetrics, node: Node, profile: LanguageProfile) -> Unit:
+    """Reduce a measured callable to what the shredding question needs."""
+    return Unit(
+        entity_id=entity.id,
+        name=entity.name or "",
+        score=measured.get("cognitive_complexity") or 0.0,
+        calls=tuple(callee_names(node, profile)),
+    )
+
+
+def _mark_shredding(
+    results: list[EntityMetrics], units: list[Unit], profile: LanguageProfile
+) -> None:
+    """Record each cluster root's total, so the ceiling check can see it like any metric.
+
+    Exact, not a bound: it states what this tree holds, rather than estimating the score an
+    inlined version would have. See `oxn.metrics.shredding` for why that distinction matters.
+    """
+    clusters = cluster_totals(units, profile)
+    if not clusters:
+        return
+    for measured in results:
+        cluster = clusters.get(measured.entity_id)
+        if cluster is not None:
+            measured.add(MetricValue(METRIC, cluster.total, explanation=_shred_note(cluster)))
+
+
+def _shred_note(cluster: Cluster) -> tuple[str, ...]:
+    """Name the helpers, so the diagnostic says what to put back rather than only a number."""
+    return (
+        f"{len(cluster.helpers)} dedicated helpers -- private, trivial, each called once "
+        f"here -- carry this work: {', '.join(cluster.helpers)}",
+        "Splitting work across helpers that exist only for one caller does not raise the "
+        "budget. Simplify the logic, or give the helpers a reason to exist independently.",
+    )
 
 
 def _measure_common(
@@ -102,6 +143,44 @@ def _measure_callable(
     index = maintainability_index(volume, cyclomatic, sloc, density)
     # Reported for compatibility, never gated on -- see docs/metrics.md section 3.7.
     measured.add(MetricValue("maintainability_index", round(index.visual_studio, 2)))
+
+
+def callee_names(node: Node, profile: LanguageProfile) -> list[str]:
+    """Bare names this callable calls, in its own body only.
+
+    Nested definitions are not descended into: their calls are their own, and counting them
+    twice would make a genuinely dedicated helper look like it had two callers.
+
+    The name is the last segment of the callee expression, so ``self._helper`` and
+    ``_helper`` are the same name. That is deliberately loose -- two same-named methods on
+    different classes collide -- and the collision is handled by declining to fire, never by
+    guessing which definition was meant.
+    """
+    spec = profile.metrics.cognitive
+    if not spec.call_kinds:
+        return []
+    names: list[str] = []
+    stack = list(node.named_children)
+    while stack:
+        current = stack.pop()
+        if current.type in profile.function_like:
+            continue
+        if current.type in spec.call_kinds:
+            name = _callee_name(current, spec.callee_field)
+            if name:
+                names.append(name)
+        stack.extend(current.named_children)
+    return names
+
+
+def _callee_name(call: Node, callee_field: str) -> str:
+    callee = call.child_by_field_name(callee_field)
+    if callee is None or callee.text is None:
+        return ""
+    text = callee.text.decode("utf-8", "replace")
+    for separator in (".", "::", "->"):
+        text = text.rpartition(separator)[2]
+    return text.strip()
 
 
 def _contains_call(node: Node, profile: LanguageProfile) -> bool:

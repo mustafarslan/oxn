@@ -60,6 +60,11 @@ GATED_METRICS: dict[str, Gate] = {
     "parameter_count": Gate("parameter_count", "MAX_PARAMETERS", CALLABLE_KINDS),
     "function_sloc": Gate("sloc", "MAX_FUNCTION_SLOC", CALLABLE_KINDS),
     "file_sloc": Gate("sloc", "MAX_FILE_SLOC", FILE_KINDS),
+    # Anti-gaming, and deliberately sharing the cognitive ceiling rather than owning a
+    # number of its own: the rule exists to stop that ceiling being satisfied by splitting
+    # instead of simplifying, so the two must move together. Only cluster roots carry the
+    # metric, so every other callable is simply absent from this check.
+    "shredding": Gate("shredding_cluster", "MAX_COGNITIVE_COMPLEXITY", CALLABLE_KINDS),
 }
 
 

@@ -159,7 +159,8 @@ GO = LanguageProfile(
     name="go",
     grammar="go",
     extensions=frozenset({".go"}),
-    version=1,
+    version=2,
+    privacy="casing",
     function_like=frozenset({"function_declaration", "method_declaration", "func_literal"}),
     # A Go "type" is a struct, an interface or a named alias; `type_declaration` wraps them.
     class_like=frozenset({"type_declaration", "type_spec"}),

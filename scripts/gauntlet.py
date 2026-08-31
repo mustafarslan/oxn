@@ -103,19 +103,12 @@ class Sandbox:
 #: win one.
 UNMEASURABLE = 999.0
 
-#: A new helper at or below this scores as *trivial*. Shredding is many trivial helpers.
-#:
-#: Calibrated on n=2 -- the cohesive extraction a model produced for `_imported_names`
-#: (helpers scoring 4, 9, 11; median 9) and a hand-written shred of the same function
-#: (16 helpers, median 1). Both are kept as fixtures in `tests/test_dogfood.py`, and this
-#: number should be revisited as `benchmarks/dogfood-log.jsonl` accumulates real
-#: extractions. Two points is one `if`, or one loop: a helper worth that is a line with a
-#: name, not a unit of work.
-TRIVIAL_HELPER = 2.0
-
-#: How many new functions before the split is worth judging at all. Three is the smallest
-#: count that can express "many", and a three-way dispatch legitimately extracts three.
-MANY_HELPERS = 3
+#: The shape of a shred -- how many helpers, and how trivial -- is defined **once**, in
+#: `oxn.thresholds`, and imported here. The harness used to own these numbers, which meant
+#: the gate and the harness could disagree about what shredding is while both claimed to
+#: detect it. The harness may be *stricter* than the gate (it can see the before-state, so
+#: it catches marginal shreds the static rule cannot), but it must never be looser.
+from oxn.thresholds import MANY_HELPERS, TRIVIAL_HELPER  # noqa: E402
 
 
 @dataclass(frozen=True, slots=True)
