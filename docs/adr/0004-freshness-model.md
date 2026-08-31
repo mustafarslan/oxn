@@ -4,7 +4,7 @@ title: Freshness — how OXN answers quickly without a daemon
 status: accepted
 date: 2026-08-30
 tags: [performance, mcp, caching, architecture]
-applies-to: ["oxn/graph/**", "oxn/server.py"]
+applies-to: ["src/oxn/graph/**"]
 ---
 
 # ADR-0004: Freshness model

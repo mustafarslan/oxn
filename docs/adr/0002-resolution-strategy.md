@@ -4,7 +4,7 @@ title: Name and type resolution — a tiered ladder with stamped outputs
 status: accepted
 date: 2026-08-28
 tags: [resolution, metrics, accuracy, architecture]
-applies-to: ["oxn/engine/**", "oxn/graph/**"]
+applies-to: ["src/oxn/metrics/**", "src/oxn/resolve/**", "src/oxn/scip/**", "src/oxn/graph/**"]
 ---
 
 # ADR-0002: Resolution strategy

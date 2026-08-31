@@ -4,7 +4,7 @@ title: Enforcement model — hooks enforce, MCP informs, constraints are budgete
 status: accepted
 date: 2026-08-28
 tags: [mcp, hooks, agents, enforcement, constraints]
-applies-to: ["oxn/server.py", "oxn/init/**", "oxn/cli.py"]
+applies-to: ["src/oxn/check.py", "src/oxn/init.py", "src/oxn/cli.py", "src/oxn/_app.py"]
 ---
 
 # ADR-0003: Enforcement model
