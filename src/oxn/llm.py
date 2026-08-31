@@ -54,6 +54,16 @@ class OllamaClient:
     #: 8.0s, so this leaves an order of magnitude of headroom while still noticing a stream
     #: that has genuinely stopped. Raise `OXN_OLLAMA_TIMEOUT` for a slower link.
     timeout: int = 120
+    #: Context window, in tokens. Ollama applies a small client-side default (4k on the
+    #: versions in use) regardless of what the model supports -- `glm-5.3:cloud` advertises
+    #: 1,048,576 -- and a repair prompt plus a reasoning model's scratchpad does not fit in
+    #: 4k. When it does not fit, the model reasons until the window is full and returns an
+    #: empty completion, which is exactly how three `build_file` repairs failed.
+    num_ctx: int = 32768
+    #: Cap on generated tokens, reasoning included. Generous rather than unlimited: an
+    #: unlimited budget turns a model that will not stop into a hung run, and the read
+    #: timeout only notices silence, not a model still happily thinking.
+    num_predict: int = 8192
 
     @classmethod
     def from_env(cls) -> OllamaClient:
@@ -62,6 +72,8 @@ class OllamaClient:
             host=os.environ.get("OXN_OLLAMA_HOST", DEFAULT_HOST),
             model=os.environ.get("OXN_OLLAMA_MODEL", DEFAULT_MODEL),
             timeout=int(os.environ.get("OXN_OLLAMA_TIMEOUT", "120")),
+            num_ctx=int(os.environ.get("OXN_OLLAMA_NUM_CTX", "32768")),
+            num_predict=int(os.environ.get("OXN_OLLAMA_NUM_PREDICT", "8192")),
         )
 
     @classmethod
@@ -71,6 +83,8 @@ class OllamaClient:
             host=os.environ.get("OXN_OLLAMA_HOST", DEFAULT_HOST),
             model=os.environ.get("OXN_OLLAMA_JUDGE_MODEL", DEFAULT_JUDGE_MODEL),
             timeout=int(os.environ.get("OXN_OLLAMA_TIMEOUT", "120")),
+            num_ctx=int(os.environ.get("OXN_OLLAMA_NUM_CTX", "32768")),
+            num_predict=int(os.environ.get("OXN_OLLAMA_NUM_PREDICT", "8192")),
         )
 
     def generate_json(self, prompt: str, *, system: str = "") -> dict[str, object]:
@@ -128,7 +142,11 @@ class OllamaClient:
             "model": self.model,
             "prompt": prompt,
             "stream": True,
-            "options": {"temperature": temperature},
+            "options": {
+                "temperature": temperature,
+                "num_ctx": self.num_ctx,
+                "num_predict": self.num_predict,
+            },
         }
         if system:
             payload["system"] = system

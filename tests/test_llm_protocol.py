@@ -240,3 +240,37 @@ def test_reasoning_chunks_do_not_count_as_an_answer(patched: Any) -> None:
     """`thinking` resets the read clock; it is never spliced into a repair."""
     patched([{"thinking": "long deliberation", "response": ""}, {"response": "OK", "done": True}])
     assert _client().generate("prompt") == "OK"
+
+
+def test_the_token_budget_is_actually_sent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The knobs the failure message names must be ones OXN sets.
+
+    Before this, `generate` sent only `temperature`, so a repair ran on Ollama's small
+    client-side context default however large a window the model advertised -- and the
+    error told the operator to raise `num_ctx`, which OXN neither sent nor exposed.
+    """
+    captured: dict[str, Any] = {}
+
+    class _Frames:
+        def __enter__(self) -> Any:
+            return iter([b'{"response": "OK", "done": true}'])
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+    def fake_urlopen(request: Any, timeout: float = 0) -> Any:  # noqa: ARG001
+        captured.update(json.loads(request.data))
+        return _Frames()
+
+    monkeypatch.setattr("oxn.llm.urllib.request.urlopen", fake_urlopen)
+    OllamaClient(num_ctx=99, num_predict=77).generate("prompt")
+
+    assert captured["options"]["num_ctx"] == 99
+    assert captured["options"]["num_predict"] == 77
+
+
+def test_the_budget_is_configurable_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OXN_OLLAMA_NUM_CTX", "4096")
+    monkeypatch.setenv("OXN_OLLAMA_NUM_PREDICT", "256")
+    client = OllamaClient.from_env()
+    assert (client.num_ctx, client.num_predict) == (4096, 256)
