@@ -56,6 +56,7 @@ from gauntlet import (
     measure,
     run_gauntlet,
 )
+from summary import summarise
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "benchmarks" / "dogfood-log.jsonl"
@@ -483,54 +484,6 @@ class _FakeClient:
 
 
 # ---- reporting ------------------------------------------------------------------------------
-
-
-def summarise() -> None:
-    """What the log says about convergence -- the study 2508.11958 asks for."""
-    if not LOG.exists():
-        say("no attempts logged yet")
-        return
-    rows = [json.loads(line) for line in LOG.read_text().splitlines() if line.strip()]
-    by_target: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        by_target.setdefault(row["target"], []).append(row)
-
-    converged = sum(1 for group in by_target.values() if any(r["accepted"] for r in group))
-    say(f"{BOLD}{len(by_target)} target(s), {len(rows)} attempt(s){RESET}")
-    say(f"  converged: {converged}/{len(by_target)}")
-    for name, group in sorted(by_target.items()):
-        scored = [row for row in group if row["gauntlet"]]
-        # A score only counts as a result if the code it was measured on actually works.
-        # Attempts that fail their tests, or that deleted the target outright, still produce
-        # a number -- and it is usually a flatteringly low one.
-        valid = [
-            row
-            for row in scored
-            if row["gauntlet"].get("tests_pass") and row["gauntlet"].get("target_present", True)
-        ]
-        best = min((row["gauntlet"]["score_after"] for row in valid), default=None)
-        # The first attempt may have died before measuring anything, so take the first row
-        # that has a measurement rather than the first row.
-        first = scored[0]["gauntlet"].get("score_before") if scored else None
-        status = (
-            f"{GREEN}accepted{RESET}" if any(r["accepted"] for r in group) else f"{RED}no{RESET}"
-        )
-        errors = sum(1 for row in group if row.get("error"))
-        note = f"  ({errors} failed to run)" if errors else ""
-        say(f"  {name:32} {_num(first)} -> {_num(best)}  attempts={len(group)}  {status}{note}")
-
-    judged = [r for r in rows if r.get("judge", {}).get("verdict") in {"accept", "reject"}]
-    if judged:
-        agree = sum(
-            1
-            for r in judged
-            if (r["judge"]["verdict"] == "accept") == bool(r["gauntlet"].get("tests_pass"))
-        )
-        say(f"\n  judge/gauntlet agreement: {agree}/{len(judged)}")
-
-
-def _num(value: float | None) -> str:
-    return "--" if value is None else f"{value:g}"
 
 
 def plan(ceiling: int, limit: int) -> None:
