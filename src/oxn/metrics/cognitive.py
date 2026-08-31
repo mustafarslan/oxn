@@ -300,24 +300,34 @@ def _score_comprehension(
     ``[[y for y in x] for x in a]`` = 3.
     """
     spec = context.spec
-    loops = [c for c in node.named_children if c.type in spec.comprehension_loop_kinds]
-    filters = [c for c in node.named_children if c.type in spec.comprehension_filter_kinds]
+    loops = _children_of_kind(node, spec.comprehension_loop_kinds)
+    filters = _children_of_kind(node, spec.comprehension_filter_kinds)
+    _score_clauses(context, loops, filters, nesting)
 
+    # The clauses were scored above at the comprehension's own level; everything else is
+    # the body, which sits one level deeper once there is a `for` to be inside of.
+    clause_ids = {clause.id for clause in loops} | {clause.id for clause in filters}
+    inner = nesting + 1 if loops else nesting
+    for child in node.named_children:
+        _walk(
+            context,
+            _Wrapper(child),  # type: ignore[arg-type]
+            nesting=nesting if child.id in clause_ids else inner,
+            suppress_nesting=suppress_nesting,
+        )
+
+
+def _children_of_kind(node: Node, kinds: frozenset[str]) -> list[Node]:
+    return [child for child in node.named_children if child.type in kinds]
+
+
+def _score_clauses(context: _Context, loops: list[Node], filters: list[Node], nesting: int) -> None:
+    """A comprehension's own clauses: `for` is structural, a filter `if` is fundamental."""
     for clause in loops:
         reason = "comprehension `for`" + (f" nested {nesting} deep" if nesting else "")
         context.result.add(clause, 1 + nesting, "structural", reason)
     for clause in filters:
         context.result.add(clause, 1, "fundamental", "comprehension filter `if`")
-
-    inner = nesting + 1 if loops else nesting
-    for child in node.named_children:
-        at_clause_level = child in loops or child in filters
-        _walk(
-            context,
-            _Wrapper(child),  # type: ignore[arg-type]
-            nesting=nesting if at_clause_level else inner,
-            suppress_nesting=suppress_nesting,
-        )
 
 
 def _descend_conditional(
