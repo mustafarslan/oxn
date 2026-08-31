@@ -68,6 +68,10 @@ class OllamaClient:
     #: into a hung run, and the read timeout only notices silence, not a model still
     #: happily thinking.
     num_predict: int = 32768
+    #: Whether to let a reasoning model think. `None` means "say nothing and take the
+    #: model's default", which is right for models that have no such mode. Setting it False
+    #: is what the fallback below does after a model reasons itself out of budget.
+    think: bool | None = None
 
     @classmethod
     def from_env(cls) -> OllamaClient:
@@ -142,6 +146,27 @@ class OllamaClient:
         Chunks carrying only ``thinking`` still count as progress: they reset the read clock
         by arriving, and contribute nothing to the completion.
         """
+        reply = self._attempt(prompt, temperature, system, think=self.think)
+        # Measured, and not recoverable by raising the budget: `glm-5.3:cloud` asked to
+        # simplify `build_file` spent its whole allowance reasoning and answered nothing --
+        # ~8k tokens against a budget of 8192, then ~32.6k against 32768. It scales its
+        # deliberation to whatever room it is given, so a bigger number buys another failure
+        # more slowly. Turning thinking off is the fix the model itself supports: the same
+        # prompt then returns 3,146 characters of code instead of 45.
+        #
+        # Only when the caller expressed no preference, and only once. A caller that asked
+        # for reasoning gets the error instead of silently different behaviour.
+        if self.think is None and reply.starved_by_reasoning:
+            reply = self._attempt(prompt, temperature, system, think=False)
+
+        if not reply.saw_completion or not reply.text:
+            raise OllamaError(f"{self.model} returned an empty completion: {reply.why_empty}")
+        return reply.text
+
+    def _attempt(
+        self, prompt: str, temperature: float, system: str, *, think: bool | None
+    ) -> _Reply:
+        """One request/response cycle. Raises for transport problems, never for content."""
         payload: dict[str, object] = {
             "model": self.model,
             "prompt": prompt,
@@ -154,6 +179,8 @@ class OllamaClient:
         }
         if system:
             payload["system"] = system
+        if think is not None:
+            payload["think"] = think
 
         request = urllib.request.Request(  # noqa: S310 - a configured local endpoint
             f"{self.host}/api/generate",
@@ -177,14 +204,7 @@ class OllamaClient:
             raise OllamaError(f"Ollama at {self.host} is unreachable: {error}") from error
         except json.JSONDecodeError as error:
             raise OllamaError(f"Ollama returned invalid JSON: {error}") from error
-
-        if not reply.saw_completion or not reply.text:
-            # An empty completion is not an answer, and it is not a rare one: a reasoning
-            # model can spend a minute thinking and then emit nothing at all. Returning ""
-            # pushes that failure downstream, where it looks like the caller's bug -- a
-            # repair harness read it as "the model deleted the function".
-            raise OllamaError(f"{self.model} returned an empty completion: {reply.why_empty}")
-        return reply.text
+        return reply
 
     def _consume(self, response: Iterable[bytes]) -> _Reply:
         """Fold the streamed frames into one reply.
@@ -236,6 +256,15 @@ class _Reply:
     @property
     def text(self) -> str:
         return "".join(self.chunks).strip()
+
+    @property
+    def starved_by_reasoning(self) -> bool:
+        """Did the model think until it ran out of room, and never answer?
+
+        The one empty completion worth retrying differently: it is not a refusal, a crash
+        or a bad prompt, it is a model that never left its scratchpad.
+        """
+        return bool(self.thinking_chars) and self.stopped_because == "length" and not self.text
 
     @property
     def why_empty(self) -> str:

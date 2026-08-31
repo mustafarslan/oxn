@@ -43,7 +43,10 @@ def test_callables_get_complexity_and_shape_metrics() -> None:
     assert handle.get("cognitive_complexity") == 6
     assert handle.get("max_nesting_depth") == 3
     assert handle.get("exit_points") == 2
-    assert handle.get("parameter_count") == 3
+    # `handle(self, request, retries=3)` -- two parameters a caller supplies. This asserted
+    # 3 until the receiver fix: `self` is not passed, and counting it made the Long
+    # Parameter List ceiling mean five for a function and four for a method.
+    assert handle.get("parameter_count") == 2
 
 
 def test_non_callables_get_size_metrics_but_not_complexity() -> None:

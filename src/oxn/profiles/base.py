@@ -84,6 +84,12 @@ class LanguageProfile:
     parameter_kinds: frozenset[str] = frozenset()
     #: Parameter kinds that are a receiver (``self``, ``this``) rather than a parameter.
     receiver_kinds: frozenset[str] = frozenset()
+    #: Names that make a method's *first* parameter its receiver, where the grammar gives
+    #: the receiver no node kind of its own. Rust has `self_parameter` and needs none of
+    #: this; Python spells the receiver as an ordinary identifier, so without these a
+    #: five-parameter method measured six and every Python method was charged for `self`.
+    #: A ceiling has to mean the same thing for a method as for a function.
+    receiver_names: frozenset[str] = frozenset()
     comment_kinds: frozenset[str] = frozenset()
     string_kinds: frozenset[str] = frozenset()
     #: Modifier tokens that mark a type as abstract at the syntax level.

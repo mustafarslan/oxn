@@ -193,7 +193,7 @@ PYTHON = LanguageProfile(
     name="python",
     grammar="python",
     extensions=frozenset({".py", ".pyi"}),
-    version=2,
+    version=3,
     privacy="underscore",
     function_like=frozenset({"function_definition", "lambda"}),
     class_like=frozenset({"class_definition"}),
@@ -221,6 +221,7 @@ PYTHON = LanguageProfile(
     # identification is therefore semantic (is this a method? is this its first param?)
     # and lives in the LCOM work of P6, not here.
     receiver_kinds=frozenset(),
+    receiver_names=frozenset({"self", "cls"}),
     comment_kinds=frozenset({"comment"}),
     string_kinds=frozenset({"string", "concatenated_string"}),
     abstract_markers=frozenset(

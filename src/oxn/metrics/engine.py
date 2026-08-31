@@ -135,7 +135,7 @@ def _measure_callable(
     )
     measured.add(MetricValue("max_nesting_depth", max_nesting_depth(node, profile)))
     measured.add(MetricValue("exit_points", exit_points(node, profile)))
-    measured.add(MetricValue("parameter_count", len(entity.attrs.get("parameters", []))))
+    measured.add(MetricValue("parameter_count", _parameter_count(entity, profile)))
 
     volume = measured.get("halstead_volume") or 0.0
     sloc = int(measured.get("sloc") or 0)
@@ -143,6 +143,22 @@ def _measure_callable(
     index = maintainability_index(volume, cyclomatic, sloc, density)
     # Reported for compatibility, never gated on -- see docs/metrics.md section 3.7.
     measured.add(MetricValue("maintainability_index", round(index.visual_studio, 2)))
+
+
+def _parameter_count(entity: Entity, profile: LanguageProfile) -> int:
+    """Declared parameters, not counting a method's implicit receiver.
+
+    `self` is not something a caller passes, so charging a method for it makes the
+    "Long Parameter List" ceiling mean five for a function and four for a method -- the
+    kind of quiet per-construct divergence OXN exists to avoid. Only a *method's* first
+    parameter is eligible, so a plain function with an argument called `self` is unaffected,
+    and so is a `@staticmethod`, whose first parameter is not conventionally named this way.
+    """
+    parameters = entity.attrs.get("parameters", [])
+    if entity.kind is not EntityKind.METHOD or not parameters:
+        return len(parameters)
+    receiver = parameters[0] in profile.receiver_names
+    return len(parameters) - 1 if receiver else len(parameters)
 
 
 def callee_names(node: Node, profile: LanguageProfile) -> list[str]:

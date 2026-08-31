@@ -274,3 +274,81 @@ def test_the_budget_is_configurable_from_the_environment(monkeypatch: pytest.Mon
     monkeypatch.setenv("OXN_OLLAMA_NUM_PREDICT", "256")
     client = OllamaClient.from_env()
     assert (client.num_ctx, client.num_predict) == (4096, 256)
+
+
+# ---- a model that reasons itself out of budget ------------------------------------------
+
+
+def _capturing(monkeypatch: pytest.MonkeyPatch, *responses: list[dict[str, Any]]) -> list[Any]:
+    """Serve one framed response per call, recording each request payload."""
+    sent: list[Any] = []
+    pending = list(responses)
+
+    class _Frames:
+        def __init__(self, frames: list[dict[str, Any]]) -> None:
+            self.frames = frames
+
+        def __enter__(self) -> Any:
+            return iter([json.dumps(f).encode() for f in self.frames])
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+    def fake_urlopen(request: Any, timeout: float = 0) -> Any:  # noqa: ARG001
+        sent.append(json.loads(request.data))
+        return _Frames(pending.pop(0))
+
+    monkeypatch.setattr("oxn.llm.urllib.request.urlopen", fake_urlopen)
+    return sent
+
+
+STARVED = [
+    {"thinking": "x" * 500, "response": ""},
+    {"response": "", "done": True, "done_reason": "length"},
+]
+ANSWERED = [{"response": "def f(): ...", "done": True, "done_reason": "stop"}]
+
+
+def test_a_model_that_reasons_out_of_budget_is_retried_without_thinking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Measured on `glm-5.3:cloud`: raising the budget does not fix this.
+
+    Asked to simplify `build_file` it spent its whole allowance reasoning and answered
+    nothing -- ~8k tokens against a budget of 8192, then ~32.6k against 32768. It scales
+    deliberation to whatever room it is given, so a bigger number buys a slower failure.
+    Turning thinking off returned code on the same prompt.
+    """
+    sent = _capturing(monkeypatch, STARVED, ANSWERED)
+    assert OllamaClient().generate("prompt") == "def f(): ..."
+
+    assert len(sent) == 2, "the starved attempt must be retried"
+    assert "think" not in sent[0], "the first attempt takes the model's default"
+    assert sent[1]["think"] is False
+
+
+def test_the_retry_happens_once_and_the_error_survives(monkeypatch: pytest.MonkeyPatch) -> None:
+    """If it starves without thinking too, that is the answer -- not a third attempt."""
+    sent = _capturing(monkeypatch, STARVED, STARVED)
+    with pytest.raises(OllamaError, match="token limit while reasoning"):
+        OllamaClient().generate("prompt")
+    assert len(sent) == 2
+
+
+def test_a_caller_who_asked_for_reasoning_is_not_overridden(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit preference is respected: the error beats silently different behaviour."""
+    sent = _capturing(monkeypatch, STARVED)
+    with pytest.raises(OllamaError, match="token limit while reasoning"):
+        OllamaClient(think=True).generate("prompt")
+    assert len(sent) == 1
+    assert sent[0]["think"] is True
+
+
+def test_an_ordinary_empty_completion_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only starvation is worth retrying. A clean stop with no text is a different problem."""
+    sent = _capturing(monkeypatch, [{"response": "", "done": True, "done_reason": "stop"}])
+    with pytest.raises(OllamaError, match="no reasoning and no text"):
+        OllamaClient().generate("prompt")
+    assert len(sent) == 1

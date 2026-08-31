@@ -111,3 +111,59 @@ def _find(node, kind: str):
             return current
         stack.extend(current.named_children)
     raise AssertionError(f"no {kind} in tree")
+
+
+def test_a_methods_receiver_is_not_a_parameter() -> None:
+    """`self` is not something a caller passes.
+
+    Charging a method for it made the Long Parameter List ceiling mean five for a function
+    and four for a method -- a five-parameter method measured six. That is exactly the
+    quiet per-construct divergence OXN exists to prevent, and it was live on every Python
+    method in every project until this test.
+    """
+    source = (
+        "def free_function(a, b, c, d, e):\n"
+        "    return a\n"
+        "\n"
+        "\n"
+        "class Holder:\n"
+        "    def method(self, a, b, c, d, e):\n"
+        "        return a\n"
+        "\n"
+        "    @classmethod\n"
+        "    def klass(cls, a, b, c, d, e):\n"
+        "        return a\n"
+        "\n"
+        "    @staticmethod\n"
+        "    def static(a, b, c, d, e):\n"
+        "        return a\n"
+    )
+    counts = _parameter_counts(source)
+    assert counts == {
+        "free_function": 5,
+        "method": 5,
+        "klass": 5,
+        "static": 5,
+    }, "all four declare five parameters a caller must supply"
+
+
+def test_a_function_argument_called_self_still_counts() -> None:
+    """Only a *method's* first parameter is a receiver. A plain function has none."""
+    source = "def handler(self, other):\n    return self\n"
+    assert _parameter_counts(source)["handler"] == 2
+
+
+def _parameter_counts(source: str) -> dict[str, int]:
+    """Name -> parameter_count, straight through the parse and metric layers."""
+    from oxn.graph.builder import build_file
+    from oxn.metrics.engine import measure_file
+
+    profile = get_profile("python")
+    data = source.encode()
+    tree = get_parser(profile.grammar).parse(data)
+    parsed = build_file("t.py", data, profile, tree.root_node)
+    return {
+        measured.qualified_name.split(".")[-1]: int(measured.get("parameter_count") or 0)
+        for measured in measure_file(list(parsed.entities), data, profile, tree.root_node)
+        if measured.get("parameter_count") is not None
+    }
