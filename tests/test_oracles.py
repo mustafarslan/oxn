@@ -584,7 +584,7 @@ def test_wire_reader_round_trips_a_real_index(tmp_path) -> None:
     than as silently missing edges.
     """
     from oxn.scip.index import load_index
-    from oxn.scip.runner import run_indexer
+    from oxn.scip.runner import Project, run_indexer
 
     project = tmp_path / "pkg"
     project.mkdir()
@@ -598,7 +598,7 @@ def test_wire_reader_round_trips_a_real_index(tmp_path) -> None:
         "    def save(self, item):\n        return item\n"
     )
 
-    output = run_indexer("python", tmp_path, tmp_path / "index.scip", project_name="fixture")
+    output = run_indexer("python", tmp_path, tmp_path / "index.scip", Project(name="fixture"))
     index = load_index(output)
 
     paths = {document.relative_path for document in index.documents}
@@ -625,11 +625,11 @@ def test_scip_ingest_covers_a_real_corpus(tmp_path) -> None:
     """
     from oxn.graph.indexer import Indexer
     from oxn.scip.ingest import ingest_index
-    from oxn.scip.runner import run_indexer
+    from oxn.scip.runner import Project, run_indexer
 
     corpus = CORPUS.resolve()
     output = run_indexer(
-        "python", corpus, tmp_path / "httpx.scip", project_name="httpx", project_version="0.28"
+        "python", corpus, tmp_path / "httpx.scip", Project(name="httpx", version="0.28")
     )
 
     with Indexer(root=corpus, cache_path=tmp_path / "graph.db") as indexer:
@@ -661,11 +661,11 @@ def test_l0_l1_accuracy_against_scip_ground_truth(tmp_path) -> None:
     measure the oracle rather than us.
     """
     from oxn.resolve.measure import measure_corpus
-    from oxn.scip.runner import run_indexer
+    from oxn.scip.runner import Project, run_indexer
 
     corpus = CORPUS.resolve()
     index = run_indexer(
-        "python", corpus, tmp_path / "httpx.scip", project_name="httpx", project_version="0.28"
+        "python", corpus, tmp_path / "httpx.scip", Project(name="httpx", version="0.28")
     )
     accuracy = measure_corpus(corpus, index)
 

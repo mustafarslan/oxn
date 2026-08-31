@@ -21,6 +21,8 @@ from oxn.render import (
 )
 
 if TYPE_CHECKING:  # pragma: no cover
+    from collections.abc import Callable
+
     from oxn.graph.indexer import Indexer
 
 
@@ -82,6 +84,29 @@ def _file_entries(indexer: Indexer, targets: list[Path]) -> list[dict[str, Any]]
     return entries
 
 
+#: Metrics that belong to a path rather than to a code entity. History has no entity at all.
+_FILE_SCOPED = frozenset({"hotspot", "churn", "commits", "duplicate_lines", "authors"})
+
+
+def _ranked(indexer: Indexer, sort_by: str, limit: int, wanted: set[str]) -> list[dict[str, Any]]:
+    """The worst `limit` rows for one metric, narrowed to `wanted` *before* the limit.
+
+    Narrowing in the store rather than afterwards is the whole point: ranking the graph and
+    filtering the result asked which of the *project's* worst entities happened to fall in
+    these files, so a file healthier than the project's worst reported nothing at all --
+    with `status: OK`, which reads as a clean bill.
+    """
+    if sort_by in _FILE_SCOPED:
+        return [
+            {"qualified_name": path, "path": path, "value": value}
+            for path, value in indexer.store.file_metrics(sort_by, limit=limit, paths=wanted)
+        ]
+    return [
+        {"qualified_name": name, "path": path, "value": value}
+        for name, path, value in indexer.store.worst(sort_by, limit=limit, paths=wanted)
+    ]
+
+
 def run_metrics(
     paths: list[str],
     output: Output = TO_JSON,
@@ -107,30 +132,13 @@ def run_metrics(
     with Indexer() as indexer:
         indexer.index(targets)
         wanted = {indexer.relative(path) for path in iter_source_files(targets)}
-        file_scoped = {"hotspot", "churn", "commits", "duplicate_lines", "authors"}
-        if sort_by in file_scoped:
-            # These belong to a path, not to a code entity, and history has no entity at all.
-            rows = [
-                {"qualified_name": path, "path": path, "value": value}
-                for path, value in indexer.store.file_metrics(sort_by, limit=limit, paths=wanted)
-            ]
-        else:
-            # The store narrows to `wanted` before applying the limit. Ranking the whole
-            # graph and filtering afterwards asked which of the *project's* worst entities
-            # happened to be in these files -- so a file healthier than the project's worst
-            # reported nothing at all, with `status: OK`.
-            rows = [
-                {"qualified_name": name, "path": path, "value": value}
-                for name, path, value in indexer.store.worst(sort_by, limit=limit, paths=wanted)
-            ]
-        trail: list[str] = []
-        if explain and rows:
-            trail = _explain_worst(indexer, rows[0])
+        rows = _ranked(indexer, sort_by, limit, wanted)
+        trail = _explain_worst(indexer, rows[0]) if explain and rows else []
 
     payload: dict[str, Any] = {
         "status": "OK",
         "metric": sort_by,
-        "scope": "file" if sort_by in file_scoped else "entity",
+        "scope": "file" if sort_by in _FILE_SCOPED else "entity",
         "entities": rows,
     }
     if trail:
@@ -184,6 +192,49 @@ def run_volume(
     return payload
 
 
+def _top_component(path: str) -> str:
+    """The first path segment, which is the coarsest useful component boundary."""
+    from pathlib import PurePosixPath
+
+    parts = PurePosixPath(path).parts
+    return parts[0] if parts else "<root>"
+
+
+def _directory_component(path: str) -> str:
+    from oxn.graph.depgraph import directory_component
+
+    return directory_component(path)
+
+
+#: How `--by` maps a file to the component it belongs to.
+_GRANULARITIES: dict[str, Callable[[str], str]] = {
+    "directory": _directory_component,
+    "file": lambda path: path,
+    "top": _top_component,
+}
+
+
+def _arch_payload(graph: Any, report: Any, *, show_unresolved: bool) -> dict[str, Any]:
+    """The reported shape of one dependency graph."""
+    payload: dict[str, Any] = {
+        "status": "OK",
+        "imports": {
+            "total": graph.import_count,
+            "internal": sum(len(targets) for targets in graph.files.values()),
+            "external": graph.external_count,
+            "unresolved": len(graph.unresolved),
+        },
+        **report.as_dict(),
+        "martin": _martin_rows(report),
+    }
+    if show_unresolved:
+        payload["unresolved_imports"] = [
+            {"source": item.source, "specifier": item.specifier, "line": item.line}
+            for item in graph.unresolved
+        ]
+    return payload
+
+
 def run_arch(
     paths: list[str],
     output: Output = TO_JSON,
@@ -192,10 +243,8 @@ def run_arch(
     show_unresolved: bool = False,
 ) -> dict[str, Any]:
     """Build the dependency graph for ``paths`` and report its architecture."""
-    from pathlib import PurePosixPath
-
     from oxn.graph.architecture import analyse
-    from oxn.graph.depgraph import build_dependency_graph, directory_component
+    from oxn.graph.depgraph import build_dependency_graph
     from oxn.graph.indexer import Indexer
     from oxn.graph.sources import iter_source_files
 
@@ -209,26 +258,17 @@ def run_arch(
         _emit(failure, output)
         return failure
 
-    def top_component(path: str) -> str:
-        parts = PurePosixPath(path).parts
-        return parts[0] if parts else "<root>"
-
-    granularities = {
-        "directory": directory_component,
-        "file": lambda path: path,
-        "top": top_component,
-    }
-    if granularity not in granularities:
+    component_of = _GRANULARITIES.get(granularity)
+    if component_of is None:
         # Silently falling back to the default would hide a typo behind plausible output.
         failure = {
             "status": "ERROR",
             "errors": {
-                granularity: f"unknown granularity; choose one of {', '.join(granularities)}"
+                granularity: f"unknown granularity; choose one of {', '.join(_GRANULARITIES)}"
             },
         }
         _emit(failure, output)
         return failure
-    component_of = granularities[granularity]
 
     with Indexer() as indexer:
         indexer.index(targets)
@@ -243,22 +283,7 @@ def run_arch(
             partition=graph.membership,
         )
 
-    payload: dict[str, Any] = {
-        "status": "OK",
-        "imports": {
-            "total": graph.import_count,
-            "internal": sum(len(t) for t in graph.files.values()),
-            "external": graph.external_count,
-            "unresolved": len(graph.unresolved),
-        },
-        **report.as_dict(),
-        "martin": _martin_rows(report),
-    }
-    if show_unresolved:
-        payload["unresolved_imports"] = [
-            {"source": item.source, "specifier": item.specifier, "line": item.line}
-            for item in graph.unresolved
-        ]
+    payload = _arch_payload(graph, report, show_unresolved=show_unresolved)
 
     _emit_arch(payload, output)
     return payload
@@ -322,7 +347,7 @@ def run_index(
 
     from oxn.graph.indexer import Indexer
     from oxn.scip.ingest import ingest_index
-    from oxn.scip.runner import IndexerNotFound, run_indexer
+    from oxn.scip.runner import IndexerNotFound, Project, run_indexer
 
     target = Path(paths[0]).resolve()
     if not target.exists():
@@ -341,7 +366,7 @@ def run_index(
                         language,
                         target,
                         Path(scratch) / "index.scip",
-                        project_name=target.name,
+                        Project(name=target.name),
                     )
                 except IndexerNotFound as error:
                     failure = {"status": "ERROR", "errors": {language: str(error)}}

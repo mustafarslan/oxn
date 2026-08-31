@@ -64,16 +64,31 @@ def available_indexers() -> dict[str, str | None]:
     return {language: shutil.which(indexer.command) for language, indexer in INDEXERS.items()}
 
 
+@dataclass(frozen=True, slots=True)
+class Project:
+    """What an indexer needs to *name* the thing it is indexing.
+
+    `--project-version` is not optional in practice: without it scip-python dies with an
+    opaque error, which is the sort of thing worth encoding in a type rather than
+    rediscovering. Both carry defaults because for a one-off index nobody cares what the
+    project is called, and both are here because they travel together and neither has
+    anything to do with where the output goes.
+    """
+
+    name: str = "project"
+    version: str = "0.0.0"
+
+
 def run_indexer(
     language: str,
     root: Path,
     output: Path,
+    project: Project | None = None,
     *,
-    project_name: str = "project",
-    project_version: str = "0.0.0",
     timeout: int = 900,
 ) -> Path:
     """Produce a SCIP index for ``root``. Returns the path written."""
+    project = project or Project()
     indexer = INDEXERS.get(language)
     if indexer is None:
         raise IndexerNotFound(f"no SCIP indexer configured for {language!r}")
@@ -84,7 +99,7 @@ def run_indexer(
 
     output.parent.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(
-        indexer.argv(root, output, project_name, project_version),
+        indexer.argv(root, output, project.name, project.version),
         cwd=str(root),
         capture_output=True,
         text=True,
