@@ -80,44 +80,81 @@ def build_class_models(
 ) -> dict[str, ClassModel]:
     """Extract the member-access model for every class in a file."""
     spec = profile.metrics.scopes
-    models: dict[str, ClassModel] = {}
+    return {
+        class_name: _one_class(class_node, class_name, profile, scopes, spec)
+        for class_node, class_name in _iter_classes(root, profile)
+    }
 
-    for class_node, class_name in _iter_classes(root, profile):
-        model = ClassModel(name=class_name, bases=_base_names(class_node, profile))
-        body = class_node.child_by_field_name(profile.body_field)
-        if body is None:
-            models[class_name] = model
-            continue
 
-        model.fields |= _declared_fields(body, profile, spec)
-        method_nodes = list(_iter_methods(body, profile))
-        method_names = {name for _, name in method_nodes}
+def _one_class(
+    class_node: Node,
+    class_name: str,
+    profile: LanguageProfile,
+    scopes: ScopeTree,
+    spec: ScopeSpec,
+) -> ClassModel:
+    """One class: what it declares, what its methods touch, and what it inherits."""
+    model = ClassModel(name=class_name, bases=_base_names(class_node, profile))
+    body = class_node.child_by_field_name(profile.body_field)
+    if body is None:
+        return model
 
-        for method_node, method_name in method_nodes:
-            receiver = _receiver_of(method_node, profile, scopes)
-            access = MethodAccess(
-                name=method_name,
-                start_byte=method_node.start_byte,
-                end_byte=method_node.end_byte,
-            )
-            if receiver is not None:
-                _collect_accesses(method_node, profile, spec, receiver, access, method_names)
-            model.methods[method_name] = access
-            if _is_property(method_node, profile):
-                model.properties.add(method_name)
+    model.fields |= _declared_fields(body, profile, spec)
+    method_nodes = list(_iter_methods(body, profile))
+    method_names = {name for _, name in method_nodes}
 
-        # A field is anything written through the receiver, plus anything declared in the
-        # class body. Reads of names in neither are inherited or dynamic.
-        for access in model.methods.values():
-            model.fields |= access.writes
-        for access in model.methods.values():
-            unknown = access.reads - model.fields - method_names - model.properties
-            model.unresolved_accesses += len(unknown)
-            access.reads -= unknown
+    context = _Members(profile, scopes, spec, method_names)
+    for method_node, method_name in method_nodes:
+        model.methods[method_name] = _method_access(context, method_node, method_name)
+        if _is_property(method_node, profile):
+            model.properties.add(method_name)
 
-        models[class_name] = model
+    _settle_fields(model, method_names)
+    return model
 
-    return models
+
+@dataclass(frozen=True, slots=True)
+class _Members:
+    """What every method of one class is read against: the tables, the scopes, the siblings."""
+
+    profile: LanguageProfile
+    scopes: ScopeTree
+    spec: ScopeSpec
+    #: The class's own method names, so a call to a sibling is not mistaken for a field.
+    method_names: set[str]
+
+
+def _method_access(context: _Members, method_node: Node, method_name: str) -> MethodAccess:
+    """What one method reads and writes through its receiver.
+
+    Without a receiver there is nothing to attribute an access *to*, so the method is
+    recorded with an empty access set rather than guessed at: LCOM over invented accesses
+    is worse than LCOM over none.
+    """
+    access = MethodAccess(
+        name=method_name, start_byte=method_node.start_byte, end_byte=method_node.end_byte
+    )
+    receiver = _receiver_of(method_node, context.profile, context.scopes)
+    if receiver is not None:
+        _collect_accesses(
+            method_node, context.profile, context.spec, receiver, access, context.method_names
+        )
+    return access
+
+
+def _settle_fields(model: ClassModel, method_names: set[str]) -> None:
+    """A field is anything written through the receiver, plus anything the body declares.
+
+    Reads of names in neither are inherited or dynamic. They are counted -- an unresolved
+    access is exactly the uncertainty the exactness stamp exists to report -- and then
+    dropped, so cohesion is computed over members this class actually has.
+    """
+    for access in model.methods.values():
+        model.fields |= access.writes
+    for access in model.methods.values():
+        unknown = access.reads - model.fields - method_names - model.properties
+        model.unresolved_accesses += len(unknown)
+        access.reads -= unknown
 
 
 def _iter_classes(root: Node, profile: LanguageProfile) -> Iterator[tuple[Node, str]]:
@@ -142,51 +179,73 @@ def _iter_methods(body: Node, profile: LanguageProfile) -> Iterator[tuple[Node, 
                 yield target, name
 
 
+#: Grammar nodes that hold a class's supertypes when they are not in a named field.
+_HERITAGE_KINDS = frozenset({"class_heritage", "extends_clause", "super_interfaces"})
+
+#: Field declarations whose name lives in a `name` field rather than left of an assignment.
+_NAMED_FIELD_KINDS = frozenset({"public_field_definition", "property_signature"})
+
+
 def _base_names(class_node: Node, profile: LanguageProfile) -> tuple[str, ...]:
-    """Superclass names as written. Resolving them to entities is L1's job."""
+    """Superclass names as written. Resolving them to entities is L1's job.
+
+    Two grammar shapes: Python and Java put supertypes in a named field, TypeScript hangs
+    them off a heritage clause. Both are read, and duplicates collapse.
+    """
     names: list[str] = []
-    for field_name in ("superclasses", "type_parameters", "body"):
-        if field_name == "body":
-            break
+    for field_name in ("superclasses", "type_parameters"):
         holder = class_node.child_by_field_name(field_name)
-        if holder is None:
-            continue
-        for child in holder.named_children:
-            text = _text(child)
-            if text and text.isidentifier():
-                names.append(text)
+        if holder is not None:
+            names.extend(_plain_names(holder))
     for child in class_node.named_children:
-        if child.type in {"class_heritage", "extends_clause", "super_interfaces"}:
-            for inner in child.named_children:
-                text = _text(inner)
-                if text and text.isidentifier():
-                    names.append(text)
+        if child.type in _HERITAGE_KINDS:
+            names.extend(_plain_names(child))
     return tuple(dict.fromkeys(names))
 
 
+def _plain_names(holder: Node) -> Iterator[str]:
+    """Direct children that are bare identifiers, skipping generics and expressions."""
+    for child in holder.named_children:
+        text = _text(child)
+        if text and text.isidentifier():
+            yield text
+
+
 def _declared_fields(body: Node, profile: LanguageProfile, spec: ScopeSpec) -> set[str]:
-    """Names assigned or annotated directly in the class body."""
+    """Names assigned or annotated directly in the class body, methods excluded."""
     fields: set[str] = set()
     for child in body.named_children:
-        if profile.unwrap(child).type in profile.function_like:
-            continue
-        stack = [child]
-        while stack:
-            node = stack.pop()
-            if node.type in spec.assignment_kinds or node.type == "field_definition":
-                left = (
-                    node.child_by_field_name("left")
-                    or node.child_by_field_name("name")
-                    or node.child_by_field_name("property")
-                )
-                if left is not None and left.type == spec.identifier_kind:
-                    fields.add(_text(left))
-            if node.type in {"public_field_definition", "property_signature"}:
-                name = node.child_by_field_name("name")
-                if name is not None:
-                    fields.add(_text(name))
-            stack.extend(node.named_children)
+        if profile.unwrap(child).type not in profile.function_like:
+            fields |= _field_names_in(child, spec)
     return fields
+
+
+def _field_names_in(child: Node, spec: ScopeSpec) -> set[str]:
+    """Every field name declared anywhere under one class-body statement."""
+    found: set[str] = set()
+    stack = [child]
+    while stack:
+        node = stack.pop()
+        stack.extend(node.named_children)
+        name = _field_name(node, spec)
+        if name:
+            found.add(name)
+    return found
+
+
+def _field_name(node: Node, spec: ScopeSpec) -> str:
+    """The field this node declares, or an empty string when it declares none."""
+    if node.type in _NAMED_FIELD_KINDS:
+        name = node.child_by_field_name("name")
+        return _text(name) if name is not None else ""
+    if node.type not in spec.assignment_kinds and node.type != "field_definition":
+        return ""
+    left = (
+        node.child_by_field_name("left")
+        or node.child_by_field_name("name")
+        or node.child_by_field_name("property")
+    )
+    return _text(left) if left is not None and left.type == spec.identifier_kind else ""
 
 
 def _receiver_of(method: Node, profile: LanguageProfile, scopes: ScopeTree) -> str | None:
