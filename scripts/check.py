@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -198,7 +199,7 @@ def corpus_lane(*, fetch: bool) -> bool:
     return lane.finish()
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -213,22 +214,40 @@ def main(argv: list[str] | None = None) -> int:
         "--install", action="store_true", help="fetch oracle tools and corpora as needed"
     )
     parser.add_argument("--skip-fast", action="store_true", help="skip the fast lane")
-    args = parser.parse_args(argv)
+    return parser
 
-    lanes: list[bool] = []
+
+def _lanes(args: argparse.Namespace) -> list[bool]:
+    """Run the selected lanes in order, cheapest first, and collect their verdicts.
+
+    Every lane runs even after one fails: a developer who has broken two things wants to
+    see both, and each lane is independent enough that a failure in one says nothing about
+    the next.
+    """
+    results: list[bool] = []
     if not args.skip_fast:
-        lanes.append(fast_lane())
-    if args.matrix or args.all:
-        lanes.append(matrix_lane())
-    if args.oracle or args.all:
-        lanes.append(oracle_lane(install=args.install or args.all))
-    if args.corpus or args.all:
-        lanes.append(corpus_lane(fetch=args.install))
-    if args.llm or args.all:
-        lanes.append(llm_lane())
+        results.append(fast_lane())
+    for flag, run in _OPTIONAL_LANES:
+        if getattr(args, flag) or args.all:
+            results.append(run(args))
+    return results
 
+
+#: The lanes past the fast one, each with the flag that selects it. `--all` selects every
+#: row. Ordered cheapest first, so a developer who breaks something usually learns it from
+#: the earliest lane that runs.
+_OPTIONAL_LANES: tuple[tuple[str, Callable[[argparse.Namespace], bool]], ...] = (
+    ("matrix", lambda args: matrix_lane()),  # noqa: ARG005 - uniform lane signature
+    ("oracle", lambda args: oracle_lane(install=args.install or args.all)),
+    ("corpus", lambda args: corpus_lane(fetch=args.install)),
+    ("llm", lambda args: llm_lane()),  # noqa: ARG005 - uniform lane signature
+)
+
+
+def main(argv: list[str] | None = None) -> int:
+    results = _lanes(_parser().parse_args(argv))
     print()
-    if all(lanes):
+    if all(results):
         print(f"{BOLD}{GREEN}all lanes passed{RESET}")
         return 0
     print(f"{BOLD}{RED}one or more lanes failed{RESET}")

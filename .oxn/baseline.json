@@ -3,17 +3,11 @@
   "scope": "repository",
   "note": "Accepted debt: these violations do not fail the build, but they may not get worse, and a new one anywhere fails. Regenerate with `oxn baseline`.",
   "violations": {
-    "cognitive_complexity|scripts/dogfood.py|scripts.dogfood.repair": 16.0,
-    "cognitive_complexity|scripts/fetch_corpora.py|scripts.fetch_corpora.main": 22.0,
     "cognitive_complexity|tests/test_oracles.py|tests.test_oracles._oxn_functions": 17.0,
     "cognitive_complexity|tests/test_oracles.py|tests.test_oracles._oxn_functions.walk": 14.0,
     "cognitive_complexity|tests/test_oracles.py|tests.test_oracles.test_cognitive_agrees_with_complexipy_on_a_real_codebase": 16.0,
     "cognitive_complexity|tests/test_oracles.py|tests.test_oracles.test_every_cyclomatic_divergence_from_lizard_is_explained": 32.0,
     "cognitive_complexity|tests/test_oracles.py|tests.test_oracles.test_every_cyclomatic_divergence_from_lizard_is_explained.visit": 16.0,
-    "cyclomatic_complexity|scripts/check.py|scripts.check.main": 12.0,
-    "cyclomatic_complexity|scripts/fetch_corpora.py|scripts.fetch_corpora.main": 15.0,
-    "function_sloc|scripts/dogfood.py|scripts.dogfood.repair": 64.0,
-    "max_nesting_depth|tests/test_oracles.py|tests.test_oracles.test_every_cyclomatic_divergence_from_lizard_is_explained.visit": 5.0,
-    "parameter_count|scripts/dogfood.py|scripts.dogfood.repair": 8.0
+    "max_nesting_depth|tests/test_oracles.py|tests.test_oracles.test_every_cyclomatic_divergence_from_lizard_is_explained.visit": 5.0
   }
 }

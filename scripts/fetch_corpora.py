@@ -75,7 +75,7 @@ def fetch(entry: dict[str, Any], sha: str) -> Path:
     return target
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--list", action="store_true", help="list corpora and exit")
     parser.add_argument("--use", action="append", default=[], help="only this use (repeatable)")
@@ -86,34 +86,55 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="record commit SHAs in the lock without downloading anything",
     )
-    args = parser.parse_args(argv)
+    return parser
 
+
+def _selected(args: argparse.Namespace) -> list[dict]:
+    """The manifest narrowed by `--use` and `--name`, both repeatable and both optional."""
     entries = load_manifest()
     if args.use:
-        entries = [e for e in entries if e.get("use") in set(args.use)]
+        entries = [entry for entry in entries if entry.get("use") in set(args.use)]
     if args.name:
-        entries = [e for e in entries if e["name"] in set(args.name)]
+        entries = [entry for entry in entries if entry["name"] in set(args.name)]
+    return entries
+
+
+def _print_list(entries: list[dict]) -> None:
+    for entry in entries:
+        language = f" [{entry['language']}]" if "language" in entry else ""
+        print(f"{entry['name']:28} {entry['use']:10}{language:14} {entry['url']}")
+
+
+def _acquire(entry: dict, lock: dict[str, str], *, pin: bool, resolve_only: bool) -> None:
+    """Pin one corpus to a commit, and fetch it unless only the pin was asked for.
+
+    The lock is what makes a corpus a *fixture*: a benchmark measured against a moving
+    branch is not reproducible, and a number quoted from one is not a measurement.
+    """
+    name = entry["name"]
+    if pin or name not in lock:
+        print(f"  resolve  {name} ({entry['ref']}) ...")
+        lock[name] = resolve(entry["url"], entry["ref"])
+    if resolve_only:
+        print(f"  pinned   {name} @ {lock[name][:12]}")
+    else:
+        fetch(entry, lock[name])
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    entries = _selected(args)
 
     if args.list:
-        for e in entries:
-            lang = f" [{e['language']}]" if "language" in e else ""
-            print(f"{e['name']:28} {e['use']:10}{lang:14} {e['url']}")
+        _print_list(entries)
         return 0
-
     if not entries:
         print("no corpora matched", file=sys.stderr)
         return 1
 
     lock = load_lock()
     for entry in entries:
-        name = entry["name"]
-        if args.pin or name not in lock:
-            print(f"  resolve  {name} ({entry['ref']}) ...")
-            lock[name] = resolve(entry["url"], entry["ref"])
-        if args.resolve_only:
-            print(f"  pinned   {name} @ {lock[name][:12]}")
-        else:
-            fetch(entry, lock[name])
+        _acquire(entry, lock, pin=args.pin, resolve_only=args.resolve_only)
 
     LOCK.write_text(json.dumps(dict(sorted(lock.items())), indent=2) + "\n")
     print(f"\nlock written: {LOCK.relative_to(ROOT)}")

@@ -201,77 +201,97 @@ class Attempt:
     next_feedback: str = ""
 
 
-def repair(
-    targets: list[Target],
-    *,
-    ceiling: int,
-    retries: int,
-    dry_run: bool,
-    allow_extraction: bool = False,
-    model: str = "",
-    judge_model: str = "",
-    host: str = "",
-) -> list[Attempt]:
-    """Attempt to repair each target, verifying every candidate before judging it.
+@dataclass(frozen=True, slots=True)
+class Session:
+    """How one repair run is configured: which models, and what the loop may do.
 
-    Models are chosen per run: an explicit flag wins, then the environment, then the
-    defaults. Nothing here assumes a particular model -- the loop wants *an* actor and *a*
+    Models are chosen per run -- an explicit flag wins, then the environment, then the
+    defaults. Nothing here assumes a particular model: the loop wants *an* actor and *a*
     judge, and which ones is the operator's business.
     """
-    from oxn.llm import OllamaClient
-    from oxn.profiles import profile_for_path
 
-    actor: Any = _FakeClient() if dry_run else _client(OllamaClient.from_env(), model, host)
-    judge: Any = (
-        _FakeClient() if dry_run else _client(OllamaClient.judge_from_env(), judge_model, host)
-    )
-    if not dry_run:
+    ceiling: int
+    retries: int
+    dry_run: bool = False
+    allow_extraction: bool = False
+    model: str = ""
+    judge_model: str = ""
+    host: str = ""
+
+
+def repair(targets: list[Target], session: Session) -> list[Attempt]:
+    """Attempt to repair each target, verifying every candidate before judging it."""
+    actor, judge = _clients(session)
+    if not session.dry_run:
         say(f"{DIM}actor {actor.model}  judge {judge.model}  at {actor.host}{RESET}")
 
     DIFFS.mkdir(parents=True, exist_ok=True)
     attempts: list[Attempt] = []
-
     for target in targets:
         say(f"\n{BOLD}{target.leaf}{RESET} {DIM}{target.path} scores {target.score:.0f}{RESET}")
-        before = measure(None, target)
-        profile = profile_for_path(target.path)
-        if profile is None:
-            continue
+        attempts.extend(_repair_one(target, session, actor, judge))
 
-        sandbox = Sandbox(target.leaf)
-        try:
-            say(f"{DIM}  creating sandbox...{RESET}")
-            sandbox.create()
-
-            run = Run(
-                actor=actor,
-                judge=judge,
-                sandbox=sandbox,
-                target=target,
-                profile=profile,
-                before=before,
-                ceiling=ceiling,
-                allow_extraction=allow_extraction,
-            )
-            feedback = ""
-            for index in range(1, retries + 1):
-                attempt = _one_attempt(run, index, feedback)
-                if attempt is None:
-                    say(f"{RED}  cannot locate {target.leaf}{RESET}")
-                    break
-                attempts.append(attempt)
-                feedback = attempt.next_feedback
-                if attempt.accepted:
-                    break
-        finally:
-            sandbox.destroy()
-
-    if dry_run:
+    if session.dry_run:
         # The fake client emits fixed junk, so these rows would be indistinguishable from
         # real attempts in a benchmark record that exists to be read later.
         say(f"\n{DIM}dry run -- not logged{RESET}")
     else:
         _append_log(attempts)
+    return attempts
+
+
+def _clients(session: Session) -> tuple[Any, Any]:
+    """The actor and the judge, or two fakes when the run is a dry one."""
+    from oxn.llm import OllamaClient
+
+    if session.dry_run:
+        return _FakeClient(), _FakeClient()
+    return (
+        _client(OllamaClient.from_env(), session.model, session.host),
+        _client(OllamaClient.judge_from_env(), session.judge_model, session.host),
+    )
+
+
+def _repair_one(target: Target, session: Session, actor: Any, judge: Any) -> list[Attempt]:
+    """Every attempt at one target, stopping at acceptance or at the retry budget.
+
+    The sandbox is destroyed however this exits: a run that leaves 100 MB of throwaway
+    copies behind after an interrupt is one nobody runs twice.
+    """
+    from oxn.profiles import profile_for_path
+
+    profile = profile_for_path(target.path)
+    if profile is None:
+        return []
+
+    before = measure(None, target)
+    sandbox = Sandbox(target.leaf)
+    attempts: list[Attempt] = []
+    try:
+        say(f"{DIM}  creating sandbox...{RESET}")
+        sandbox.create()
+        run = Run(
+            actor=actor,
+            judge=judge,
+            sandbox=sandbox,
+            target=target,
+            profile=profile,
+            before=before,
+            ceiling=session.ceiling,
+            allow_extraction=session.allow_extraction,
+        )
+        feedback = ""
+        for index in range(1, session.retries + 1):
+            attempt = _one_attempt(run, index, feedback)
+            if attempt is None:
+                say(f"{RED}  cannot locate {target.leaf}{RESET}")
+                break
+            attempts.append(attempt)
+            feedback = attempt.next_feedback
+            if attempt.accepted:
+                break
+    finally:
+        sandbox.destroy()
     return attempts
 
 
@@ -532,13 +552,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     attempts = repair(
         targets,
-        ceiling=args.ceiling,
-        allow_extraction=args.allow_extraction,
-        retries=args.retries,
-        dry_run=args.dry_run,
-        model=args.model,
-        judge_model=args.judge_model,
-        host=args.host,
+        Session(
+            ceiling=args.ceiling,
+            retries=args.retries,
+            dry_run=args.dry_run,
+            allow_extraction=args.allow_extraction,
+            model=args.model,
+            judge_model=args.judge_model,
+            host=args.host,
+        ),
     )
     return 0 if any(a.accepted for a in attempts) or args.dry_run else 1
 
