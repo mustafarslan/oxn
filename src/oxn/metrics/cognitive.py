@@ -71,224 +71,220 @@ def cognitive_complexity(
     call graph and is therefore not assessed; the result is marked approximate.
     """
     spec = profile.metrics.cognitive
-    result = CognitiveResult()
-    counted_bools: set[int] = set()
+    context = _Context(
+        profile=profile,
+        spec=spec,
+        result=CognitiveResult(),
+        counted_bools=set(),
+        function_name=function_name,
+    )
 
     declarative = spec.js_declarative_function_exception and _is_declarative(node, spec)
     decorator_shaped = spec.python_decorator_exception and _is_decorator_shaped(node, profile)
 
-    _walk(
-        node,
-        profile,
-        spec,
-        result,
-        nesting=0,
-        counted_bools=counted_bools,
-        function_name=function_name,
-        suppress_nesting=declarative or decorator_shaped,
-        is_root=True,
-    )
-    return result
+    _walk(context, node, nesting=0, suppress_nesting=declarative or decorator_shaped)
+    return context.result
 
 
-def _walk(
-    node: Node,
-    profile: LanguageProfile,
-    spec: CognitiveSpec,
-    result: CognitiveResult,
-    *,
-    nesting: int,
-    counted_bools: set[int],
-    function_name: str | None,
-    suppress_nesting: bool,
-    is_root: bool,
-) -> None:
+@dataclass(frozen=True, slots=True)
+class _Context:
+    """What stays the same for an entire scoring run.
+
+    Everything here is invariant through the recursion -- the profile, the tables, the
+    accumulator, the enclosing function's name -- so threading it as five separate
+    arguments through five mutually recursive functions bought nothing and cost a great
+    deal: `_walk` alone re-listed eight arguments at nine call sites.
+
+    Frozen guards rebinding, not contents: `result` and `counted_bools` are accumulators
+    and are meant to be mutated.
+    """
+
+    profile: LanguageProfile
+    spec: CognitiveSpec
+    result: CognitiveResult
+    counted_bools: set[int]
+    function_name: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _Site:
+    """One child under consideration, and the nesting state it is seen at."""
+
+    node: Node
+    kind: str
+    nesting: int
+    suppress_nesting: bool
+
+
+def _walk(context: _Context, node: Node, *, nesting: int, suppress_nesting: bool) -> None:
+    """Score every child of ``node``, dispatching each to the rule that claims it.
+
+    The specification classifies constructs into increment classes, and this loop is that
+    classification made executable: `_HANDLERS` holds one function per class, tried in
+    order, and the first to claim a child consumes it. A child no rule claims falls through
+    to the two increments that are about the *expression* rather than the statement --
+    boolean sequences and direct recursion -- and is then descended into.
+
+    Order is load-bearing and matches the chain this replaced. `_ignored` must precede
+    everything (a `try` scores nothing but its contents count), and `_else_if` must precede
+    `_structural` or a wrapped `else if` is scored twice.
+    """
     for child in node.named_children:
-        target = profile.unwrap(child)
-        kind = target.type
+        target = context.profile.unwrap(child)
+        site = _Site(target, target.type, nesting, suppress_nesting)
 
-        if kind in spec.ignored:
-            # `try`/`finally` score nothing and do not nest, but their contents count.
-            _walk(
-                target,
-                profile,
-                spec,
-                result,
-                nesting=nesting,
-                counted_bools=counted_bools,
-                function_name=function_name,
-                suppress_nesting=suppress_nesting,
-                is_root=False,
-            )
+        if any(claim(context, site) for claim in _HANDLERS):
             continue
 
-        # `else if` where the grammar spells it as an else_clause wrapping an if_statement.
-        if (
-            spec.else_if_via_else_clause or spec.alternative_style == "wrapped"
-        ) and kind == spec.else_clause_kind:
-            inner = _sole_if(target, spec)
-            if inner is not None:
-                result.add(target, 1, "hybrid", "`else if` (hybrid: no nesting increment)")
-                # The `else if` is not nesting-incremented, but its body is one level
-                # deeper -- matching Python's `elif_clause`, and the white paper's
-                # `toRegexp` example, where an `if` inside an `else if` body scores
-                # "+3 (nesting = 2)" beneath an outer `if` at nesting 1.
-                _descend_conditional(
-                    inner,
-                    profile,
-                    spec,
-                    result,
-                    nesting=nesting + 1,
-                    counted_bools=counted_bools,
-                    function_name=function_name,
-                    suppress_nesting=suppress_nesting,
-                )
-                continue
+        _score_expression(context, site)
+        _walk(context, target, nesting=nesting, suppress_nesting=suppress_nesting)
 
-        if kind in spec.comprehension_kinds:
-            _score_comprehension(
-                target,
-                profile,
-                spec,
-                result,
-                nesting=nesting,
-                counted_bools=counted_bools,
-                function_name=function_name,
-                suppress_nesting=suppress_nesting,
-            )
-            continue
 
-        if kind in spec.structural:
-            increment = 1 + nesting
-            reason = f"`{_label(target)}`" + (f" nested {nesting} deep" if nesting else "")
-            result.add(target, increment, "structural", reason)
-            _descend_conditional(
-                target,
-                profile,
-                spec,
-                result,
-                nesting=nesting + 1,
-                counted_bools=counted_bools,
-                function_name=function_name,
-                suppress_nesting=suppress_nesting,
-            )
-            continue
+# ---- one handler per increment class -------------------------------------------------
+#
+# Each returns True when it has consumed the child. They read as the table in
+# `CognitiveSpec`'s docstring, which is the point: the spec says there are four increment
+# classes plus a handful of special shapes, and now so does the code.
 
-        if kind in spec.hybrid:
-            # A loop's or a `try`'s `else` is not an `if`/`else` and does not count.
-            parent = target.parent
-            if parent is not None and parent.type not in spec.hybrid_parents:
-                _walk(
-                    target,
-                    profile,
-                    spec,
-                    result,
-                    nesting=nesting,
-                    counted_bools=counted_bools,
-                    function_name=function_name,
-                    suppress_nesting=suppress_nesting,
-                    is_root=False,
-                )
-                continue
-            result.add(target, 1, "hybrid", f"`{_label(target)}` (hybrid: no nesting increment)")
-            _walk(
-                target,
-                profile,
-                spec,
-                result,
-                nesting=nesting + 1,
-                counted_bools=counted_bools,
-                function_name=function_name,
-                suppress_nesting=suppress_nesting,
-                is_root=False,
-            )
-            continue
 
-        if kind in spec.labelled_jump_kinds:
-            # Only a *labelled* or multi-level jump increments. A bare `break` does not.
-            if any(c.type in spec.jump_label_kinds for c in target.named_children):
-                result.add(target, 1, "fundamental", f"labelled `{_label(target)}`")
-            continue
+def _ignored(context: _Context, site: _Site) -> bool:
+    """`try`/`finally` score nothing and do not nest, but their contents count."""
+    if site.kind not in context.spec.ignored:
+        return False
+    _walk(context, site.node, nesting=site.nesting, suppress_nesting=site.suppress_nesting)
+    return True
 
-        if kind in spec.fundamental:
-            result.add(target, 1, "fundamental", f"`{_label(target)}`")
-            _walk(
-                target,
-                profile,
-                spec,
-                result,
-                nesting=nesting,
-                counted_bools=counted_bools,
-                function_name=function_name,
-                suppress_nesting=suppress_nesting,
-                is_root=False,
-            )
-            continue
 
-        if kind in spec.nesting_only:
-            # No increment of its own, but everything inside is one level deeper -- unless a
-            # compensating usage from Appendix A applies.
-            inner_nesting = nesting if suppress_nesting else nesting + 1
-            # The exception must be re-evaluated at every level, not decided once at the
-            # top: a decorator generator is a decorator-shaped function *containing another
-            # one*, and both levels are exempt. The white paper's `decorator_generator`
-            # example scores 1 only if this holds.
-            nested_exempt = spec.python_decorator_exception and _is_decorator_shaped(
-                target, profile
-            )
-            _walk(
-                target,
-                profile,
-                spec,
-                result,
-                nesting=inner_nesting,
-                counted_bools=counted_bools,
-                function_name=function_name,
-                suppress_nesting=nested_exempt,
-                is_root=False,
-            )
-            continue
+def _else_if(context: _Context, site: _Site) -> bool:
+    """`else if` where the grammar spells it as an else_clause wrapping an if_statement."""
+    spec = context.spec
+    wrapped = spec.else_if_via_else_clause or spec.alternative_style == "wrapped"
+    if not wrapped or site.kind != spec.else_clause_kind:
+        return False
+    inner = _sole_if(site.node, spec)
+    if inner is None:
+        return False
+    context.result.add(site.node, 1, "hybrid", "`else if` (hybrid: no nesting increment)")
+    # The `else if` is not nesting-incremented, but its body is one level deeper --
+    # matching Python's `elif_clause`, and the white paper's `toRegexp` example, where an
+    # `if` inside an `else if` body scores "+3 (nesting = 2)" beneath an outer `if`.
+    _descend_conditional(
+        context, inner, nesting=site.nesting + 1, suppress_nesting=site.suppress_nesting
+    )
+    return True
 
-        # The operator must be checked, not just the node kind: in TypeScript a
-        # `binary_expression` is also `a > 0`, which is not a logical operator at all.
-        if (
-            kind == spec.boolean_node
-            and target.id not in counted_bools
-            and _operator_of(target) in spec.boolean_operators
-        ):
-            result.add(
-                target,
-                _score_boolean_sequence(target, spec, counted_bools),
-                "fundamental",
-                "sequence of binary logical operators",
-            )
 
-        if function_name and kind in spec.call_kinds and _is_self_call(target, spec, function_name):
-            result.add(target, 1, "fundamental", f"recursive call to `{function_name}`")
+def _comprehension(context: _Context, site: _Site) -> bool:
+    if site.kind not in context.spec.comprehension_kinds:
+        return False
+    _score_comprehension(
+        context, site.node, nesting=site.nesting, suppress_nesting=site.suppress_nesting
+    )
+    return True
 
-        _walk(
-            target,
-            profile,
-            spec,
-            result,
-            nesting=nesting,
-            counted_bools=counted_bools,
-            function_name=function_name,
-            suppress_nesting=suppress_nesting,
-            is_root=is_root,
+
+def _structural(context: _Context, site: _Site) -> bool:
+    """B1 + B2 + B3: increments, raises nesting, and receives the nesting increment."""
+    if site.kind not in context.spec.structural:
+        return False
+    reason = f"`{_label(site.node)}`" + (f" nested {site.nesting} deep" if site.nesting else "")
+    context.result.add(site.node, 1 + site.nesting, "structural", reason)
+    _descend_conditional(
+        context, site.node, nesting=site.nesting + 1, suppress_nesting=site.suppress_nesting
+    )
+    return True
+
+
+def _hybrid(context: _Context, site: _Site) -> bool:
+    """`else`/`elif`: +1, no nesting increment received, but nesting is raised."""
+    if site.kind not in context.spec.hybrid:
+        return False
+    # A loop's or a `try`'s `else` is not an `if`/`else` and does not count.
+    parent = site.node.parent
+    if parent is not None and parent.type not in context.spec.hybrid_parents:
+        _walk(context, site.node, nesting=site.nesting, suppress_nesting=site.suppress_nesting)
+        return True
+    context.result.add(
+        site.node, 1, "hybrid", f"`{_label(site.node)}` (hybrid: no nesting increment)"
+    )
+    _walk(context, site.node, nesting=site.nesting + 1, suppress_nesting=site.suppress_nesting)
+    return True
+
+
+def _labelled_jump(context: _Context, site: _Site) -> bool:
+    """Only a *labelled* or multi-level jump increments. A bare `break` does not."""
+    spec = context.spec
+    if site.kind not in spec.labelled_jump_kinds:
+        return False
+    if any(child.type in spec.jump_label_kinds for child in site.node.named_children):
+        context.result.add(site.node, 1, "fundamental", f"labelled `{_label(site.node)}`")
+    return True
+
+
+def _fundamental(context: _Context, site: _Site) -> bool:
+    """+1, and neither raises nor receives a nesting increment."""
+    if site.kind not in context.spec.fundamental:
+        return False
+    context.result.add(site.node, 1, "fundamental", f"`{_label(site.node)}`")
+    _walk(context, site.node, nesting=site.nesting, suppress_nesting=site.suppress_nesting)
+    return True
+
+
+def _nesting_only(context: _Context, site: _Site) -> bool:
+    """No increment of its own, but everything inside is one level deeper.
+
+    Unless a compensating usage from Appendix A applies -- and the exception must be
+    re-evaluated at every level, not decided once at the top: a decorator generator is a
+    decorator-shaped function *containing another one*, and both levels are exempt. The
+    white paper's `decorator_generator` example scores 1 only if this holds.
+    """
+    if site.kind not in context.spec.nesting_only:
+        return False
+    inner = site.nesting if site.suppress_nesting else site.nesting + 1
+    exempt = context.spec.python_decorator_exception and _is_decorator_shaped(
+        site.node, context.profile
+    )
+    _walk(context, site.node, nesting=inner, suppress_nesting=exempt)
+    return True
+
+
+#: Tried in order; the first to claim a child consumes it. See `_walk` on why order matters.
+_HANDLERS = (
+    _ignored,
+    _else_if,
+    _comprehension,
+    _structural,
+    _hybrid,
+    _labelled_jump,
+    _fundamental,
+    _nesting_only,
+)
+
+
+def _score_expression(context: _Context, site: _Site) -> None:
+    """The two increments that are about an expression rather than a statement."""
+    spec = context.spec
+    # The operator must be checked, not just the node kind: in TypeScript a
+    # `binary_expression` is also `a > 0`, which is not a logical operator at all.
+    if (
+        site.kind == spec.boolean_node
+        and site.node.id not in context.counted_bools
+        and _operator_of(site.node) in spec.boolean_operators
+    ):
+        context.result.add(
+            site.node,
+            _score_boolean_sequence(site.node, spec, context.counted_bools),
+            "fundamental",
+            "sequence of binary logical operators",
         )
+
+    name = context.function_name
+    if name and site.kind in spec.call_kinds and _is_self_call(site.node, spec, name):
+        context.result.add(site.node, 1, "fundamental", f"recursive call to `{name}`")
 
 
 def _score_comprehension(
-    node: Node,
-    profile: LanguageProfile,
-    spec: CognitiveSpec,
-    result: CognitiveResult,
-    *,
-    nesting: int,
-    counted_bools: set[int],
-    function_name: str | None,
-    suppress_nesting: bool,
+    context: _Context, node: Node, *, nesting: int, suppress_nesting: bool
 ) -> None:
     """Score a comprehension, whose clauses are *siblings* of its body, not its ancestors.
 
@@ -303,41 +299,29 @@ def _score_comprehension(
     Verified: ``[x for x in a]`` = 1, ``[x for x in a for y in b if x if y]`` = 4,
     ``[[y for y in x] for x in a]`` = 3.
     """
+    spec = context.spec
     loops = [c for c in node.named_children if c.type in spec.comprehension_loop_kinds]
     filters = [c for c in node.named_children if c.type in spec.comprehension_filter_kinds]
 
     for clause in loops:
         reason = "comprehension `for`" + (f" nested {nesting} deep" if nesting else "")
-        result.add(clause, 1 + nesting, "structural", reason)
+        context.result.add(clause, 1 + nesting, "structural", reason)
     for clause in filters:
-        result.add(clause, 1, "fundamental", "comprehension filter `if`")
+        context.result.add(clause, 1, "fundamental", "comprehension filter `if`")
 
     inner = nesting + 1 if loops else nesting
     for child in node.named_children:
         at_clause_level = child in loops or child in filters
         _walk(
+            context,
             _Wrapper(child),  # type: ignore[arg-type]
-            profile,
-            spec,
-            result,
             nesting=nesting if at_clause_level else inner,
-            counted_bools=counted_bools,
-            function_name=function_name,
             suppress_nesting=suppress_nesting,
-            is_root=False,
         )
 
 
 def _descend_conditional(
-    node: Node,
-    profile: LanguageProfile,
-    spec: CognitiveSpec,
-    result: CognitiveResult,
-    *,
-    nesting: int,
-    counted_bools: set[int],
-    function_name: str | None,
-    suppress_nesting: bool,
+    context: _Context, node: Node, *, nesting: int, suppress_nesting: bool
 ) -> None:
     """Visit a conditional's children, keeping ``else``/``elif`` at the parent's level.
 
@@ -346,7 +330,7 @@ def _descend_conditional(
     """
     alternatives = [
         child
-        for field_name in spec.same_nesting_fields
+        for field_name in context.spec.same_nesting_fields
         for child in node.children_by_field_name(field_name)
     ]
     alternative_ids = {child.id for child in alternatives}
@@ -355,40 +339,18 @@ def _descend_conditional(
         if child.id in alternative_ids:
             continue
         _walk(
+            context,
             _Wrapper(child),  # type: ignore[arg-type]
-            profile,
-            spec,
-            result,
             nesting=nesting,
-            counted_bools=counted_bools,
-            function_name=function_name,
             suppress_nesting=suppress_nesting,
-            is_root=False,
         )
 
     for child in alternatives:
-        _visit_alternative(
-            child,
-            profile,
-            spec,
-            result,
-            nesting=nesting - 1,
-            counted_bools=counted_bools,
-            function_name=function_name,
-            suppress_nesting=suppress_nesting,
-        )
+        _visit_alternative(context, child, nesting=nesting - 1, suppress_nesting=suppress_nesting)
 
 
 def _visit_alternative(
-    node: Node,
-    profile: LanguageProfile,
-    spec: CognitiveSpec,
-    result: CognitiveResult,
-    *,
-    nesting: int,
-    counted_bools: set[int],
-    function_name: str | None,
-    suppress_nesting: bool,
+    context: _Context, node: Node, *, nesting: int, suppress_nesting: bool
 ) -> None:
     """Score whatever sits in an ``if``'s ``alternative`` slot.
 
@@ -396,47 +358,26 @@ def _visit_alternative(
     three must produce the same score for the same logic -- which the cross-language
     transliteration tests enforce.
     """
+    spec = context.spec
     if spec.alternative_style == "direct":
         if node.type == spec.if_kind:
             # Go and Java: `else if` is the next `if` sitting directly in the slot.
-            result.add(node, 1, "hybrid", "`else if` (hybrid: no nesting increment)")
+            context.result.add(node, 1, "hybrid", "`else if` (hybrid: no nesting increment)")
             _descend_conditional(
-                node,
-                profile,
-                spec,
-                result,
-                nesting=nesting + 1,
-                counted_bools=counted_bools,
-                function_name=function_name,
-                suppress_nesting=suppress_nesting,
+                context, node, nesting=nesting + 1, suppress_nesting=suppress_nesting
             )
             return
         if node.type in spec.plain_else_kinds:
             # A bare block in the slot is a plain `else`, which has no node of its own.
-            result.add(node, 1, "hybrid", "`else` (hybrid: no nesting increment)")
-            _walk(
-                node,
-                profile,
-                spec,
-                result,
-                nesting=nesting + 1,
-                counted_bools=counted_bools,
-                function_name=function_name,
-                suppress_nesting=suppress_nesting,
-                is_root=False,
-            )
+            context.result.add(node, 1, "hybrid", "`else` (hybrid: no nesting increment)")
+            _walk(context, node, nesting=nesting + 1, suppress_nesting=suppress_nesting)
             return
 
     _walk(
+        context,
         _Wrapper(node),  # type: ignore[arg-type]
-        profile,
-        spec,
-        result,
         nesting=nesting,
-        counted_bools=counted_bools,
-        function_name=function_name,
         suppress_nesting=suppress_nesting,
-        is_root=False,
     )
 
 
