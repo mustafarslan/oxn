@@ -1294,6 +1294,22 @@ completeness claim. Three further tripwires are calibration, not detection, and 
 `oxn calibration` rather than chased: helpers written just above `TRIVIAL_HELPER`, helpers given a
 public name, and helpers given a second call site.
 
+A fourth is a limit of scope rather than of calibration, and is left open deliberately. Helpers
+reached through a **dispatch table** are *referenced*, not called, so `callee_names` never sees a
+call site and they are never candidates — verified: the same router shred, rewritten to dispatch
+through a tuple of `(verb, prefix, handler)` rows, passes. Counting bare references instead of
+calls was measured and rejected: it cannot tell a call from an export, a decorator or an
+annotation, and the loose version mostly manufactures phantom second callers, which weakens
+detection rather than strengthening it. The deeper reason to leave it is that turning branching
+into data *is* a structural simplification — reading cost moves into a table you can read — and an
+agent that evades this rule by writing a genuine dispatch table has done the work the rule was
+asking for. Where a table is instead a disguise, only cohesion can say so, and cohesion is the
+judge's job by design.
+
+OXN's own `_walk` is the worked example in both directions: it went from cognitive complexity 52 to
+7 by becoming a dispatch table over one handler per increment class, and the shredding rule
+correctly does not fire on it.
+
 Two consequences worth stating plainly:
 
 * **Mass is reported and never gated.** It remains useful context and a trend signal; it is not
