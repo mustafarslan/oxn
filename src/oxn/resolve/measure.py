@@ -34,8 +34,8 @@ if TYPE_CHECKING:  # pragma: no cover
 
     from oxn.graph.model import Entity
     from oxn.profiles.base import LanguageProfile
-    from oxn.resolve.symbols import ProjectSymbols
-    from oxn.scip.index import ScipDocument
+    from oxn.resolve.symbols import ProjectSymbols, ResolvedName
+    from oxn.scip.index import ScipDocument, ScipOccurrence
 
 
 @dataclass
@@ -104,73 +104,100 @@ class ResolutionAccuracy:
         }
 
 
-def grade_file(
-    path: str,
-    profile: LanguageProfile,
-    tree_root: Node,
-    document: ScipDocument,
-    symbols: ProjectSymbols,
-    scip_to_entity: dict[str, str],
-    accuracy: ResolutionAccuracy,
-) -> None:
-    """Compare L0/L1's answer to L2's for every call site in one file."""
-    from oxn.scip.join import _last_name_position  # noqa: PLC2701 - one join rule, one place
+@dataclass(frozen=True, slots=True)
+class _Grading:
+    """One file's grading run: the source of truth, the guesser, and the tally.
 
-    spec = profile.metrics.cognitive
+    All of it is invariant across every call site in the file; only the node being graded
+    varies. Passing it as six separate arguments made a seven-parameter function whose
+    signature said nothing about what grading *is*.
+    """
+
+    path: str
+    profile: LanguageProfile
+    document: ScipDocument
+    symbols: ProjectSymbols
+    #: SCIP symbol -> the entity id it names in our graph, when it names one at all.
+    scip_to_entity: dict[str, str]
+    accuracy: ResolutionAccuracy
+
+
+def grade_file(grading: _Grading, tree_root: Node) -> None:
+    """Compare L0/L1's answer to L2's for every call site in one file."""
+    spec = grading.profile.metrics.cognitive
     if not spec.call_kinds:
         return
 
     by_position = {
         (occurrence.start_line, occurrence.start_char): occurrence
-        for occurrence in document.occurrences
+        for occurrence in grading.document.occurrences
     }
 
     stack = [tree_root]
     while stack:
         node = stack.pop()
         stack.extend(node.named_children)
-        if node.type not in spec.call_kinds:
-            continue
+        if node.type in spec.call_kinds:
+            _grade_call(grading, node, by_position)
 
-        callee = node.child_by_field_name(spec.callee_field)
-        if callee is None:
-            continue
 
-        occurrence = by_position.get(_last_name_position(callee))
-        if occurrence is None:
-            continue
-        truth = scip_to_entity.get(occurrence.symbol)
-        if truth is None:
-            continue  # SCIP could not place it in-tree either; nothing to grade against
+def _grade_call(
+    grading: _Grading, node: Node, by_position: dict[tuple[int, int], ScipOccurrence]
+) -> None:
+    """Grade one call site, or decline to.
 
-        name = _callee_name(callee)
-        if not name:
-            continue
+    Most call sites are declined, and for different reasons: SCIP may not have placed the
+    callee in-tree either, or the oracle's idea of what is written may not match the
+    source. Only what survives all of that is scored.
+    """
+    from oxn.scip.join import _last_name_position  # noqa: PLC2701 - one join rule, one place
 
-        # The oracle must agree with the source about *what is written* before it can
-        # arbitrate what that name refers to. See the module docstring.
-        if symbol_tail(occurrence.symbol) != name:
-            accuracy.excluded_untrustworthy += 1
-            continue
+    spec = grading.profile.metrics.cognitive
+    callee = node.child_by_field_name(spec.callee_field)
+    if callee is None:
+        return
 
-        accuracy.graded_call_sites += 1
-        guess = symbols.resolve_call(path, name)
-        if guess is None:
-            continue
+    occurrence = by_position.get(_last_name_position(callee))
+    if occurrence is None:
+        return
+    truth = grading.scip_to_entity.get(occurrence.symbol)
+    if truth is None:
+        return  # SCIP could not place it in-tree either; nothing to grade against
 
-        accuracy.answered += 1
+    name = _callee_name(callee)
+    if not name:
+        return
+
+    # The oracle must agree with the source about *what is written* before it can arbitrate
+    # what that name refers to. See the module docstring.
+    if symbol_tail(occurrence.symbol) != name:
+        grading.accuracy.excluded_untrustworthy += 1
+        return
+
+    grading.accuracy.graded_call_sites += 1
+    guess = grading.symbols.resolve_call(grading.path, name)
+    if guess is None:
+        return
+
+    grading.accuracy.answered += 1
+    _score(grading, guess, truth, node, name)
+
+
+def _score(grading: _Grading, guess: ResolvedName, truth: str, node: Node, name: str) -> None:
+    """Tally one graded call site, recording the first few disagreements verbatim."""
+    accuracy = grading.accuracy
+    if guess.is_certain:
+        accuracy.confident_answered += 1
+    if guess.entity_id == truth:
+        accuracy.correct += 1
         if guess.is_certain:
-            accuracy.confident_answered += 1
-        if guess.entity_id == truth:
-            accuracy.correct += 1
-            if guess.is_certain:
-                accuracy.confident_correct += 1
-        elif len(accuracy.disagreements) < 25:
-            accuracy.disagreements.append(
-                f"{path}:{node.start_point[0] + 1} {name}(): "
-                f"guessed {guess.qualified_name} [{guess.entity_id[:8]}] "
-                f"truth {truth[:8]}"
-            )
+            accuracy.confident_correct += 1
+    elif len(accuracy.disagreements) < 25:
+        accuracy.disagreements.append(
+            f"{grading.path}:{node.start_point[0] + 1} {name}(): "
+            f"guessed {guess.qualified_name} [{guess.entity_id[:8]}] "
+            f"truth {truth[:8]}"
+        )
 
 
 def symbol_tail(symbol: str) -> str:
@@ -245,5 +272,8 @@ def measure_corpus(root: Path, index_path: Path, language: str = "python") -> Re
         document = index.get(relative)
         if document is None:
             continue
-        grade_file(relative, profile, tree_root, document, symbols, scip_to_entity, accuracy)
+        grade_file(
+            _Grading(relative, profile, document, symbols, scip_to_entity, accuracy),
+            tree_root,
+        )
     return accuracy

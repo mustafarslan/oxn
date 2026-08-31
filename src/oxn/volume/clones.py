@@ -256,9 +256,7 @@ def _window(
 
 
 def _extend(
-    files: Mapping[str, tuple[list[Token], dict[int, list[int]]]],
-    seeds: list[tuple[str, int]],
-    min_tokens: int,
+    files: Analysed, seeds: list[tuple[str, int]], min_tokens: int
 ) -> tuple[int, list[tuple[str, int]]] | None:
     """Grow a verified match maximally in both directions, without self-overlap.
 
@@ -270,29 +268,44 @@ def _extend(
     fact instead loses the clone entirely.
     """
     starts = list(seeds)
-    length = min_tokens
     limit = _self_overlap_limit(starts)
     if limit is not None and limit < min_tokens:
         return None
 
-    while True:
+    starts, length = _grow_backward(files, starts, min_tokens, limit)
+    return _grow_forward(files, starts, length, limit), starts
+
+
+def _grow_backward(
+    files: Analysed, starts: list[tuple[str, int]], length: int, limit: int | None
+) -> tuple[list[tuple[str, int]], int]:
+    """Walk every occurrence one token earlier for as long as they still agree."""
+    while _room_before(starts, length, limit):
         previous = [(path, start - 1) for path, start in starts]
-        if any(start < 0 for _, start in previous):
-            break
-        if limit is not None and length + 1 > limit:
-            break
         values = {_token_at(files, path, start) for path, start in previous}
         if len(values) != 1 or None in values:
             break
         starts, length = previous, length + 1
+    return starts, length
 
+
+def _room_before(starts: list[tuple[str, int]], length: int, limit: int | None) -> bool:
+    """Is there a token before every occurrence, and room for it under the overlap cap?"""
+    if any(start == 0 for _, start in starts):
+        return False
+    return limit is None or length + 1 <= limit
+
+
+def _grow_forward(
+    files: Analysed, starts: list[tuple[str, int]], length: int, limit: int | None
+) -> int:
+    """Extend the tail while every occurrence still holds the same token."""
     while limit is None or length < limit:
         values = {_token_at(files, path, start + length) for path, start in starts}
         if len(values) != 1 or None in values:
             break
         length += 1
-
-    return length, starts
+    return length
 
 
 def _self_overlap_limit(starts: list[tuple[str, int]]) -> int | None:
