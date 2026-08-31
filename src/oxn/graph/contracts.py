@@ -127,35 +127,54 @@ def check_contracts(
     report = ConformanceReport(
         unassigned=[path for path, layer in assignment.items() if layer is None]
     )
-
-    # Every concrete edge, not one exemplar per layer pair. Collapsing them was enough for a
-    # Reflexion-style report -- "does this layer reach that one" -- but not for a gate: a
-    # finding keyed on the layer pair forgives every later import between the same two
-    # layers, so the baseline could never see a new violation or notice one getting worse.
-    layer_edges: dict[tuple[str, str], list[tuple[str, str]]] = {}
-    for source in paths:
-        source_layer = assignment[source]
-        if source_layer is None:
-            continue
-        for target in file_graph.get(source, ()):
-            target_layer = assignment.get(target)
-            if target_layer is None or target_layer == source_layer:
-                continue
-            layer_edges.setdefault((source_layer, target_layer), []).append((source, target))
-
-    declared: set[tuple[str, str]] = set()
-    for contract in contracts:
-        if contract.kind == "layered":
-            declared |= _layered_allowed(contract)
+    layer_edges = _layer_edges(file_graph, paths, assignment)
 
     for contract in contracts:
         report.divergent.extend(_check_one(contract, file_graph, assignment, layer_edges))
 
     violating = {(violation.source, violation.target) for violation in report.divergent}
     report.convergent = sum(1 for edge in layer_edges if edge not in violating)
+
+    declared = _declared_edges(contracts)
     if declared:
         report.absent = sorted(edge for edge in declared if edge not in layer_edges)
     return report
+
+
+def _layer_edges(
+    file_graph: Graph[str], paths: list[str], assignment: dict[str, str | None]
+) -> dict[tuple[str, str], list[tuple[str, str]]]:
+    """Every concrete cross-layer edge, grouped by the layer pair it crosses.
+
+    *Every* edge, not one exemplar per pair. Collapsing them was enough for a
+    Reflexion-style report -- "does this layer reach that one" -- but not for a gate: a
+    finding keyed on the layer pair forgives every later import between the same two
+    layers, so the baseline could never see a new violation or notice one getting worse.
+    """
+    edges: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    for source in paths:
+        source_layer = assignment[source]
+        if source_layer is None:
+            continue
+        for target in file_graph.get(source, ()):
+            target_layer = assignment.get(target)
+            if target_layer is not None and target_layer != source_layer:
+                edges.setdefault((source_layer, target_layer), []).append((source, target))
+    return edges
+
+
+def _declared_edges(contracts: Sequence[Contract]) -> set[tuple[str, str]]:
+    """Layer pairs a contract explicitly permits, which is what makes *absence* meaningful.
+
+    An allowed dependency that never occurs is a Reflexion "absent" edge: the model says
+    these layers talk and the code says they do not, which is worth reporting even though
+    nothing is broken.
+    """
+    declared: set[tuple[str, str]] = set()
+    for contract in contracts:
+        if contract.kind == "layered":
+            declared |= _layered_allowed(contract)
+    return declared
 
 
 def _layered_allowed(contract: Contract) -> set[tuple[str, str]]:
@@ -255,25 +274,26 @@ def _check_deep_import(
     contract: Contract, file_graph: Graph[str], assignment: Mapping[str, str | None]
 ) -> list[Violation]:
     """A package may only be entered through its declared entry points."""
-    violations: list[Violation] = []
-    for source in sorted(file_graph):
-        if assignment.get(source) == contract.package:
-            continue
-        for target in file_graph.get(source, ()):
-            if assignment.get(target) != contract.package:
-                continue
-            if any(fnmatch.fnmatch(target, pattern) for pattern in contract.allowed_entrypoints):
-                continue
-            violations.append(
-                Violation(
-                    contract=contract.name,
-                    source=source,
-                    target=target,
-                    chain=(source, target),
-                    detail=(
-                        f"{contract.package} may only be entered via "
-                        f"{', '.join(contract.allowed_entrypoints)}"
-                    ),
-                )
-            )
-    return violations
+    detail = f"{contract.package} may only be entered via {', '.join(contract.allowed_entrypoints)}"
+    return [
+        Violation(
+            contract=contract.name,
+            source=source,
+            target=target,
+            chain=(source, target),
+            detail=detail,
+        )
+        for source in sorted(file_graph)
+        if assignment.get(source) != contract.package
+        for target in file_graph.get(source, ())
+        if _enters_illegally(target, contract, assignment)
+    ]
+
+
+def _enters_illegally(
+    target: str, contract: Contract, assignment: Mapping[str, str | None]
+) -> bool:
+    """Does this edge reach into the package somewhere other than a declared entry point?"""
+    if assignment.get(target) != contract.package:
+        return False
+    return not any(fnmatch.fnmatch(target, pattern) for pattern in contract.allowed_entrypoints)
