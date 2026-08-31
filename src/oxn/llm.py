@@ -59,11 +59,15 @@ class OllamaClient:
     #: 1,048,576 -- and a repair prompt plus a reasoning model's scratchpad does not fit in
     #: 4k. When it does not fit, the model reasons until the window is full and returns an
     #: empty completion, which is exactly how three `build_file` repairs failed.
-    num_ctx: int = 32768
-    #: Cap on generated tokens, reasoning included. Generous rather than unlimited: an
-    #: unlimited budget turns a model that will not stop into a hung run, and the read
-    #: timeout only notices silence, not a model still happily thinking.
-    num_predict: int = 8192
+    num_ctx: int = 65536
+    #: Cap on generated tokens, **reasoning included** -- which is why it is this large.
+    #: Measured: `glm-5.3:cloud` spent 31,864 characters (~8k tokens) reasoning about one
+    #: `build_file` repair and was cut off mid-thought at a budget of 8192, twice, with
+    #: `done_reason == "length"`. A reasoning actor needs room to think *and then* answer.
+    #: Generous rather than unlimited: an unlimited budget turns a model that will not stop
+    #: into a hung run, and the read timeout only notices silence, not a model still
+    #: happily thinking.
+    num_predict: int = 32768
 
     @classmethod
     def from_env(cls) -> OllamaClient:
@@ -72,8 +76,8 @@ class OllamaClient:
             host=os.environ.get("OXN_OLLAMA_HOST", DEFAULT_HOST),
             model=os.environ.get("OXN_OLLAMA_MODEL", DEFAULT_MODEL),
             timeout=int(os.environ.get("OXN_OLLAMA_TIMEOUT", "120")),
-            num_ctx=int(os.environ.get("OXN_OLLAMA_NUM_CTX", "32768")),
-            num_predict=int(os.environ.get("OXN_OLLAMA_NUM_PREDICT", "8192")),
+            num_ctx=int(os.environ.get("OXN_OLLAMA_NUM_CTX", "65536")),
+            num_predict=int(os.environ.get("OXN_OLLAMA_NUM_PREDICT", "32768")),
         )
 
     @classmethod
@@ -83,8 +87,8 @@ class OllamaClient:
             host=os.environ.get("OXN_OLLAMA_HOST", DEFAULT_HOST),
             model=os.environ.get("OXN_OLLAMA_JUDGE_MODEL", DEFAULT_JUDGE_MODEL),
             timeout=int(os.environ.get("OXN_OLLAMA_TIMEOUT", "120")),
-            num_ctx=int(os.environ.get("OXN_OLLAMA_NUM_CTX", "32768")),
-            num_predict=int(os.environ.get("OXN_OLLAMA_NUM_PREDICT", "8192")),
+            num_ctx=int(os.environ.get("OXN_OLLAMA_NUM_CTX", "65536")),
+            num_predict=int(os.environ.get("OXN_OLLAMA_NUM_PREDICT", "32768")),
         )
 
     def generate_json(self, prompt: str, *, system: str = "") -> dict[str, object]:
