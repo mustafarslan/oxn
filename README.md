@@ -82,8 +82,10 @@ python scripts/fetch_corpora.py --use eval
 
 ## Self-repair
 
-OXN gates coding agents on complexity, and violates its own ceilings. `scripts/dogfood.py`
-drives the loop OXN exists to create, on OXN itself:
+OXN gates coding agents on complexity, and used to violate its own ceilings.
+`scripts/dogfood.py` drives the loop OXN exists to create, on OXN itself — a loop that has
+now run out of work here: **`src`, `scripts` and `tests` report zero violations and the
+baseline is empty**, so `plan` returns nothing unless you lower `--ceiling`.
 
 ```sh
 python scripts/dogfood.py plan               # what is over the ceiling, and why
