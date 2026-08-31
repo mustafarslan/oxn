@@ -250,87 +250,16 @@ def detect_smells(
     follow the literature where it states one and are otherwise OXN's own, marked as such --
     Arcan's own defaults are *system-adaptive*, derived from percentile analysis over the
     system under study plus a benchmark corpus.
+
+    One function per smell, because that is how the paper is organised and how anyone
+    checking this against it will read: four independent detectors over a shared graph.
     """
-    from oxn.thresholds import HUB_MIN_DEGREE, HUB_PERCENTILE, UNSTABLE_DEPENDENCY_RATIO
-
-    smells: list[Smell] = []
-
-    # Cyclic Dependency: any SCC larger than one component.
-    for cycle in report.cycles:
-        smells.append(
-            Smell(
-                kind="cyclic_dependency",
-                component=cycle[0],
-                severity=float(len(cycle)),
-                detail=f"{len(cycle)} components form a dependency cycle",
-                members=tuple(cycle),
-            )
-        )
-
-    # Hub-Like Dependency: high fan-in *and* fan-out, balanced.
-    degrees = {
-        name: (report.martin[name].afferent, report.martin[name].efferent)
-        for name in graph
-        if name in report.martin
-    }
-    totals = sorted(afferent + efferent for afferent, efferent in degrees.values())
-    if totals:
-        cutoff = totals[min(len(totals) - 1, int(len(totals) * HUB_PERCENTILE))]
-        for name, (afferent, efferent) in degrees.items():
-            low, high = min(afferent, efferent), max(afferent, efferent)
-            if (
-                afferent + efferent > cutoff
-                and low >= HUB_MIN_DEGREE
-                and high > 0
-                and low / high >= 0.5
-            ):
-                smells.append(
-                    Smell(
-                        kind="hub_like_dependency",
-                        component=name,
-                        severity=float(afferent + efferent),
-                        detail=f"fan-in {afferent}, fan-out {efferent}",
-                    )
-                )
-
-    # Unstable Dependency: a component depending on things less stable than itself.
-    for name in graph:
-        metrics = report.martin.get(name)
-        if metrics is None:
-            continue
-        dependencies = [s for s in graph[name] if s in report.martin and s != name]
-        if not dependencies:
-            continue
-        worse = [s for s in dependencies if report.martin[s].instability > metrics.instability]
-        ratio = len(worse) / len(dependencies)
-        if ratio >= UNSTABLE_DEPENDENCY_RATIO:
-            smells.append(
-                Smell(
-                    kind="unstable_dependency",
-                    component=name,
-                    severity=ratio,
-                    detail=(
-                        f"{len(worse)} of {len(dependencies)} dependencies are less stable "
-                        f"(I={metrics.instability:.2f})"
-                    ),
-                    members=tuple(sorted(worse)),
-                )
-            )
-
-    # God Component: excessively large.
-    if sizes:
-        cutoff = _god_component_cutoff(sizes)
-        for name, size in sizes.items():
-            if size > cutoff:
-                smells.append(
-                    Smell(
-                        kind="god_component",
-                        component=name,
-                        severity=float(size),
-                        detail=f"{size} lines, above the {cutoff}-line threshold",
-                    )
-                )
-
+    smells = [
+        *_cyclic_dependency(report),
+        *_hub_like_dependency(graph, report),
+        *_unstable_dependency(graph, report),
+        *_god_component(sizes),
+    ]
     # `component` breaks ties, and it is not cosmetic: without it the order of equally
     # severe smells fell out of set and dict iteration, so `oxn arch` produced a different
     # report on every run of the same code -- three runs of typescript-nest gave three
@@ -338,3 +267,107 @@ def detect_smells(
     # show a trend, which is most of what a report is for.
     smells.sort(key=lambda smell: (smell.kind, -smell.severity, smell.component))
     return smells
+
+
+def _cyclic_dependency(report: ArchitectureReport) -> list[Smell]:
+    """Any strongly connected component larger than one."""
+    return [
+        Smell(
+            kind="cyclic_dependency",
+            component=cycle[0],
+            severity=float(len(cycle)),
+            detail=f"{len(cycle)} components form a dependency cycle",
+            members=tuple(cycle),
+        )
+        for cycle in report.cycles
+    ]
+
+
+def _hub_like_dependency(graph: Graph[str], report: ArchitectureReport) -> list[Smell]:
+    """High fan-in *and* fan-out, and balanced between them.
+
+    Balance is what separates a hub from a component that is merely popular: something
+    depended on by fifty things and depending on one is a shared library, not a tangle.
+    """
+    from oxn.thresholds import HUB_MIN_DEGREE, HUB_PERCENTILE
+
+    degrees = {
+        name: (report.martin[name].afferent, report.martin[name].efferent)
+        for name in graph
+        if name in report.martin
+    }
+    totals = sorted(afferent + efferent for afferent, efferent in degrees.values())
+    if not totals:
+        return []
+
+    cutoff = totals[min(len(totals) - 1, int(len(totals) * HUB_PERCENTILE))]
+    found = []
+    for name, (afferent, efferent) in degrees.items():
+        low, high = min(afferent, efferent), max(afferent, efferent)
+        if (
+            afferent + efferent > cutoff
+            and low >= HUB_MIN_DEGREE
+            and high > 0
+            and low / high >= 0.5
+        ):
+            found.append(
+                Smell(
+                    kind="hub_like_dependency",
+                    component=name,
+                    severity=float(afferent + efferent),
+                    detail=f"fan-in {afferent}, fan-out {efferent}",
+                )
+            )
+    return found
+
+
+def _unstable_dependency(graph: Graph[str], report: ArchitectureReport) -> list[Smell]:
+    """A component depending on things less stable than itself -- Martin's SDP, violated."""
+    found = [_sdp_violation(name, graph, report) for name in graph]
+    return [smell for smell in found if smell is not None]
+
+
+def _sdp_violation(name: str, graph: Graph[str], report: ArchitectureReport) -> Smell | None:
+    """Is this one component depending downhill in stability?"""
+    from oxn.thresholds import UNSTABLE_DEPENDENCY_RATIO
+
+    metrics = report.martin.get(name)
+    if metrics is None:
+        return None
+    dependencies = [other for other in graph[name] if other in report.martin and other != name]
+    if not dependencies:
+        return None
+
+    worse = [
+        other for other in dependencies if report.martin[other].instability > metrics.instability
+    ]
+    ratio = len(worse) / len(dependencies)
+    if ratio < UNSTABLE_DEPENDENCY_RATIO:
+        return None
+    return Smell(
+        kind="unstable_dependency",
+        component=name,
+        severity=ratio,
+        detail=(
+            f"{len(worse)} of {len(dependencies)} dependencies are less stable "
+            f"(I={metrics.instability:.2f})"
+        ),
+        members=tuple(sorted(worse)),
+    )
+
+
+def _god_component(sizes: Mapping[str, int]) -> list[Smell]:
+    """Excessively large, against a cutoff derived from this project plus a literature floor."""
+    if not sizes:
+        return []
+    cutoff = _god_component_cutoff(sizes)
+    return [
+        Smell(
+            kind="god_component",
+            component=name,
+            severity=float(size),
+            detail=f"{size} lines, above the {cutoff}-line threshold",
+        )
+        for name, size in sizes.items()
+        if size > cutoff
+    ]
