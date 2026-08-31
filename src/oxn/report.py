@@ -367,7 +367,7 @@ def run_classes(
     from oxn.graph.indexer import Indexer
     from oxn.graph.sources import iter_source_files
     from oxn.metrics.cohesion import cohesion
-    from oxn.metrics.coupling import build_hierarchy, ck_metrics
+    from oxn.metrics.coupling import Evidence, build_hierarchy, ck_metrics
     from oxn.resolve.symbols import build_project_symbols
 
     targets = [Path(raw) for raw in paths]
@@ -403,7 +403,7 @@ def run_classes(
         for relative, models in models_by_file.items():
             for model in models.values():
                 measures = cohesion(model)
-                ck = ck_metrics(model, hierarchy, path=relative, symbols=symbols)
+                ck = ck_metrics(model, hierarchy, Evidence(path=relative, symbols=symbols))
                 rows.append({"path": relative, **measures.as_dict(), **ck.as_dict()})
 
     rows.sort(key=lambda row: (row.get(sort_by) is None, -(row.get(sort_by) or 0)))

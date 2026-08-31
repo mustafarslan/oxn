@@ -109,49 +109,37 @@ def build_hierarchy(models_by_file: Mapping[str, Mapping[str, ClassModel]]) -> C
     return hierarchy
 
 
+@dataclass(frozen=True, slots=True)
+class Evidence:
+    """What is known about a class's outgoing references, and how well.
+
+    `path` and `symbols` travel together -- resolution is meaningless without both -- and
+    `complexity` is the weighting table for WMC. Three optional arguments that are really
+    one question: how much can be established about what this class reaches?
+    """
+
+    path: str = ""
+    symbols: ProjectSymbols | None = None
+    complexity: Mapping[str, int] | None = None
+
+    @property
+    def can_resolve(self) -> bool:
+        return self.symbols is not None and bool(self.path)
+
+
 def ck_metrics(
-    model: ClassModel,
-    hierarchy: ClassHierarchy,
-    *,
-    path: str = "",
-    symbols: ProjectSymbols | None = None,
-    complexity: Mapping[str, int] | None = None,
+    model: ClassModel, hierarchy: ClassHierarchy, evidence: Evidence | None = None
 ) -> CkMetrics:
     """Compute the CK suite for one class."""
-    weights = complexity or {}
+    evidence = evidence or Evidence()
+    weights = evidence.complexity or {}
     wmc = sum(weights.get(name, 1) for name in model.methods)
     depth, external = hierarchy.depth(model.name)
 
-    external_calls: set[str] = set()
-    confident: set[str] = set()
-    uncertain = False
+    external_calls = {callee for access in model.methods.values() for callee in access.calls}
+    coupled, bases_uncertain = _coupled_bases(model, hierarchy)
+    confident, calls_uncertain = _confident_callees(model, evidence)
 
-    for access in model.methods.values():
-        for callee in access.calls:
-            external_calls.add(callee)
-
-    # Distinct callee names across the class, for the syntactic fallback.
-    syntactic_targets = set(model.methods) | external_calls
-
-    coupled: set[str] = set()
-    for base in model.bases:
-        if base in hierarchy.bases:
-            coupled.add(base)
-        else:
-            uncertain = True
-
-    if symbols is not None and path:
-        for access in model.methods.values():
-            for callee in access.calls:
-                found = symbols.resolve_call(path, callee)
-                if found is None:
-                    uncertain = True
-                elif found.is_certain:
-                    confident.add(found.qualified_name)
-                else:
-                    uncertain = True
-
-    rfc = len(model.methods) + len(confident)
     return CkMetrics(
         class_name=model.name,
         wmc=wmc,
@@ -159,8 +147,41 @@ def ck_metrics(
         dit=depth,
         noc=hierarchy.child_count(model.name),
         cbo=len(coupled | confident),
-        rfc=rfc,
-        rfc_syntactic=len(syntactic_targets),
+        rfc=len(model.methods) + len(confident),
+        rfc_syntactic=len(set(model.methods) | external_calls),
         dit_external_unresolved=external,
-        exactness="APPROX" if (uncertain or model.is_approximate) else "EXACT",
+        exactness=(
+            "APPROX" if (bases_uncertain or calls_uncertain or model.is_approximate) else "EXACT"
+        ),
     )
+
+
+def _coupled_bases(model: ClassModel, hierarchy: ClassHierarchy) -> tuple[set[str], bool]:
+    """Base classes CBO can count, and whether any could not be placed.
+
+    A base OXN cannot find is not absent -- it is unknown, and the difference is the whole
+    point of the exactness stamp: an unknown base means CBO is a lower bound, not a fact.
+    """
+    coupled = {base for base in model.bases if base in hierarchy.bases}
+    return coupled, len(coupled) != len(model.bases)
+
+
+def _confident_callees(model: ClassModel, evidence: Evidence) -> tuple[set[str], bool]:
+    """Callees resolution placed with certainty, and whether anything was left open.
+
+    Only *certain* answers are admitted (ADR-0002): a guess among several candidates would
+    make RFC and CBO look exact while being arithmetic over hunches.
+    """
+    if not evidence.can_resolve:
+        return set(), False
+
+    confident: set[str] = set()
+    uncertain = False
+    for access in model.methods.values():
+        for callee in access.calls:
+            found = evidence.symbols.resolve_call(evidence.path, callee)  # type: ignore[union-attr]
+            if found is not None and found.is_certain:
+                confident.add(found.qualified_name)
+            else:
+                uncertain = True
+    return confident, uncertain

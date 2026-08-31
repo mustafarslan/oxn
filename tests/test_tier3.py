@@ -12,7 +12,7 @@ import pytest
 from oxn.languages import get_parser
 from oxn.metrics.callgraph import build_call_graph, default_roots, unreachable
 from oxn.metrics.cohesion import cohesion
-from oxn.metrics.coupling import build_hierarchy, ck_metrics
+from oxn.metrics.coupling import Evidence, build_hierarchy, ck_metrics
 from oxn.profiles import get_profile
 from oxn.resolve.members import build_class_models
 from oxn.resolve.scopes import build_scopes
@@ -191,7 +191,7 @@ def test_wmc_defaults_to_counting_methods(ck) -> None:
 def test_wmc_can_be_weighted_by_complexity() -> None:
     found = models("class C:\n    def a(self):\n        pass\n    def b(self):\n        pass\n")
     hierarchy = build_hierarchy({"m.py": found})
-    weighted = ck_metrics(found["C"], hierarchy, complexity={"a": 5, "b": 3})
+    weighted = ck_metrics(found["C"], hierarchy, Evidence(complexity={"a": 5, "b": 3}))
     assert weighted.wmc == 8
     assert weighted.nom == 2
 
