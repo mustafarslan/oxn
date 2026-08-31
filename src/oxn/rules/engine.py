@@ -64,6 +64,7 @@ class RuleFinding:
     value: float
     ceiling: float
     blocking: bool
+    explanation: tuple[str, ...] = ()
     detail: str = ""
 
 
@@ -191,6 +192,7 @@ def _finding(rule: Rule, binding: dict[str, Any]) -> RuleFinding:
         line=int(_resolve(head.line, binding)),
         value=float(_resolve(head.value, binding)),
         ceiling=float(_resolve(head.ceiling, binding)),
-        blocking=rule.blocking,
+        blocking=bool(_resolve(head.blocking, binding)),
+        explanation=tuple(_resolve(head.explanation, binding)),
         detail=head.detail,
     )

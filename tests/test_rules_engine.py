@@ -22,23 +22,34 @@ def _facts() -> Facts:
     facts.add("metric", ("e2", "cognitive_complexity", 3.0, "EXACT", "exact"))
     facts.add("ceiling", ("cognitive_complexity", "a.py", 12.0))
     facts.add("callable", ("function",), ("method",), ("lambda",))
-    facts.add("blocking", ("EXACT", "exact"), ("EXACT", "lower"), ("APPROX", "lower"))
+    # Three columns, not two: ADR-0002's policy is a *property of a measurement*, so the
+    # flag is carried rather than used to filter. See the advisory test below.
+    facts.add("blocking", ("EXACT", "exact", True), ("APPROX", "upper", False))
+    facts.add("explanation", ("e1", "cognitive_complexity", ("+20 at line 10: `if`",)))
+    facts.add("explanation", ("e2", "cognitive_complexity", ()))
     return facts
 
 
-def _ceiling_rule(**overrides) -> Rule:
+def _ceiling_rule() -> Rule:
     body = (
         Atom("entity", (Var("E"), Var("Path"), Var("Kind"), Var("Name"), Var("Line"))),
-        Atom("metric", (Var("E"), "cognitive_complexity", Var("V"), Var("Ex"), Var("B"))),
-        Atom("blocking", (Var("Ex"), Var("B"))),
         Atom("callable", (Var("Kind"),)),
+        Atom("metric", (Var("E"), "cognitive_complexity", Var("V"), Var("Ex"), Var("B"))),
+        Atom("explanation", (Var("E"), "cognitive_complexity", Var("Trail"))),
+        Atom("blocking", (Var("Ex"), Var("B"), Var("Blk"))),
         Atom("ceiling", ("cognitive_complexity", Var("Path"), Var("C"))),
         Compare(Var("V"), ">", Var("C")),
     )
     head = Head(
-        path=Var("Path"), entity=Var("Name"), line=Var("Line"), value=Var("V"), ceiling=Var("C")
+        path=Var("Path"),
+        entity=Var("Name"),
+        line=Var("Line"),
+        value=Var("V"),
+        ceiling=Var("C"),
+        blocking=Var("Blk"),
+        explanation=Var("Trail"),
     )
-    return Rule(name="cognitive_complexity", body=body, head=head, **overrides)
+    return Rule(name="cognitive_complexity", body=body, head=head)
 
 
 # ---- evaluation -------------------------------------------------------------------------
@@ -56,15 +67,18 @@ def test_the_kind_guard_excludes_what_the_rule_is_not_about() -> None:
     assert [f.entity for f in evaluate([_ceiling_rule()], facts)] == ["a.f"]
 
 
-def test_an_unsound_measurement_cannot_block() -> None:
+def test_an_unsound_measurement_is_reported_but_cannot_block() -> None:
     """ADR-0002: only EXACT, or APPROX known to be a lower bound, may block a ceiling.
 
-    The policy is a join against the `blocking` relation, so a rule that omits that atom
-    reports without blocking rather than silently acquiring the power.
+    *Reported*, not discarded. An earlier draft made `blocking` a filtering atom, which
+    would have dropped these findings from the report entirely -- a behaviour change from
+    the hand-coded gate, caught by writing the fact projection against it. "May not block"
+    and "does not exist" are different claims.
     """
     facts = _facts()
     facts.relations["metric"] = {("e1", "cognitive_complexity", 20.0, "APPROX", "upper")}
-    assert evaluate([_ceiling_rule()], facts) == []
+    found = evaluate([_ceiling_rule()], facts)
+    assert [(f.entity, f.blocking) for f in found] == [("a.f", False)]
 
 
 def test_a_repeated_variable_in_one_atom_must_match_both_columns() -> None:
@@ -93,8 +107,10 @@ def test_a_negated_atom_filters_and_never_binds() -> None:
     assert [f.entity for f in evaluate([rule], facts)] == ["c"]
 
 
-def test_a_rule_is_advisory_unless_it_says_otherwise() -> None:
-    assert evaluate([_ceiling_rule(blocking=False)], _facts())[0].blocking is False
+def test_the_increment_trail_survives_into_the_finding() -> None:
+    """The explanation is the product (ADR-0003); a finding without it is just a number."""
+    found = evaluate([_ceiling_rule()], _facts())
+    assert found[0].explanation == ("+20 at line 10: `if`",)
 
 
 # ---- the two checks that make the surface translatable ----------------------------------

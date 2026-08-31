@@ -68,7 +68,10 @@ time rather than living as evaluator special cases:
 | `callable` | (kind) | the three callable entity kinds |
 | `file_kind` | (kind) | file and module |
 | `runtime` | (import_kind) | `RUNTIME_KINDS`; a type-only import is not coupling |
-| `blocking` | (exactness, bound) | ADR-0002's gate policy, as a two-row table |
+| `blocking` | (exactness, bound, may_block) | ADR-0002's policy, projected from `MetricValue` |
+| `explanation` | (entity_id, metric_key, trail) | the increment trail, always present |
+| `edge_label` | (source, target, "source -> target") | the string a contract finding is keyed by |
+| `entrypoint_match` | (contract, path) | globs resolved against known paths |
 
 That is the **entire** built-in surface: twelve extensional relations and no functions. There are no
 "built-in predicates" beyond arithmetic and string comparison on bound variables. A migration story
@@ -147,11 +150,28 @@ rule an operator writes silently re-opens the hole:
 
 ```
 - metric(E, Key, V, Ex, B)
-- blocking(Ex, B)              # EXACT, or bound == "lower"
+- blocking(Ex, B, MayBlock)    # carried into the head, not used to filter
 ```
 
-`blocking` is an ordinary relation. A rule that omits it produces advisory findings, and that is a
-deliberate default: a rule cannot accidentally acquire blocking power by forgetting a clause.
+**Corrected during implementation, and worth recording.** The first draft made `blocking` a
+*filtering* atom — a body that failed to join simply produced nothing. Writing the fact projection
+against the hand-coded gate showed that is a behaviour change: `_ceiling_findings` emits a finding
+for an unsound measurement and marks it advisory. "May not block" and "does not exist" are different
+claims, and the second one loses the finding from the report. So the relation carries a third column
+and the head binds it. The rows are projected from `MetricValue.can_block_ceiling` itself rather
+than re-encoded, so the rules and the property cannot drift apart.
+
+The same review found two relations the appendix had implied but not named. Datalog has no string
+functions and no glob matching, so anything derived from values is computed at projection time:
+`edge_label` carries the `"source -> target"` string a contract finding is keyed by, and
+`entrypoint_match` carries the result of resolving a `deep_import` glob against the known paths.
+Moving both out of rule bodies is what keeps every rule a pure join — and it makes a pattern that
+matches nothing visible as an empty relation rather than as a rule that quietly never fires.
+
+There is no `runtime` relation, though an earlier draft listed one. `build_dependency_graph` drops
+type-only edges before the graph exists, so `imports` is runtime-only by construction and no rule
+can forget the filter. That matters: this project once counted type-only imports as coupling and
+manufactured two layer violations from them.
 
 ### 5. Finding identity is unchanged, because the ratchet depends on it
 

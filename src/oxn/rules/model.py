@@ -90,11 +90,27 @@ class Head:
     line: Term = 1
     value: Term = 1.0
     ceiling: Term = 0.0
+    #: Whether this finding may fail a build. Bound from a relation rather than fixed on the
+    #: rule, because ADR-0002's policy is per *measurement*: an unsound value still produces
+    #: a finding, it simply cannot block. Filtering those out instead would lose them from
+    #: the report, which is not what "may not block" means.
+    blocking: Term = True
+    #: The metric's increment trail, carried through as an opaque value. It is the product
+    #: (ADR-0003) and a finding without it is a number rather than something to act on.
+    explanation: Term = ()
     detail: str = ""
 
     @property
     def variables(self) -> set[str]:
-        terms = (self.path, self.entity, self.line, self.value, self.ceiling)
+        terms = (
+            self.path,
+            self.entity,
+            self.line,
+            self.value,
+            self.ceiling,
+            self.blocking,
+            self.explanation,
+        )
         return {term.name for term in terms if isinstance(term, Var)}
 
 
@@ -105,9 +121,6 @@ class Rule:
     name: str
     body: tuple[Condition, ...]
     head: Head
-    #: False for a rule that reports without failing a build. A rule acquires blocking power
-    #: by carrying the `blocking` atom, never by default -- see ADR-0005 section 4.
-    blocking: bool = True
 
     @property
     def relations(self) -> set[str]:
