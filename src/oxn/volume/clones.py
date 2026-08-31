@@ -27,6 +27,11 @@ from oxn.volume.tokens import Token, normalized_tokens
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Mapping
 
+    #: What one analysed file contributes: its token stream, and its rolling-hash buckets.
+    #: Type-checking only -- `from __future__ import annotations` makes every signature a
+    #: string, and `Mapping` is not imported at runtime.
+    Analysed = Mapping[str, tuple[list[Token], dict[int, list[int]]]]
+
     from tree_sitter import Node
 
     from oxn.profiles.base import LanguageProfile
@@ -137,67 +142,107 @@ def file_windows(
 
 
 def find_clones(
-    files: Mapping[str, tuple[list[Token], dict[int, list[int]]]],
+    files: Analysed,
     *,
     min_tokens: int = DUPLICATION_MIN_TOKENS,
     min_lines: int = DUPLICATION_MIN_LINES,
 ) -> DuplicationReport:
-    """Match windows across an analyzed set into maximal, non-overlapping clone classes."""
-    report = DuplicationReport(total_tokens=sum(len(tokens) for tokens, _ in files.values()))
+    """Match windows across an analyzed set into maximal, non-overlapping clone classes.
 
+    Three phases, and the order of the middle two is the whole trick: every candidate is
+    grown to its full length *before* any is selected. Selecting in bucket order instead
+    lets a short clone claim tokens a longer one needed, and the longer clone -- the one
+    actually worth reporting -- is then discarded as overlapping.
+    """
+    report = DuplicationReport(total_tokens=sum(len(tokens) for tokens, _ in files.values()))
+    grown = _grow_candidates(files, _seed_index(files), min_tokens)
+    report.clone_classes = _select(files, grown, min_lines)
+    return report
+
+
+def _seed_index(files: Analysed) -> dict[int, list[tuple[str, int]]]:
+    """Rolling-hash digest -> every (path, position) that produced it."""
     candidates: dict[int, list[tuple[str, int]]] = defaultdict(list)
     for path, (_, buckets) in files.items():
         for digest, positions in buckets.items():
             for position in positions:
                 candidates[digest].append((path, position))
+    return candidates
 
-    # Extend every candidate *before* selecting, then take the longest first. Selecting in
-    # bucket order instead lets a short clone claim tokens that a longer one needed, and the
-    # longer clone -- the one worth reporting -- is then discarded as overlapping.
-    extended: list[tuple[int, list[tuple[str, int]]]] = []
+
+def _grow_candidates(
+    files: Analysed, candidates: dict[int, list[tuple[str, int]]], min_tokens: int
+) -> list[tuple[int, list[tuple[str, int]]]]:
+    """Verify each hash bucket and extend it, dropping duplicates of the same group."""
+    grown: list[tuple[int, list[tuple[str, int]]]] = []
     seen_groups: set[tuple[tuple[str, int], ...]] = set()
 
-    for digest in candidates:
-        seeds = candidates[digest]
+    for seeds in candidates.values():
         if len(seeds) < 2:
             continue
-
-        # A hash match is only a candidate. Verify by comparing the tokens themselves --
-        # a collision must never be observable in the output.
-        reference = _window(files, seeds[0], min_tokens)
-        verified = [seed for seed in seeds if _window(files, seed, min_tokens) == reference]
-        if len(verified) < 2:
+        verified = _verify(files, seeds, min_tokens)
+        if verified is None:
             continue
-
-        grown = _extend(files, verified, min_tokens)
-        if grown is None:
+        extended = _extend(files, verified, min_tokens)
+        if extended is None:
             continue
-        length, starts = grown
-        key = tuple(sorted(starts))
+        key = tuple(sorted(extended[1]))
         if key in seen_groups:
             continue
         seen_groups.add(key)
-        extended.append((length, starts))
+        grown.append(extended)
 
-    extended.sort(key=lambda item: (-item[0], -len(item[1])))
+    grown.sort(key=lambda item: (-item[0], -len(item[1])))
+    return grown
 
+
+def _verify(
+    files: Analysed, seeds: list[tuple[str, int]], min_tokens: int
+) -> list[tuple[str, int]] | None:
+    """A hash match is only a candidate.
+
+    The tokens themselves are compared, so a collision is never observable in the output.
+    """
+    reference = _window(files, seeds[0], min_tokens)
+    verified = [seed for seed in seeds if _window(files, seed, min_tokens) == reference]
+    return verified if len(verified) >= 2 else None
+
+
+def _select(
+    files: Analysed, grown: list[tuple[int, list[tuple[str, int]]]], min_lines: int
+) -> list[CloneClass]:
+    """Longest first, taking only classes whose tokens are all still unclaimed."""
     claimed: dict[str, set[int]] = defaultdict(set)
     classes: list[CloneClass] = []
 
-    for length, starts in extended:
-        if any(_overlaps(claimed[path], start, length) for path, start in starts):
+    for length, starts in grown:
+        occurrences = _admit(files, starts, length, claimed, min_lines)
+        if occurrences is None:
             continue
-
-        occurrences = tuple(_clone(files, path, start, length) for path, start in starts)
-        if any(clone.line_count < min_lines for clone in occurrences):
-            continue
-
         for path, start in starts:
             claimed[path].update(range(start, start + length))
         classes.append(CloneClass(occurrences))
+    return classes
 
-    report.clone_classes = classes
-    return report
+
+def _admit(
+    files: Analysed,
+    starts: list[tuple[str, int]],
+    length: int,
+    claimed: dict[str, set[int]],
+    min_lines: int,
+) -> tuple[Clone, ...] | None:
+    """The occurrences of this class, or None if it may not be reported.
+
+    Two reasons to refuse: any of its tokens already belong to a longer class, or it spans
+    too few *lines* to be worth a reader's attention however many tokens it has.
+    """
+    if any(_overlaps(claimed[path], start, length) for path, start in starts):
+        return None
+    occurrences = tuple(_clone(files, path, start, length) for path, start in starts)
+    if any(clone.line_count < min_lines for clone in occurrences):
+        return None
+    return occurrences
 
 
 def _window(
