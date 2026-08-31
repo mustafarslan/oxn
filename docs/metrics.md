@@ -1251,6 +1251,39 @@ are calibrated on this single pair and are expected to move as `benchmarks/dogfo
 accumulates real extractions; both live candidates are kept as regression fixtures in
 `tests/test_dogfood.py`.
 
+#### Measured 2026-08-31: the repair harness converges on a 35-point function and not on a 37-point one
+
+Nine live attempts at `build_file` (cognitive complexity 37), across three fixes to the client
+that stood between the model and a fair test:
+
+| actor configuration | outcome |
+|---|---|
+| reasoning on, `num_predict` 8192 | ~31,900 characters of reasoning, cut off, **no answer** (×3) |
+| reasoning on, `num_predict` 32768 | ~132,000 characters of reasoning, cut off, **no answer** (×3) |
+| reasoning off | 131k–136k characters of reasoning *in the answer field*, **no usable answer** (×3) |
+
+The middle row is the informative one: `glm-5.3:cloud` scales deliberation to whatever budget it
+is given, so raising the limit buys a slower failure rather than a result. Turning reasoning off
+does not stop it reasoning — it moves the reasoning into `response`, where the same 130k characters
+arrive as prose punctuated by drafts.
+
+Of the three answers-field replies, one contained **six** competing definitions of the target among
+105 fenced blocks and two contained **none at all**. That first one exposed a harness bug worth
+separating from the model result: extraction concatenated every fenced block, so six drafts and a
+string literal severed mid-thought became one unparseable file, which the gauntlet then reported as
+a *failed refactoring* rather than a failure to extract one. Fixed by selecting the last draft that
+parses — a check rather than a guess, since on that reply the final draft was itself broken.
+
+With extraction fixed, the honest result stands: the harness converged on `_imported_names` (35 → 2,
+accepted, on the first attempt) and did not converge on `build_file` (37), because for this target
+the actor never produced a complete function. The difference is not the score — it is that
+`_imported_names` is a self-contained classifier and `build_file` is a tree walk with a closure over
+five locals, which the model spent 130,000 characters failing to hold in mind at once.
+
+That is a result about **this actor on this shape of function**, not a limit of the loop, and it is
+what `benchmarks/dogfood-log.jsonl` exists to accumulate. It also sets the honest expectation for
+P10: convergence is per-target, and the retry budget from arXiv 2508.11958 is not a formality.
+
 #### Measured 2026-08-31: the gate itself had no such rule, and the evasion worked
 
 Everything above describes the **dogfood harness**. The shipped gate had none of it: `oxn check`

@@ -15,6 +15,7 @@ module knows about models and nothing about sandboxes; `gauntlet.py` is the reve
 
 from __future__ import annotations
 
+import ast
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -114,7 +115,7 @@ def ask_actor(client: Any, ask: Ask) -> tuple[str, str]:
         extraction=ALLOW_EXTRACTION if ask.allow_extraction else NO_EXTRACTION,
     )
     reply = client.generate(prompt, system=ACTOR_SYSTEM)
-    return _strip_fences(reply), reply
+    return _strip_fences(reply, ask.target.leaf), reply
 
 
 #: The checks that either passed or did not, and what to say when they did not. A table
@@ -181,28 +182,62 @@ def _shred_note(gauntlet: GauntletResult) -> str:
     )
 
 
-def _strip_fences(text: str) -> str:
-    """Every fenced code block in the reply, concatenated in order.
+def _strip_fences(text: str, name: str = "") -> str:
+    """The code in a fenced reply -- one answer, not every draft the model wrote.
 
-    This used to return the *first* block containing `def `, which silently discarded the
-    rest. A model that writes a helper in one block and the rewritten function in the next
-    -- an entirely reasonable way to answer -- would have the second block dropped, and the
-    first spliced over the target's byte range. The function then does not exist, and its
-    callers raise `NameError`.
+    Two shapes have to work, and they need opposite handling:
+
+    * a short reply where one block holds a helper and the next the rewritten function.
+      Both are wanted, so blocks are concatenated. Returning only the first was an earlier
+      bug: the target was dropped and its callers raised `NameError`.
+    * a reasoning dump, where the model thinks in prose and leaves a trail of drafts.
+      Measured on a real reply: 131,094 characters, **105 fenced blocks, six of which
+      define the target**. Concatenating those produced an unparseable file -- six
+      competing definitions and a string literal cut off mid-draft -- which the gauntlet
+      then reported as a failed refactoring rather than as a failure to extract one.
+
+    They are told apart by counting: when several blocks define the target, the reply is a
+    draft sequence and only one of them is the answer. The one chosen is the **last that
+    parses**, which is a check rather than a guess -- on that same reply the final draft
+    was itself syntactically broken, so "last" alone would not have been enough.
 
     Splitting on the fence marker alternates outside/inside, so only the odd-numbered
-    segments are code; the even ones are the model's prose, which must never be spliced
-    into a source file.
+    segments are code; the even ones are prose, which must never reach a source file.
     """
     cleaned = text.strip()
     if "```" not in cleaned:
         return cleaned
-    blocks = []
-    for part in cleaned.split("```")[1::2]:
-        body = part.split("\n", 1)[1] if part.split("\n", 1)[0].strip().isalpha() else part
-        if "def " in body:
-            blocks.append(body.strip("\n"))
-    return "\n\n\n".join(blocks) if blocks else cleaned
+    blocks = [_fence_body(part) for part in cleaned.split("```")[1::2]]
+    blocks = [block for block in blocks if "def " in block]
+    if not blocks:
+        return cleaned
+
+    drafts = [block for block in blocks if name and _defines(block, name)]
+    if len(drafts) > 1:
+        return _last_usable(drafts)
+    return "\n\n\n".join(blocks)
+
+
+def _fence_body(part: str) -> str:
+    """Drop the language tag a fence may open with (```python)."""
+    head, _, rest = part.partition("\n")
+    return (rest if head.strip().isalpha() else part).strip("\n")
+
+
+def _last_usable(drafts: list[str]) -> str:
+    """The last draft that is syntactically valid Python, else the last one.
+
+    Falling back to the last rather than to nothing keeps the failure legible: a candidate
+    that does not compile is rejected by the gauntlet with the syntax error attached, which
+    says more than "no code found".
+    """
+    for draft in reversed(drafts):
+        try:
+            ast.parse(draft)
+        except SyntaxError:
+            continue
+        return draft
+    return drafts[-1]
 
 
 def _defines(source: str, name: str) -> bool:

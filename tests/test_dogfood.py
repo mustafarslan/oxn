@@ -513,3 +513,74 @@ def test_the_fixture_scores_match_the_preserved_sources(harness) -> None:
         named = {name.rsplit(".", 1)[-1] for name in expected}
         assert named <= defined, f"{source} no longer defines {sorted(named - defined)}"
         assert "_imported_names" in defined, f"{source} must still define the target"
+
+
+# ---- extracting one answer from a reply full of drafts ----------------------------------
+
+#: The shape a reasoning model actually produced: prose, several competing definitions of
+#: the target, and a final draft that is syntactically broken. Measured on a real reply --
+#: 131,094 characters, 105 fenced blocks, six of them defining `build_file`.
+DRAFTING_REPLY = """Let me analyze the problem. The function needs restructuring.
+
+```python
+def target(x):
+    return x  # first idea
+```
+
+Wait, that loses the guard. Let me reconsider.
+
+```python
+def target(x):
+    if x is None:
+        return 0
+    return x  # better
+```
+
+Hmm, actually I should handle the list case too.
+
+```python
+def target(x):
+    if x is None:
+        return 0
+    return [y for y in x  # unterminated
+```
+"""
+
+
+def test_a_draft_sequence_yields_the_last_answer_that_parses(harness) -> None:
+    """Concatenating every draft produced an unparseable file, six definitions deep.
+
+    The gauntlet then reported that as a failed refactoring rather than as a failure to
+    extract one, which is a much more misleading thing to log.
+    """
+    import ast
+
+    got = harness._strip_fences(DRAFTING_REPLY, "target")
+    assert "# better" in got, "the last *parsing* draft is the answer"
+    assert "# first idea" not in got, "earlier drafts are not part of it"
+    assert "unterminated" not in got, "and neither is the broken final one"
+    ast.parse(got)
+
+
+def test_a_helper_and_the_target_are_both_kept(harness) -> None:
+    """The opposite shape, and the reason concatenation exists at all.
+
+    One block holding a helper and the next the rewritten function is a reasonable answer.
+    Returning only the first dropped the target and its callers raised `NameError`.
+    """
+    reply = (
+        "Helper first:\n\n```python\ndef _helper(x):\n    return x\n```\n\n"
+        "Then the function:\n\n```python\ndef target(x):\n    return _helper(x)\n```\n"
+    )
+    got = harness._strip_fences(reply, "target")
+    assert "_helper" in got and "def target" in got
+
+
+def test_a_reply_with_no_definition_is_left_for_the_define_check(harness) -> None:
+    """Two of the three real replies never defined the target in 133,000 characters.
+
+    Extraction must not invent one; the `_defines` guard rejects these before a full test,
+    lint and type run is spent on them.
+    """
+    reply = "Let me think.\n\n```python\nx = 1\n```\n\nStill thinking.\n"
+    assert not harness._defines(harness._strip_fences(reply, "target"), "target")
