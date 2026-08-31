@@ -34,27 +34,31 @@ def cyclomatic_complexity(node: Node, profile: LanguageProfile) -> int:
 def _count_decisions(
     node: Node, profile: LanguageProfile, decision_points: frozenset[str], *, is_root: bool
 ) -> int:
-    spec = profile.metrics.cyclomatic
     total = 0
-
     for child in node.named_children:
         definition = profile.unwrap(child)
         if not is_root and profile.is_definition(definition):
             continue  # a nested definition owns its own score
-
-        if definition.type in spec.exhaustive_multiway_kinds:
-            # n exhaustive branches give n paths, so n-1 decisions -- see the spec field.
-            branches = _count_branches(definition, spec)
-            total += max(0, branches - 1)
-            total += _count_decisions(child, profile, decision_points, is_root=False)
-            continue
-
-        if definition.type in decision_points and not _is_catch_all(definition, spec):
-            total += 1
-        if definition.type == spec.boolean_node:
-            total += _count_boolean_operators(definition, spec.boolean_node, spec.boolean_operators)
+        total += _decisions_at(definition, profile, decision_points)
         total += _count_decisions(child, profile, decision_points, is_root=False)
+    return total
 
+
+def _decisions_at(
+    definition: Node, profile: LanguageProfile, decision_points: frozenset[str]
+) -> int:
+    """Decisions this node contributes on its own account, its children excluded."""
+    spec = profile.metrics.cyclomatic
+    if definition.type in spec.exhaustive_multiway_kinds:
+        # n exhaustive branches give n paths, so n-1 decisions -- see the spec field. A
+        # two-arm Rust `match` is exactly an `if`/`else` and must score the same.
+        return max(0, _count_branches(definition, spec) - 1)
+
+    total = 0
+    if definition.type in decision_points and not _is_catch_all(definition, spec):
+        total += 1
+    if definition.type == spec.boolean_node:
+        total += _count_boolean_operators(definition, spec.boolean_node, spec.boolean_operators)
     return total
 
 

@@ -215,12 +215,17 @@ def shortest_path(graph: Graph[Node], source: Node, target: Node) -> list[Node] 
             seen.add(successor)
             previous[successor] = node
             if successor == target:
-                path = [target]
-                while path[-1] != source:
-                    path.append(previous[path[-1]])
-                return list(reversed(path))
+                return _trace_back(previous, source, target)
             queue.append(successor)
     return None
+
+
+def _trace_back(previous: dict[Node, Node], source: Node, target: Node) -> list[Node]:
+    """Walk the predecessor chain back to the source and hand it over forwards."""
+    path = [target]
+    while path[-1] != source:
+        path.append(previous[path[-1]])
+    return list(reversed(path))
 
 
 def modularity(graph: Graph[Node], partition: Mapping[Node, str]) -> float:
@@ -231,23 +236,37 @@ def modularity(graph: Graph[Node], partition: Mapping[Node, str]) -> float:
     structure match the actual dependency structure?", and that is a measurement, not a
     search.
     """
-    degree: dict[Node, int] = {}
-    edges = 0
-    for node, successors in graph.items():
-        for successor in successors:
-            if successor not in graph:
-                continue
-            edges += 1
-            degree[node] = degree.get(node, 0) + 1
-            degree[successor] = degree.get(successor, 0) + 1
-
+    degree, edges = _degrees(graph)
     if edges == 0:
         return 0.0
 
     total = 2 * edges
-    score = 0.0
+    score = sum(
+        1 - (degree.get(node, 0) * degree.get(successor, 0)) / total
+        for node, successor in _internal_edges(graph)
+        if partition.get(node) == partition.get(successor)
+    )
+    return score / total
+
+
+def _degrees(graph: Graph[Node]) -> tuple[dict[Node, int], int]:
+    """Undirected degree of every node, and the edge count, over in-tree edges only.
+
+    An edge leaving the graph is not a dependency *within* the modularisation being
+    measured, so counting it would compare the project against a structure it does not have.
+    """
+    degree: dict[Node, int] = {}
+    edges = 0
+    for node, successor in _internal_edges(graph):
+        edges += 1
+        degree[node] = degree.get(node, 0) + 1
+        degree[successor] = degree.get(successor, 0) + 1
+    return degree, edges
+
+
+def _internal_edges(graph: Graph[Node]) -> Iterator[tuple[Node, Node]]:
+    """Every edge whose target is also in the graph."""
     for node, successors in graph.items():
         for successor in successors:
-            if successor in graph and partition.get(node) == partition.get(successor):
-                score += 1 - (degree.get(node, 0) * degree.get(successor, 0)) / total
-    return score / total
+            if successor in graph:
+                yield node, successor

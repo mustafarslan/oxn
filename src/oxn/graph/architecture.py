@@ -15,7 +15,7 @@ from oxn.graph.algos import condensation, cycles, levels, topological_order, tra
 from oxn.thresholds import GOD_COMPONENT_MIN_LOC
 
 if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Mapping
+    from collections.abc import Iterator, Mapping
 
     from oxn.graph.algos import Graph
 
@@ -202,24 +202,37 @@ def _bits(mask: int) -> list[int]:
 
 
 def _martin(graph: Graph[str], types: Mapping[str, tuple[int, int]]) -> dict[str, MartinMetrics]:
-    afferent: dict[str, int] = {name: 0 for name in graph}
-    for name in graph:
-        for successor in graph[name]:
-            if successor in afferent and successor != name:
-                afferent[successor] += 1
-
-    metrics: dict[str, MartinMetrics] = {}
-    for name in graph:
-        efferent = len({s for s in graph[name] if s in afferent and s != name})
-        abstract, total = types.get(name, (0, 0))
-        metrics[name] = MartinMetrics(
+    """Afferent and efferent coupling per component, plus the abstractness they pair with."""
+    afferent = _afferent(graph)
+    return {
+        name: MartinMetrics(
             component=name,
             afferent=afferent[name],
-            efferent=efferent,
-            abstract_types=abstract,
-            total_types=total,
+            efferent=len(set(_depends_on(graph, name))),
+            abstract_types=types.get(name, (0, 0))[0],
+            total_types=types.get(name, (0, 0))[1],
         )
-    return metrics
+        for name in graph
+    }
+
+
+def _afferent(graph: Graph[str]) -> dict[str, int]:
+    """How many *other* components depend on each one.
+
+    A self-edge is excluded on both sides: a component depending on itself says nothing
+    about its stability, and counting it would make every package look more depended-upon
+    than it is.
+    """
+    counts = dict.fromkeys(graph, 0)
+    for name in graph:
+        for successor in _depends_on(graph, name):
+            counts[successor] += 1
+    return counts
+
+
+def _depends_on(graph: Graph[str], name: str) -> Iterator[str]:
+    """The in-tree components `name` depends on, itself excluded."""
+    return (target for target in graph[name] if target in graph and target != name)
 
 
 #: Below this many components a percentile is not a percentile -- with three sizes the p90

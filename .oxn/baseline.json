@@ -5,11 +5,7 @@
   "violations": {
     "cognitive_complexity|scripts/dogfood.py|scripts.dogfood.repair": 16.0,
     "cognitive_complexity|scripts/fetch_corpora.py|scripts.fetch_corpora.main": 22.0,
-    "cognitive_complexity|src/oxn/graph/algos.py|src.oxn.graph.algos.modularity": 14.0,
-    "cognitive_complexity|src/oxn/graph/algos.py|src.oxn.graph.algos.shortest_path": 14.0,
-    "cognitive_complexity|src/oxn/graph/architecture.py|src.oxn.graph.architecture._martin": 13.0,
     "cognitive_complexity|src/oxn/graph/indexer.py|src.oxn.graph.indexer.Indexer.index": 14.0,
-    "cognitive_complexity|src/oxn/metrics/cyclomatic.py|src.oxn.metrics.cyclomatic._count_decisions": 13.0,
     "cognitive_complexity|src/oxn/report.py|src.oxn.report.run_metrics": 15.0,
     "cognitive_complexity|src/oxn/volume/tokens.py|src.oxn.volume.tokens.normalized_tokens": 13.0,
     "cognitive_complexity|tests/test_oracles.py|tests.test_oracles._oxn_functions": 17.0,
