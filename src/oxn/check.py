@@ -208,7 +208,7 @@ def _ceiling_findings(
         measured = values.get(gate.metric)
         if measured is None:
             continue
-        limit = settings.ceiling_for(rule, layer)
+        limit = settings.ceiling_for(gate.follows or rule, layer)
         if measured.value <= limit:
             continue
         findings.append(

@@ -214,6 +214,38 @@ def gauntlet(harness, **kwargs):
     return harness.GauntletResult(**{**defaults, **kwargs})
 
 
+def test_the_gate_is_part_of_the_verdict(harness) -> None:
+    """A repair the hook would reject must not be accepted here.
+
+    This is the ruff-format bug's shape, one layer up: the harness ran weaker checks than
+    the thing it was standing in for, so it accepted candidates that then failed. Running
+    the real gate means any rule added to `oxn check` later is enforced by this harness
+    without anyone remembering to come back and add it.
+    """
+    assert not gauntlet(harness, gate_pass=False).passed
+    assert gauntlet(harness, gate_pass=True).passed
+
+
+def test_the_gate_is_applied_as_a_ratchet_not_a_clean_bill(harness) -> None:
+    """The target file legitimately holds debt; the repair must add none.
+
+    A sandbox carries no `.oxn/`, so `--no-baseline` there would fail a repair for
+    violations that were in the file before the model touched it -- which is every repair,
+    since a file is only chosen because something in it is over a ceiling.
+    """
+    before = harness.Measurement(
+        scores={}, target=30.0, present=True, gate=frozenset({"cognitive_complexity|m.route"})
+    )
+    after_ok = harness.Measurement(
+        scores={}, target=8.0, present=True, gate=frozenset({"cognitive_complexity|m.route"})
+    )
+    after_shred = harness.Measurement(
+        scores={}, target=3.0, present=True, gate=frozenset({"shredding|m.route"})
+    )
+    assert not (after_ok.gate - before.gate), "pre-existing debt is not the repair's fault"
+    assert after_shred.gate - before.gate, "a newly introduced finding is"
+
+
 def test_the_harness_is_never_looser_than_the_gate(harness) -> None:
     """Two detectors, deliberately not the same one, and the harness is the stricter.
 

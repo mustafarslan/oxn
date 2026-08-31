@@ -17,6 +17,7 @@ from __future__ import annotations
 import pytest
 
 from oxn.check import EXIT_OK, EXIT_VIOLATIONS, run_check
+from oxn.config import Config
 from oxn.metrics.shredding import Unit, cluster_totals
 from oxn.profiles.python import PYTHON
 from oxn.profiles.typescript import TYPESCRIPT
@@ -219,6 +220,23 @@ def test_splitting_something_that_was_never_a_violation_is_fine(project) -> None
     )
     (project / "small.py").write_text(source)
     assert run_check(["small.py"], use_baseline=False).exit_code == EXIT_OK
+
+
+def test_the_rule_follows_a_configured_ceiling_not_just_the_default(project) -> None:
+    """An anti-gaming rule has no number of its own.
+
+    It exists to stop one ceiling being satisfied dishonestly, so it must move when a
+    project moves that ceiling. Sharing only the *default* would tell a project that raised
+    `cognitive_complexity` to 20 that a cluster of 13 is shredding, while a plain 19-point
+    function sailed through -- blocking an honest split in the name of stopping a dishonest
+    one. OXN's own oxn.yaml uses the default, so dogfooding could never catch this.
+    """
+    (project / "shred.py").write_text(SHRED)
+    assert "shredding" in _rules(run_check(["shred.py"], use_baseline=False))
+
+    (project / "oxn.yaml").write_text("ceilings:\n  cognitive_complexity: 20\n")
+    report = run_check(["shred.py"], config=Config.load(project), use_baseline=False)
+    assert report.exit_code == EXIT_OK, [str(f) for f in report.blocking]
 
 
 # ---- the unit rule, where the edges are cheap to state ---------------------------------

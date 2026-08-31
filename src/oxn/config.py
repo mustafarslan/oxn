@@ -45,6 +45,13 @@ class Gate:
     metric: str
     threshold: str
     kinds: frozenset[str]
+    #: Another rule whose *configured* ceiling this one follows. An anti-gaming rule has no
+    #: number of its own: it exists to stop one ceiling being satisfied dishonestly, so it
+    #: has to move when a project moves that ceiling. Sharing only the default is not
+    #: enough -- a project that raises `cognitive_complexity` to 20 would otherwise keep
+    #: being told 14 is shredding while a plain 19-point function passes, which inverts the
+    #: rule's own premise.
+    follows: str = ""
 
 
 #: Rule name -> what it gates. Only these can appear under `ceilings:` in `oxn.yaml`;
@@ -64,7 +71,12 @@ GATED_METRICS: dict[str, Gate] = {
     # number of its own: the rule exists to stop that ceiling being satisfied by splitting
     # instead of simplifying, so the two must move together. Only cluster roots carry the
     # metric, so every other callable is simply absent from this check.
-    "shredding": Gate("shredding_cluster", "MAX_COGNITIVE_COMPLEXITY", CALLABLE_KINDS),
+    "shredding": Gate(
+        "shredding_cluster",
+        "MAX_COGNITIVE_COMPLEXITY",
+        CALLABLE_KINDS,
+        follows="cognitive_complexity",
+    ),
 }
 
 

@@ -118,6 +118,11 @@ class Measurement:
     scores: dict[str, float]
     target: float
     present: bool
+    #: Blocking `oxn check` findings for this file, as stable `rule|entity` keys. Compared
+    #: before against after rather than run with `--no-baseline`, because a sandbox carries
+    #: no `.oxn/` and the target file legitimately holds pre-existing debt -- the repair has
+    #: to introduce nothing new, not fix everything that was already there.
+    gate: frozenset[str] = frozenset()
 
     @property
     def mass(self) -> float:
@@ -136,6 +141,9 @@ class GauntletResult:
     tests_pass: bool = False
     lint_pass: bool = False
     types_pass: bool = False
+    #: Does `oxn check` -- the gate this project actually ships -- accept the repaired file?
+    #: Defaults True so the many constructed results in tests stay about what they are about.
+    gate_pass: bool = True
     score_before: float = 0.0
     score_after: float = 0.0
     file_mass_before: float = 0.0
@@ -213,6 +221,7 @@ class GauntletResult:
             self.tests_pass
             and self.lint_pass
             and self.types_pass
+            and self.gate_pass
             and self.target_present
             and self.improved
             and self.under_ceiling
@@ -231,14 +240,48 @@ def run_gauntlet(
         ceiling=float(ceiling),
     )
 
+    _run_toolchain(sandbox, result)
+
+    after = measure(sandbox, target)
+    result.score_after = after.target
+    result.file_mass_after = after.mass
+    result.functions_after = after.functions
+    result.new_helpers = {
+        name: score for name, score in after.scores.items() if name not in before.scores
+    }
+    # The gate itself, applied as a ratchet. Without this the harness can accept what the
+    # hook then rejects: a repair landing at 11 against a ceiling of 12 while adding three
+    # dedicated helpers clears every check above and fails `oxn check` as shredding. This
+    # makes "the harness is never looser than the gate" a property rather than a comment,
+    # and any rule added to the gate later is enforced here without touching this file.
+    introduced = sorted(after.gate - before.gate)
+    result.gate_pass = not introduced
+    if introduced:
+        result.failures.append(
+            "`oxn check` rejects this, and the hook will too:\n  " + "\n  ".join(introduced)
+        )
+
+    result.target_present = after.present
+    if not result.target_present:
+        result.failures.append(
+            f"{target.leaf} no longer exists in {target.path}. The task is to simplify it, "
+            f"not to remove it; every caller still expects it."
+        )
+    return result
+
+
+def _run_toolchain(sandbox: Sandbox, result: GauntletResult) -> None:
+    """Tests, lint and types, exactly as `scripts/check.py` runs them.
+
+    Both halves of ruff, because the project's own CI runs both: a harness weaker than CI
+    accepts candidates that then fail it, which is how the first accepted repair came to
+    need reformatting by hand before it would commit.
+    """
     tests = sandbox.run("-m", "pytest", "-m", "not oracle and not llm", "-q", "-x")
     result.tests_pass = tests.returncode == 0
     if not result.tests_pass:
         result.failures.append(_tail(tests.stdout or tests.stderr))
 
-    # Both halves, because `scripts/check.py` runs both: a gate weaker than the project's
-    # own CI can accept a candidate that then fails it, which is what happened when the
-    # first accepted repair had to be reformatted by hand before it would commit.
     lint = sandbox.run("-m", "ruff", "check", ".")
     formatting = sandbox.run("-m", "ruff", "format", "--check", ".")
     result.lint_pass = lint.returncode == 0 and formatting.returncode == 0
@@ -249,21 +292,6 @@ def run_gauntlet(
     result.types_pass = types.returncode == 0
     if not result.types_pass:
         result.failures.append(_tail(types.stdout))
-
-    after = measure(sandbox, target)
-    result.score_after = after.target
-    result.file_mass_after = after.mass
-    result.functions_after = after.functions
-    result.new_helpers = {
-        name: score for name, score in after.scores.items() if name not in before.scores
-    }
-    result.target_present = after.present
-    if not result.target_present:
-        result.failures.append(
-            f"{target.leaf} no longer exists in {target.path}. The task is to simplify it, "
-            f"not to remove it; every caller still expects it."
-        )
-    return result
 
 
 def measure(sandbox: Sandbox | None, target: Target) -> Measurement:
@@ -296,6 +324,30 @@ def measure(sandbox: Sandbox | None, target: Target) -> Measurement:
         scores=scores,
         target=scores[hits[0]] if hits else UNMEASURABLE,
         present=bool(hits),
+        gate=_gate_findings(interpreter, base, target.path),
+    )
+
+
+def _gate_findings(interpreter: str, base: Path, path: str) -> frozenset[str]:
+    """Blocking `oxn check` findings for one file, as `rule|entity` keys.
+
+    Exit code is ignored on purpose: 2 means violations, which is the answer being asked
+    for, and 1 means OXN itself failed, which yields no findings and is reported by the
+    other checks rather than mistaken for a clean file.
+    """
+    result = subprocess.run(
+        [interpreter, "-m", "oxn", "check", "--json", "--no-baseline", path],
+        cwd=base,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    try:
+        violations = json.loads(result.stdout)["violations"]
+    except (json.JSONDecodeError, KeyError):
+        return frozenset()
+    return frozenset(
+        f"{row['rule']}|{row['entity']}" for row in violations if row.get("blocking", True)
     )
 
 
