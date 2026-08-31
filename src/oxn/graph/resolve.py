@@ -312,21 +312,52 @@ class _Jsonc:
 
 
 def _resolve_ecmascript(source_path: str, raw: RawImport, context: ResolutionContext) -> str | None:
+    """A relative specifier resolves against the importing file; a bare one may be an alias.
+
+    Anything that is neither is a package, and packages are not in the tree.
+    """
     specifier = raw.specifier
     if specifier.startswith("."):
         base = PurePosixPath(source_path).parent
-        candidate = _normalize(str(base / specifier))
-        return _ecmascript_candidate(candidate, context)
+        return _ecmascript_candidate(_normalize(str(base / specifier)), context)
+    return _resolve_ts_alias(specifier, context)
 
+
+def _resolve_ts_alias(specifier: str, context: ResolutionContext) -> str | None:
+    """Try each `tsconfig` path alias whose prefix this specifier matches.
+
+    An alias may name several targets and they are ordered by preference, so the first that
+    exists wins -- which is what `tsc` does, and why a miss falls through to the next
+    target rather than failing the whole lookup.
+    """
     for prefix, targets in context.ts_aliases.items():
-        if prefix and (specifier == prefix or specifier.startswith(f"{prefix}/")):
-            suffix = specifier[len(prefix) :].lstrip("/")
-            for target in targets:
-                candidate = "/".join(part for part in (target, suffix) if part)
-                found = _ecmascript_candidate(candidate, context)
-                if found is not None:
-                    return found
+        if not prefix or not _alias_matches(specifier, prefix):
+            continue
+        found = _first_existing(targets, specifier[len(prefix) :].lstrip("/"), context)
+        if found is not None:
+            return found
     return None
+
+
+def _first_existing(
+    targets: tuple[str, ...], suffix: str, context: ResolutionContext
+) -> str | None:
+    """The first alias target that exists, which is what `tsc` picks.
+
+    Targets are ordered by preference, so a miss falls through to the next rather than
+    failing the whole lookup.
+    """
+    for target in targets:
+        candidate = "/".join(part for part in (target, suffix) if part)
+        found = _ecmascript_candidate(candidate, context)
+        if found is not None:
+            return found
+    return None
+
+
+def _alias_matches(specifier: str, prefix: str) -> bool:
+    """An alias matches the whole specifier or a leading path segment of it."""
+    return specifier == prefix or specifier.startswith(f"{prefix}/")
 
 
 def _normalize(path: str) -> str:
@@ -344,22 +375,28 @@ def _normalize(path: str) -> str:
 
 
 def _ecmascript_candidate(candidate: str, context: ResolutionContext) -> str | None:
+    """A specifier may name the file exactly, its source form, or a directory's index."""
     if candidate in context.known:
         return candidate
+    return (
+        _emitted_source(candidate, context)
+        or _first_known_path(context, (f"{candidate}{ext}" for ext in _TS_EXTENSIONS))
+        or _first_known_path(context, (f"{candidate}/{index}" for index in _TS_INDEXES))
+    )
 
-    # `./x.js` in TypeScript source names `./x.ts`: the specifier refers to the emitted
-    # file, not the one on disk.
+
+def _emitted_source(candidate: str, context: ResolutionContext) -> str | None:
+    """`./x.js` in TypeScript source names `./x.ts`.
+
+    The specifier refers to the *emitted* file, not the one on disk, which is the one
+    ECMAScript resolution rule that cannot be expressed as "try these extensions".
+    """
     suffix = PurePosixPath(candidate).suffix
-    if suffix in _JS_TO_TS:
-        stem = candidate[: -len(suffix)]
-        for extension in _JS_TO_TS[suffix]:
-            if (path := f"{stem}{extension}") in context.known:
-                return path
+    if suffix not in _JS_TO_TS:
+        return None
+    stem = candidate[: -len(suffix)]
+    return _first_known_path(context, (f"{stem}{ext}" for ext in _JS_TO_TS[suffix]))
 
-    for extension in _TS_EXTENSIONS:
-        if (path := f"{candidate}{extension}") in context.known:
-            return path
-    for index in _TS_INDEXES:
-        if (path := f"{candidate}/{index}") in context.known:
-            return path
-    return None
+
+def _first_known_path(context: ResolutionContext, paths: Iterator[str]) -> str | None:
+    return next((path for path in paths if path in context.known), None)

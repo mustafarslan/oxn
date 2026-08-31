@@ -141,60 +141,78 @@ def read_log(
 
 
 def parse_log(output: str) -> History:
-    """Parse the output of the command :func:`read_log` builds."""
+    """Parse the output of the command :func:`read_log` builds.
+
+    Two passes, because a rename chain is only knowable once the whole log has been read:
+    a file renamed A -> B -> C appears as two separate renames in two commits, and every
+    change to A must end up attributed to C.
+    """
     history = History()
-    raw_commits: list[Commit] = []
-
-    for block in output.split(_RECORD):
-        if not block.strip():
-            continue
-        header, _, body = block.partition("\n")
-        fields = header.split(_FIELD)
-        if len(fields) < 5:
-            continue
-        sha, author, email, when, subject = fields[:5]
-
-        changes: list[FileChange] = []
-        for line in body.splitlines():
-            change = _parse_numstat(line)
-            if change is not None:
-                changes.append(change)
-                if change.old_path:
-                    history.renames[change.old_path] = change.path
-
-        raw_commits.append(
-            Commit(
-                sha=sha,
-                author=author,
-                email=email,
-                when=_parse_date(when),
-                subject=subject,
-                changes=tuple(changes),
-            )
-        )
+    raw_commits = [
+        commit for block in output.split(_RECORD) if (commit := _parse_commit(block, history))
+    ]
 
     resolved = _resolve_chains(history.renames)
     history.renames = resolved
-    history.commits = [
-        Commit(
-            sha=commit.sha,
-            author=commit.author,
-            email=commit.email,
-            when=commit.when,
-            subject=commit.subject,
-            changes=tuple(
-                FileChange(
-                    path=resolved.get(change.path, change.path),
-                    added=change.added,
-                    deleted=change.deleted,
-                    old_path=change.old_path,
-                )
-                for change in commit.changes
-            ),
-        )
-        for commit in raw_commits
-    ]
+    history.commits = [_rename_paths(commit, resolved) for commit in raw_commits]
     return history
+
+
+def _parse_commit(block: str, history: History) -> Commit | None:
+    """One record: the header fields, then its numstat lines.
+
+    Renames are recorded into `history` as they are seen, because resolving a chain needs
+    all of them and the caller does that afterwards.
+    """
+    if not block.strip():
+        return None
+    header, _, body = block.partition("\n")
+    fields = header.split(_FIELD)
+    if len(fields) < 5:
+        return None
+    sha, author, email, when, subject = fields[:5]
+
+    changes: list[FileChange] = []
+    for line in body.splitlines():
+        change = _parse_numstat(line)
+        if change is None:
+            continue
+        changes.append(change)
+        if change.old_path:
+            history.renames[change.old_path] = change.path
+
+    return Commit(
+        sha=sha,
+        author=author,
+        email=email,
+        when=_parse_date(when),
+        subject=subject,
+        changes=tuple(changes),
+    )
+
+
+def _rename_paths(commit: Commit, resolved: dict[str, str]) -> Commit:
+    """Re-point every change at the name its file carries *today*.
+
+    That is what makes a history join against the code graph: a hotspot for `b.py` is not
+    findable if half its churn is recorded against the name it had last year.
+    """
+    return Commit(
+        sha=commit.sha,
+        author=commit.author,
+        email=commit.email,
+        when=commit.when,
+        subject=commit.subject,
+        changes=tuple(
+            FileChange(
+                path=resolved.get(change.path, change.path),
+                added=change.added,
+                deleted=change.deleted,
+                old_path=change.old_path,
+            )
+            for change in commit.changes
+        ),
+    )
 
 
 def _parse_numstat(line: str) -> FileChange | None:
