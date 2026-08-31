@@ -201,3 +201,54 @@ def test_an_unknown_name_resolves_to_nothing() -> None:
 )
 def test_symbol_tail(symbol: str, expected: str) -> None:
     assert symbol_tail(symbol) == expected
+
+
+# ---- JSONC: the two traps that silently discard every path alias ------------------------
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        # A comment marker inside a string is four ordinary bytes of a URL.
+        (
+            '{"paths": {"@x/*": ["http://example.com/*"]}}',
+            '{"paths": {"@x/*": ["http://example.com/*"]}}',
+        ),
+        ('{"a": "// not a comment"}', '{"a": "// not a comment"}'),
+        ('{"a": "/* nor this */"}', '{"a": "/* nor this */"}'),
+        # A comment may follow a value on the same line.
+        ('{"baseUrl": "./src", // where sources live\n"x": 2}', '{"baseUrl": "./src", \n"x": 2}'),
+        ('{/* block */ "a": 1}', '{ "a": 1}'),
+        # Trailing commas are legal in JSONC and fatal to json.loads.
+        ('{"a": 1,}', '{"a": 1}'),
+        ('{"a": [1, 2,],}', '{"a": [1, 2]}'),
+        # An escape consumes the next character, so this quote does not close the string.
+        ('{"a": "escaped \\" still // inside"}', '{"a": "escaped \\" still // inside"}'),
+        # Unterminated constructs must not hang or raise.
+        ('{"a": 1 /* unterminated', '{"a": 1 '),
+        ('{"a": "unterminated', '{"a": "unterminated'),
+    ],
+)
+def test_jsonc_stripping(source: str, expected: str) -> None:
+    """`tsconfig.json` is JSONC, and getting this wrong loses every alias in the file."""
+    from oxn.graph.resolve import _strip_jsonc
+
+    assert _strip_jsonc(source) == expected
+
+
+def test_a_stripped_tsconfig_still_parses_as_json() -> None:
+    import json as _json
+
+    from oxn.graph.resolve import _strip_jsonc
+
+    source = (
+        "{\n"
+        "  // compiler options\n"
+        '  "compilerOptions": {\n'
+        '    "baseUrl": "./src", /* root */\n'
+        '    "paths": { "@app/*": ["app/*"], },\n'
+        "  },\n"
+        "}\n"
+    )
+    parsed = _json.loads(_strip_jsonc(source))
+    assert parsed["compilerOptions"]["paths"]["@app/*"] == ["app/*"]

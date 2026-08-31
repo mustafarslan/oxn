@@ -256,52 +256,59 @@ def _strip_jsonc(text: str) -> str:
     the same line (``"baseUrl": "./src", // where sources live``). Getting either wrong
     silently discards every path alias in the file.
     """
-    out: list[str] = []
-    index = 0
-    length = len(text)
-    in_string = False
+    return _Jsonc(text).strip()
 
-    while index < length:
-        char = text[index]
 
-        if in_string:
-            out.append(char)
-            if char == "\\" and index + 1 < length:
-                out.append(text[index + 1])  # an escape consumes the next character
-                index += 2
-                continue
-            if char == '"':
-                in_string = False
-            index += 1
-            continue
+@dataclass
+class _Jsonc:
+    """A two-state scanner: inside a string literal, or outside it.
 
+    Which state it is in decides the meaning of every character that follows -- `//` is a
+    comment outside a string and four ordinary bytes of a URL inside one -- so the states
+    are two methods rather than a flag consulted at each of six branches.
+    """
+
+    text: str
+    out: list[str] = field(default_factory=list)
+    in_string: bool = False
+
+    def strip(self) -> str:
+        index = 0
+        while index < len(self.text):
+            index = self._inside(index) if self.in_string else self._outside(index)
+        return "".join(self.out)
+
+    def _inside(self, index: int) -> int:
+        """Copy verbatim until the closing quote. Nothing in here is syntax."""
+        char = self.text[index]
+        self.out.append(char)
+        if char == "\\" and index + 1 < len(self.text):
+            self.out.append(self.text[index + 1])  # an escape consumes the next character
+            return index + 2
         if char == '"':
-            in_string = True
-            out.append(char)
-            index += 1
-            continue
+            self.in_string = False
+        return index + 1
 
-        if text.startswith("//", index):
-            newline = text.find("\n", index)
-            index = length if newline == -1 else newline
-            continue
+    def _outside(self, index: int) -> int:
+        char = self.text[index]
+        if char == '"':
+            self.in_string = True
+            self.out.append(char)
+            return index + 1
+        if self.text.startswith("//", index):
+            newline = self.text.find("\n", index)
+            return len(self.text) if newline == -1 else newline
+        if self.text.startswith("/*", index):
+            close = self.text.find("*/", index + 2)
+            return len(self.text) if close == -1 else close + 2
+        if char == "," and self._is_trailing(index):
+            return index + 1
+        self.out.append(char)
+        return index + 1
 
-        if text.startswith("/*", index):
-            close = text.find("*/", index + 2)
-            index = length if close == -1 else close + 2
-            continue
-
-        if char == ",":
-            # A trailing comma is legal in JSONC and fatal to `json.loads`.
-            rest = text[index + 1 :].lstrip()
-            if rest[:1] in {"}", "]"}:
-                index += 1
-                continue
-
-        out.append(char)
-        index += 1
-
-    return "".join(out)
+    def _is_trailing(self, index: int) -> bool:
+        """A trailing comma is legal in JSONC and fatal to `json.loads`."""
+        return self.text[index + 1 :].lstrip()[:1] in {"}", "]"}
 
 
 def _resolve_ecmascript(source_path: str, raw: RawImport, context: ResolutionContext) -> str | None:
