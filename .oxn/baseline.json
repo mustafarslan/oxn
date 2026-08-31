@@ -8,7 +8,6 @@
     "cognitive_complexity|src/oxn/graph/algos.py|src.oxn.graph.algos.modularity": 14.0,
     "cognitive_complexity|src/oxn/graph/algos.py|src.oxn.graph.algos.shortest_path": 14.0,
     "cognitive_complexity|src/oxn/graph/architecture.py|src.oxn.graph.architecture._martin": 13.0,
-    "cognitive_complexity|src/oxn/graph/imports.py|src.oxn.graph.imports._java_statement": 16.0,
     "cognitive_complexity|src/oxn/graph/indexer.py|src.oxn.graph.indexer.Indexer.index": 14.0,
     "cognitive_complexity|src/oxn/graph/resolve.py|src.oxn.graph.resolve._ecmascript_candidate": 13.0,
     "cognitive_complexity|src/oxn/graph/resolve.py|src.oxn.graph.resolve._resolve_ecmascript": 18.0,

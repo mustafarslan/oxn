@@ -365,3 +365,53 @@ def test_rust_mixed_group_keeps_every_branch() -> None:
         ("a.f", "value"),
         ("a.h", "wildcard"),
     }
+
+
+# ---- Java imports -------------------------------------------------------------------------
+#
+# Written after the Rust `use` tests found two bugs the corpus could not: these are asserted
+# against observed output, not against what the code looked like it should do.
+
+
+def test_java_plain_and_wildcard() -> None:
+    assert [(i.specifier, i.kind) for i in imports("java", "import java.util.List;\n")] == [
+        ("java.util.List", "value")
+    ]
+    assert [(i.specifier, i.kind) for i in imports("java", "import java.util.*;\n")] == [
+        ("java.util", "wildcard")
+    ]
+
+
+def test_a_java_wildcard_is_marked_as_one() -> None:
+    """The grammar spells `.*` as a *named* `asterisk` node, not a bare `*` token.
+
+    Matching on the token meant the test never fired, so every `import java.util.*` came
+    back as an ordinary value import -- indistinguishable from `import java.util`.
+    """
+    found = next(iter(imports("java", "import java.util.*;\n")))
+    assert found.kind == "wildcard"
+
+
+def test_java_static_member_couples_to_its_type() -> None:
+    """`import static a.b.C.max` depends on `a.b.C`, and records `max` as the name."""
+    found = next(iter(imports("java", "import static java.lang.Math.max;\n")))
+    assert (found.specifier, found.kind, sorted(found.names)) == (
+        "java.lang.Math",
+        "value",
+        ["max"],
+    )
+
+
+def test_a_java_static_wildcard_couples_to_the_class_not_its_package() -> None:
+    """`import static a.b.C.*` names every static member of `a.b.C`, so `a.b.C` is the type.
+
+    It was being split like a single-member static import, reporting a dependency on `a.b`
+    -- one level short of the class actually imported. Two real imports in the
+    spring-petclinic corpus were attributed to the wrong package by this.
+    """
+    found = next(iter(imports("java", "import static java.lang.Math.*;\n")))
+    assert (found.specifier, found.kind, sorted(found.names)) == (
+        "java.lang.Math",
+        "wildcard",
+        [],
+    )

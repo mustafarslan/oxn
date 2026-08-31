@@ -217,28 +217,36 @@ def _rust_leaf(node: Node, prefix: str) -> list[tuple[str, str]]:
 
 
 def _java_statement(node: Node, spec: ImportSpec) -> list[RawImport]:
-    """``import java.util.List;`` and ``import static java.lang.Math.max;``.
-
-    A wildcard import ends in ``.*``; a static import names a member rather than a type, and
-    both couple to the same package either way.
-    """
+    """``import java.util.List;``, ``import java.util.*;``, ``import static a.b.C.max;``."""
     line = node.start_point[0] + 1
-    wildcard = any(not child.is_named and _text(child) == "*" for child in node.children)
+    # The grammar spells `.*` as a **named** `asterisk` node, not a bare `*` token. Testing
+    # `not child.is_named` therefore never matched, and no Java import was ever marked a
+    # wildcard -- `import java.util.*` came back indistinguishable from `import java.util`.
+    wildcard = any(child.type == "asterisk" for child in node.children)
     static = any(not child.is_named and _text(child) == "static" for child in node.children)
 
     for child in node.named_children:
-        if child.type in {"scoped_identifier", "identifier"}:
-            specifier = _text(child)
-            if not specifier:
-                continue
-            kind = "wildcard" if wildcard else "value"
-            names: tuple[str, ...] = ()
-            if static:
-                # `import static a.b.C.member` -- the type is the specifier's parent.
-                specifier, _, member = specifier.rpartition(".")
-                names = (member,)
-            return [RawImport(specifier, kind, line, names=names)]
+        if child.type not in {"scoped_identifier", "identifier"}:
+            continue
+        specifier = _text(child)
+        if specifier:
+            return [_java_import(specifier, line, static=static, wildcard=wildcard)]
     return []
+
+
+def _java_import(specifier: str, line: int, *, static: bool, wildcard: bool) -> RawImport:
+    """What a Java import couples to, which is always a type or a package -- never a member.
+
+    `import static a.b.C.max` names one member of `a.b.C`, so the type is the specifier's
+    parent and the member is recorded as a name. `import static a.b.C.*` names *every*
+    static member of `a.b.C`, so the type is the specifier itself -- splitting it there too
+    would report a dependency on `a.b`, one level short of the class actually imported.
+    """
+    kind = "wildcard" if wildcard else "value"
+    if static and not wildcard:
+        owner, _, member = specifier.rpartition(".")
+        return RawImport(owner, kind, line, names=(member,))
+    return RawImport(specifier, kind, line)
 
 
 def _descend(node: Node, kind: str) -> list[Node]:
