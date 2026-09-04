@@ -21,11 +21,14 @@ pin a number that moves underneath it -- so this writes a file, records the HEAD
 extracted at, and is re-run on purpose rather than on every test run.
 
     python scripts/extract_retrieval_labels.py            # rewrite the label set
-    python scripts/extract_retrieval_labels.py --check    # report whether it would change
+    python scripts/extract_retrieval_labels.py --status   # report whether it would change
 
-`--check` reports *stale* from the first commit after an extraction, by design. Do not wire
-it into CI, and think before acting on it: **regenerating is not maintenance, it is changing
-the benchmark.**
+`--status` is deliberately not `--check` and deliberately exits 0. Every `--check` flag a
+developer has met -- `ruff format --check`, `black --check` -- is a CI gate that fails on
+drift, and this one would be reporting drift that must usually be ignored: it says *stale*
+from the first commit after an extraction, by design. Naming it `--check` would have
+invited exactly the wiring the paragraph below argues against, and a flag name beats a
+paragraph. **Regenerating is not maintenance, it is changing the benchmark.**
 
 The trap is specific, and it was measured rather than imagined. Immediately after P8 landed,
 regenerating would have added three pairs -- three commits *about the retrieval system* --
@@ -98,16 +101,18 @@ def _head() -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="Fail if the label set is stale.")
+    parser.add_argument(
+        "--status", action="store_true", help="Report whether the frozen set would change."
+    )
     args = parser.parse_args()
 
     fresh = extract()
     rendered = json.dumps(fresh, indent=2) + "\n"
-    if args.check:
+    if args.status:
         current = LABELS.read_text() if LABELS.exists() else ""
         stale = json.loads(current or "{}").get("pairs") != fresh["pairs"]
         print(f"{len(fresh['pairs'])} pairs; {'stale' if stale else 'current'}")
-        return 1 if stale else 0
+        return 0  # never a gate -- see the module docstring
     LABELS.write_text(rendered)
     where = LABELS.relative_to(ROOT)
     print(f"wrote {where}: {len(fresh['pairs'])} pairs at {fresh['extracted_at']}")

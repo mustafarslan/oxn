@@ -220,8 +220,10 @@ maintaining it.** Measured the day after P8 landed: regenerating would have adde
 three commits *about the retrieval system* — which score P@1 1.000 between them and lift the
 headline to 0.411. They score perfectly because their subjects and this document were written by
 the same author within hours, which is section 5's paraphrase circularity arriving through the back
-door. `scripts/extract_retrieval_labels.py --check` therefore reports "stale" from the first commit
-after an extraction, deliberately, and must not be wired into CI.
+door. `scripts/extract_retrieval_labels.py --status` therefore reports "stale" from the first commit
+after an extraction, deliberately — and is named `--status` rather than `--check`, exiting 0, because
+every `--check` a developer has met is a CI gate and a flag name argues more effectively than a
+paragraph asking not to be wired into one.
 
 One reflexivity note, since it caught us while writing this section: **the corpus contains this
 document**, so recording the numbers changed the text being measured. The recorded values are taken
