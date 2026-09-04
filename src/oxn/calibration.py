@@ -182,6 +182,45 @@ _ANTI_GAMING: tuple[Parameter, ...] = (
 )
 
 
+#: Retrieval and budgeting (P8, ADR-0006). These tune what an agent is *shown*; unlike every
+#: parameter above them, no value here can fail a build, so being wrong costs relevance
+#: rather than trust. They are listed anyway: a number that hides inside a scoring function
+#: is exactly the folklore this module exists to prevent.
+_RETRIEVAL: tuple[Parameter, ...] = (
+    Parameter(
+        name="BM25_K1",
+        value=float(thresholds.BM25_K1),
+        evidence=Evidence.LITERATURE,
+        observations=0,
+        provenance="Robertson & Zaragoza (2009) report [1.2, 2.0] as the usual band for k1",
+        fit_when="the labelled task -> ADR pairs of ADR-0006 section 5 exist",
+    ),
+    Parameter(
+        name="BM25_B",
+        value=float(thresholds.BM25_B),
+        evidence=Evidence.LITERATURE,
+        observations=0,
+        provenance="Robertson & Zaragoza (2009); 0.75 is the standard length-normalization",
+        fit_when="the same labelled pairs; ADR length varies 4k-18k chars, so b is load-bearing",
+    ),
+    Parameter(
+        name="MAX_BUNDLE_CONSTRAINTS",
+        value=float(thresholds.MAX_BUNDLE_CONSTRAINTS),
+        evidence=Evidence.JUDGEMENT,
+        observations=0,
+        provenance=(
+            "constraint decay (arXiv 2605.06445) shows the full set is harmful and says "
+            "nothing about where the knee is; 7 is small enough to read and large enough to "
+            "carry a file's ceilings plus the decisions scoping it"
+        ),
+        fit_when=(
+            "P11 runs the arms; the bundle size is a factor there, so this is the one "
+            "parameter here with an experiment already designed to fit it"
+        ),
+    ),
+)
+
+
 def parameters() -> list[Parameter]:
     """The whole tunable surface. Adding a threshold anywhere means adding it here.
 
@@ -189,7 +228,7 @@ def parameters() -> list[Parameter]:
     91-line function this used to be on the day it was written -- and a function whose entire
     body is a list is a list.
     """
-    return [*_CEILINGS, *_ANTI_GAMING]
+    return [*_CEILINGS, *_ANTI_GAMING, *_RETRIEVAL]
 
 
 def summary() -> dict[str, object]:

@@ -80,3 +80,49 @@ def test_forbidden_modules_are_not_runtime_dependencies(module: str) -> None:
     """These must never become runtime dependencies, so importing them may simply fail."""
     loaded = _modules_after("import oxn._app" if module == "typer" else "import oxn.cli")
     assert module not in loaded
+
+
+# ---- the other direction: the gate must not reach the context channel -------------------
+
+
+def _oxn_modules_after(code: str) -> set[str]:
+    """Like `_modules_after`, but keeping OXN's own submodule names rather than collapsing
+    them to the top-level package."""
+    keep = "sorted(m for m in sys.modules if m.startswith('oxn'))"
+    dump = f"import json,sys;print(json.dumps({keep}))"
+    out = subprocess.run(
+        [sys.executable, "-c", f"{code}\n{dump}"], capture_output=True, text=True, check=True
+    )
+    return set(json.loads(out.stdout.strip().splitlines()[-1]))
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "import oxn.check",
+        "import oxn.rules.builtin, oxn.rules.facts, oxn.rules.adr, oxn.rules.engine",
+        "import oxn.cli\ntry:\n    oxn.cli.main(['check', '--json'])\nexcept SystemExit:\n    pass",
+    ],
+)
+def test_the_gate_never_imports_the_context_channel(code: str) -> None:
+    """ADR-0006 section 1: retrieval never blocks, and the gate never imports it.
+
+    A score that can be wrong by degrees must not decide a boolean. Anything in
+    `oxn.context` that could suppress or reorder a *finding* would quietly re-open
+    ADR-0002's rule that only an EXACT, fresh measurement may block -- so the dependency
+    runs one way and this test is what keeps it that way.
+    """
+    loaded = _oxn_modules_after(code)
+    offenders = {module for module in loaded if module.startswith("oxn.context")}
+    assert not offenders, f"the gate reached the context channel: {sorted(offenders)}"
+
+
+def test_the_gate_does_not_even_mention_the_context_channel() -> None:
+    """The runtime probe above misses a lazy import inside a branch nobody took, which is
+    exactly how the first version of this dependency would arrive."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent / "src" / "oxn"
+    sources = [root / "check.py", *sorted((root / "rules").glob("*.py"))]
+    offenders = [path.name for path in sources if "oxn.context" in path.read_text()]
+    assert not offenders, f"the gate names the context channel in: {offenders}"

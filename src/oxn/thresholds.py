@@ -112,3 +112,30 @@ UNSTABLE_DEPENDENCY_RATIO: Final[float] = 0.30
 #: Rook (*Refactoring in Large Software Projects*, 2006) use a fixed 27,000 lines; Arcan
 #: prefers an adaptive value. OXN takes the project's p90 but never less than this.
 GOD_COMPONENT_MIN_LOC: Final[int] = 5000
+
+# ---- P8: retrieval and the constraint bundle -------------------------------------------
+#
+# These three tune *what an agent is shown*, never what the gate accepts (ADR-0006 section
+# 1). A wrong value here costs relevance; it cannot fail or pass a build.
+
+#: Okapi BM25 term-frequency saturation. Above `k1` occurrences a term stops adding much,
+#: which is what keeps a long ADR from outranking a precise one by repetition. 1.5 is the
+#: value Robertson & Zaragoza report as the usual [1.2, 2.0] choice (*The Probabilistic
+#: Relevance Framework*, 2009); it is not tuned on this corpus and cannot be until the
+#: labelled task -> ADR pairs of ADR-0006 section 5 exist.
+BM25_K1: Final[float] = 1.5
+
+#: How much document length is normalized away, from 0 (not at all) to 1 (fully). 0.75 is
+#: the same source's default. It matters more here than the literature assumes: ADRs in one
+#: corpus range from 4k to 18k characters, so length normalization is doing real work rather
+#: than trimming an edge case.
+BM25_B: Final[float] = 0.75
+
+#: How many constraints a bundle may carry. Constraint decay (arXiv 2605.06445) says the
+#: full set is actively harmful and says nothing about where the knee is; 7 is a judgement
+#: pending the arms of P11, chosen because it is small enough to be read and large enough to
+#: carry the ceilings that govern a file plus the decisions that scope it.
+#:
+#: The cap is a display policy and never an enforcement one: the gate still checks every
+#: constraint, shown or not.
+MAX_BUNDLE_CONSTRAINTS: Final[int] = 7
