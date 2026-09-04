@@ -60,6 +60,30 @@ def test_frontmatter_becomes_a_decision(adr_dir) -> None:
     assert decision.ceilings == {"cognitive_complexity": 8.0}
 
 
+def test_the_body_and_tags_travel_with_the_decision(adr_dir) -> None:
+    """One parser, so the document the gate enforces is the document retrieval ranks.
+
+    ADR-0006 needs the prose and the tags. It gets them from here rather than from a
+    second frontmatter reader, which would be free to disagree with this one about a
+    malformed header.
+    """
+    (adr_dir / "docs" / "adr" / "0043-y.md").write_text(
+        "---\nid: ADR-0043\ntitle: T\nstatus: accepted\ntags: [parser, retry]\n---\n\n"
+        "# ADR-0043\n\nThe body, which the gate never reads.\n"
+    )
+    (decision,) = load_decisions(adr_dir)
+    assert decision.tags == ("parser", "retry")
+    assert decision.body.startswith("# ADR-0043")
+    assert "the gate never reads" in decision.body
+
+
+def test_a_decision_without_tags_or_a_body_still_parses(adr_dir) -> None:
+    _write(adr_dir)
+    (decision,) = load_decisions(adr_dir)
+    assert decision.tags == ()
+    assert decision.body.strip() == "# Body"
+
+
 def test_a_malformed_adr_is_skipped_and_never_fatal(adr_dir) -> None:
     """A broken document must not stop the gate: it is prose with a header, not code."""
     (adr_dir / "docs" / "adr" / "broken.md").write_text("---\nnot: [valid\n---\n")

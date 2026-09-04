@@ -27,7 +27,11 @@ layers:
   # `sources.py` is graph, not orchestration: finding source files is not orchestrating
   # anything, and every tier needs the walk. It lived beside `Indexer` until this contract
   # objected three times over.
-  analysis: ["src/oxn/metrics/*", "src/oxn/resolve/*", "src/oxn/volume/*", "src/oxn/vcs/*", "src/oxn/scip/*"]
+  # `rules/*` was in no layer until 2026-09-04, and the layered check skips edges whose
+  # source is unassigned -- so every import the rule engine made was ungoverned. `context/*`
+  # (ADR-0006) is analysis for the same reason `metrics/*` is: it reads the graph and the
+  # rules, and the surfaces read it.
+  analysis: ["src/oxn/metrics/*", "src/oxn/resolve/*", "src/oxn/volume/*", "src/oxn/vcs/*", "src/oxn/scip/*", "src/oxn/rules/*", "src/oxn/context/*"]
   graph: ["src/oxn/graph/*"]
   # Not part of the layered contract below -- tests may reach anywhere, that is their job --
   # but named so they can carry their own ceilings.

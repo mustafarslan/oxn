@@ -51,6 +51,14 @@ class Decision:
     status: str
     applies_to: tuple[str, ...] = ()
     ceilings: dict[str, float] = field(default_factory=dict)
+    #: Frontmatter `tags`, and the prose after the closing `---`. Neither is read by the
+    #: gate: they exist so retrieval ([ADR-0006](../../docs/adr/0006-retrieval-and-budgeting.md))
+    #: has one ADR parser rather than a second one that disagrees with this about a
+    #: malformed header. Carrying them is free -- `_frontmatter` reads the whole file
+    #: either way -- and *indexing* them here would not be, which is why it happens
+    #: elsewhere.
+    tags: tuple[str, ...] = ()
+    body: str = ""
 
     @property
     def enforceable(self) -> bool:
@@ -73,22 +81,38 @@ def load_decisions(root: Path, directory: Path | None = None) -> list[Decision]:
 
 
 def _parse(path: Path, root: Path) -> Decision | None:
-    data = _frontmatter(path)
-    if data is None:
+    parsed = _frontmatter(path)
+    if parsed is None:
         return None
-    constraints = data.get("constraints") or {}
+    data, body = parsed
+    ceilings = _mapping(data.get("constraints") or {}, "ceilings")
     return Decision(
-        identifier=str(data.get("id") or path.stem),
+        identifier=_text(data, "id") or path.stem,
         path=str(path.relative_to(root)),
-        title=str(data.get("title") or ""),
-        status=str(data.get("status") or ""),
-        applies_to=tuple(data.get("applies-to") or ()),
-        ceilings={str(k): float(v) for k, v in (constraints.get("ceilings") or {}).items()},
+        title=_text(data, "title"),
+        status=_text(data, "status"),
+        applies_to=_sequence(data, "applies-to"),
+        ceilings={key: float(value) for key, value in ceilings.items()},
+        tags=_sequence(data, "tags"),
+        body=body,
     )
 
 
-def _frontmatter(path: Path) -> dict[str, Any] | None:
-    """The YAML block between the first two `---` lines, or None if there isn't one.
+def _text(data: dict[str, Any], key: str) -> str:
+    """Frontmatter is hand-typed, so missing, null and empty all mean the same thing."""
+    return str(data.get(key) or "")
+
+
+def _sequence(data: dict[str, Any], key: str) -> tuple[str, ...]:
+    return tuple(str(item) for item in (data.get(key) or ()))
+
+
+def _mapping(data: dict[str, Any], key: str) -> dict[str, Any]:
+    return {str(k): v for k, v in (data.get(key) or {}).items()}
+
+
+def _frontmatter(path: Path) -> tuple[dict[str, Any], str] | None:
+    """The YAML block between the first two `---` lines and the prose after it.
 
     Every failure returns None rather than raising: an ADR is prose with a header, and a
     broken one must not stop the gate that governs the code it describes.
@@ -96,7 +120,7 @@ def _frontmatter(path: Path) -> dict[str, Any] | None:
     text = path.read_text(errors="replace")
     if not text.startswith("---"):
         return None
-    front, marker, _ = text.partition("---")[2].partition("\n---")
+    front, marker, body = text.partition("---")[2].partition("\n---")
     if not marker:
         return None
     try:
@@ -105,7 +129,7 @@ def _frontmatter(path: Path) -> dict[str, Any] | None:
         data = yaml.safe_load(front)
     except Exception:  # noqa: BLE001 - see the docstring
         return None
-    return data if isinstance(data, dict) else None
+    return (data, body.lstrip("-\n")) if isinstance(data, dict) else None
 
 
 def adr_facts(
