@@ -22,13 +22,19 @@ from oxn.profiles import get_profile
 
 pytestmark = pytest.mark.oracle
 
-SONARJS_DIR = os.environ.get("OXN_SONARJS_DIR")
-RUNNER = Path(__file__).parent / "oracles" / "sonarjs_runner.mjs"
-ESLINT_CONFIG = Path(__file__).parent / "oracles" / "eslint.config.mjs"
+ORACLE_DIR = Path(__file__).parent / "oracles"
+RUNNER = ORACLE_DIR / "sonarjs_runner.mjs"
+ESLINT_CONFIG = ORACLE_DIR / "eslint.config.mjs"
+
+#: Defaults to where `scripts/check.py --oracle --install` puts `node_modules`, rather than
+#: requiring an environment variable to be set correctly. Requiring one is how seventeen
+#: differential tests sat skipped long enough for the harness itself to rot: a lane that
+#: only runs when a variable happens to be exported does not run.
+SONARJS_DIR = os.environ.get("OXN_SONARJS_DIR") or str(ORACLE_DIR)
 
 requires_sonarjs = pytest.mark.skipif(
-    not SONARJS_DIR or not (Path(SONARJS_DIR) / "node_modules").exists(),
-    reason="set OXN_SONARJS_DIR to a directory with eslint + eslint-plugin-sonarjs installed",
+    not (Path(SONARJS_DIR) / "node_modules").exists(),
+    reason="run `python scripts/check.py --oracle --install` to fetch eslint + sonarjs",
 )
 
 #: Cases where OXN follows the published specification and sonarjs 4.2.0 does not.
@@ -43,17 +49,23 @@ SONARJS_DIVERGENCES = {
 
 @functools.lru_cache(maxsize=1)
 def _staged_runner() -> tuple[Path, Path]:
-    """Copy the runner and its config beside ``node_modules``.
+    """Put the runner and its config beside ``node_modules``.
 
     ESLint resolves ``eslint-plugin-sonarjs`` relative to the config file, so both must sit
-    in the directory where the packages were installed.
+    in the directory where the packages were installed. Usually they already do:
+    `scripts/check.py` installs into `tests/oracles`, which is where the runner lives and
+    what it sets `OXN_SONARJS_DIR` to. Copying a file onto itself raises `SameFileError`
+    rather than being a no-op, so this stages *if needed*.
     """
     target = Path(SONARJS_DIR or ".")
-    runner = target / RUNNER.name
-    config = target / ESLINT_CONFIG.name
-    shutil.copyfile(RUNNER, runner)
-    shutil.copyfile(ESLINT_CONFIG, config)
-    return runner, config
+    return _beside(RUNNER, target), _beside(ESLINT_CONFIG, target)
+
+
+def _beside(source: Path, target: Path) -> Path:
+    destination = target / source.name
+    if not (destination.exists() and destination.samefile(source)):
+        shutil.copyfile(source, destination)
+    return destination
 
 
 def _sonarjs_scores(source: str) -> list[int]:
