@@ -114,8 +114,16 @@ class InitReport:
 
 
 def run_init(root: Path | None = None, *, with_hook: bool = True) -> InitReport:
-    """Wire OXN into `root`. Safe to run repeatedly, and safe to run on a populated repo."""
-    base = Path(root or Path.cwd())
+    """Wire OXN into `root`. Safe to run repeatedly, and safe to run on a populated repo.
+
+    With no `root`, this wires the *repository*, not the working directory. `Config.load`
+    searches upward for `oxn.yaml`, so an `init` run from `src/` would leave a config that
+    governs everything below `src/` and nothing above it -- a second, shadowing project
+    inside the first, which is a confusing thing to have created by running a setup command
+    in the wrong terminal tab. `.claude/settings.json` and `.gitignore` belong at the
+    repository root for the same reason.
+    """
+    base = Path(root) if root is not None else _repository_root(Path.cwd())
     report = InitReport()
 
     _write_config(base, report)
@@ -126,6 +134,15 @@ def run_init(root: Path | None = None, *, with_hook: bool = True) -> InitReport:
         report.notes.append("hook not written (--no-hook)")
     _write_gitignore(base, report)
     return report
+
+
+def _repository_root(start: Path) -> Path:
+    """The checkout `start` is inside, or `start` itself when it is not inside one."""
+    current = start.resolve()
+    for directory in (current, *current.parents):
+        if (directory / ".git").exists():
+            return directory
+    return current
 
 
 def _write_config(base: Path, report: InitReport) -> None:

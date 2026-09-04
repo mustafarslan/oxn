@@ -144,3 +144,29 @@ def test_an_existing_gitignore_keeps_its_entries(tmp_path) -> None:
     ignored = (tmp_path / ".gitignore").read_text()
     assert "*.pyc" in ignored
     assert ".oxn/cache/" in ignored
+
+
+def test_init_wires_the_repository_not_the_directory_it_was_run_from(tmp_path, monkeypatch) -> None:
+    """A setup command run in the wrong terminal tab should not create a second project.
+
+    `Config.load` searches upward for `oxn.yaml`, so a config left in `src/` would govern
+    everything below it and nothing above -- a shadowing project inside the real one.
+    `.claude/settings.json` and `.gitignore` belong at the checkout root for the same reason.
+    """
+    (tmp_path / ".git").mkdir()
+    nested = tmp_path / "src" / "deep"
+    nested.mkdir(parents=True)
+
+    monkeypatch.chdir(nested)
+    run_init()
+
+    assert (tmp_path / "oxn.yaml").is_file()
+    assert (tmp_path / ".claude" / "settings.json").is_file()
+    assert not (nested / "oxn.yaml").exists()
+
+
+def test_init_outside_a_checkout_still_wires_where_it_stands(tmp_path, monkeypatch) -> None:
+    """Not every tree is a git repository, and `oxn init` must still work in one."""
+    monkeypatch.chdir(tmp_path)
+    run_init()
+    assert (tmp_path / "oxn.yaml").is_file()
