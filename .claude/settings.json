@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "oxn check --json"
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.venv/bin/oxn check --json"
           }
         ]
       }
