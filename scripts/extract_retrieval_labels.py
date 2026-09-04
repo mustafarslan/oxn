@@ -21,7 +21,22 @@ pin a number that moves underneath it -- so this writes a file, records the HEAD
 extracted at, and is re-run on purpose rather than on every test run.
 
     python scripts/extract_retrieval_labels.py            # rewrite the label set
-    python scripts/extract_retrieval_labels.py --check    # fail if it would change
+    python scripts/extract_retrieval_labels.py --check    # report whether it would change
+
+`--check` reports *stale* from the first commit after an extraction, by design. Do not wire
+it into CI, and think before acting on it: **regenerating is not maintenance, it is changing
+the benchmark.**
+
+The trap is specific, and it was measured rather than imagined. Immediately after P8 landed,
+regenerating would have added three pairs -- three commits *about the retrieval system* --
+which score P@1 1.000 between them and would lift the headline from 0.377 to 0.411. They
+score perfectly because their subjects and ADR-0006's body were written by the same author
+within hours of each other, which is the paraphrase circularity section 5 rejects arriving
+through the back door. A label set that improves the number every time the ranker's author
+commits is not a label set.
+
+So regenerate when the *repository* has moved on -- new decisions, real feature work, a
+renamed scope -- and never as a step in changing the ranker.
 
 Label *extraction* is data generation and lives here beside `fetch_corpora.py`. The
 *measurement* is `tests/test_retrieval_quality.py`, because a number that lives in a script

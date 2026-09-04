@@ -33,7 +33,7 @@ LABELS = ROOT / "benchmarks" / "retrieval-labels-oxn.json"
 #: whatever moved them -- a ranker change, or an edit to any ADR body, since the corpus
 #: being ranked is the repository's own decisions.
 RECORDED_P_AT_1 = 0.377
-RECORDED_MRR = 0.581
+RECORDED_MRR = 0.578
 
 
 @pytest.fixture(scope="module")

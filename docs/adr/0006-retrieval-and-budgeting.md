@@ -185,7 +185,7 @@ of it and a ranker reading its own gold would report a number about nothing.
 
 | ranker | P@1 | MRR |
 |---|---|---|
-| BM25 over decision text | 0.377 | 0.581 |
+| BM25 over decision text | 0.377 | 0.578 |
 | uniform random | 0.362 | — |
 | constant, ordered by how much code each decision governs | 0.698 | 0.787 |
 | constant, always the longest decision | 0.245 | — |
@@ -215,6 +215,14 @@ converts section 4's argument into evidence: scope decides, text orders within. 
 moves from planned to load-bearing — no positive claim about text retrieval is available without
 it — and the quality floor lives there, not here.
 
+**The labels are frozen, and regenerating them is changing the benchmark rather than
+maintaining it.** Measured the day after P8 landed: regenerating would have added three pairs —
+three commits *about the retrieval system* — which score P@1 1.000 between them and lift the
+headline to 0.411. They score perfectly because their subjects and this document were written by
+the same author within hours, which is section 5's paraphrase circularity arriving through the back
+door. `scripts/extract_retrieval_labels.py --check` therefore reports "stale" from the first commit
+after an extraction, deliberately, and must not be wired into CI.
+
 One reflexivity note, since it caught us while writing this section: **the corpus contains this
 document**, so recording the numbers changed the text being measured. The recorded values are taken
 after this amendment, and any edit to any ADR moves them. That is deliberate; the test carries the
@@ -222,8 +230,8 @@ delta the way `.oxn/baseline.json` carries the gate's — and the live value is 
 `tests/test_retrieval_quality.py`, not the one in this table, since the table ages the moment
 anything here is edited. Writing the number into the table above does not move it further: swapping
 one rare token for another changes no document's length and no other term's frequency, so it is a
-fixed point rather than a regress. Amending the section *around* it does move it — 0.584 to 0.581
-when the budget split was recorded above, which is the test doing its job rather than a defect.
+fixed point rather than a regress. Amending the section *around* it does move it — 0.584 to 0.578
+as this section grew, which is the test doing its job rather than a defect.
 
 ## Consequences
 

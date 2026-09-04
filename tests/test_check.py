@@ -299,6 +299,23 @@ def test_every_gated_threshold_states_its_provenance() -> None:
             )
 
 
+def test_the_roadmap_states_the_parameter_count_it_actually_has() -> None:
+    """A count written into prose is a number like any other, and it rots the same way.
+
+    This sentence read "9 of 9 are provisional" three parameters after the ninth. The
+    calibration surface exists so numbers can be argued with rather than believed, which
+    does not work if the document describing it is describing an older version of it.
+    """
+    from pathlib import Path
+
+    from oxn.calibration import parameters
+
+    values = parameters()
+    provisional = sum(1 for parameter in values if parameter.is_provisional)
+    roadmap = (Path(__file__).resolve().parent.parent / "ROADMAP.md").read_text()
+    assert f"**{provisional} of {len(values)} are provisional**" in roadmap
+
+
 def test_a_measured_parameter_says_how_many_observations_back_it() -> None:
     """`TRIVIAL_HELPER` is fitted to two examples, and that must be visible, not implied."""
     from oxn.calibration import Evidence, parameters
