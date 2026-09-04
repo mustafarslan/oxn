@@ -66,8 +66,37 @@ def _identity(finding) -> tuple:
     )
 
 
+@pytest.fixture(scope="module")
+def cache(tmp_path_factory) -> Path:
+    """A throwaway index, because these tests are the ones that index other people's code.
+
+    Running this lane used to leave `.oxn/cache/graph.db` at 176 MB, 2,389 of its 2,519
+    files belonging to httpx and nest -- third-party trees indexed into the cache OXN gates
+    itself with, by the one module that deliberately drops the exclusion keeping them out.
+    That is the mistake the `exclude` fix was about, arriving from the test side.
+    """
+    return tmp_path_factory.mktemp("rules-corpus") / "graph.db"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _never_the_project_cache(cache):
+    """Redirect every indexer in this module, including the ones inside `oxn.check`.
+
+    `check.py` derives its cache from `settings.root`; an absolute default overrides that
+    join, which is the least invasive way to keep those writes out of the project cache
+    without giving `Config` a field that exists only for a test. Autouse and module-scoped
+    so a test added later cannot forget -- `test_the_hook_path_reports_no_adr_scope_findings`
+    was written after the fixture below and wrote two corpus files into the real cache on
+    every run.
+    """
+    patch = pytest.MonkeyPatch()
+    patch.setattr("oxn.graph.store.DEFAULT_CACHE_PATH", cache)
+    yield
+    patch.undo()
+
+
 @pytest.fixture(scope="module", params=sorted(ROOTS), ids=sorted(ROOTS))
-def corpus(request):
+def corpus(request, cache):
     """Both implementations run over one corpus, with the evaluation timed."""
     root = ROOTS[request.param]
     # OXN's own `oxn.yaml` excludes `benchmarks/corpora/*` -- the corpora are fetched
@@ -81,7 +110,7 @@ def corpus(request):
     report = CheckReport()
     hand_coded = _measure(targets, settings, report) + _architecture(targets, settings, report)
 
-    with Indexer() as indexer:
+    with Indexer(cache_path=cache) as indexer:
         indexer.index(targets)
         sources = indexer.sources(targets)
         wanted = [indexer.relative(path) for path in sources]
@@ -155,3 +184,26 @@ def test_the_hook_path_reports_no_adr_scope_findings(corpus) -> None:
     one_file = next(iter(sorted(iter_source_files([ROOTS[corpus["name"]]]))))
     report = run_check([str(one_file)], config=settings, deep=False, use_baseline=False)
     assert not [f for f in report.findings + report.advisory if f.rule.startswith("adr:")]
+
+
+def test_the_corpus_never_reaches_the_project_cache(corpus) -> None:
+    """The end state, asserted rather than assumed, since the redirection is a fixture and
+    fixtures are easy to bypass by writing a test that builds its own indexer.
+
+    Matched on the path *prefix*: a substring search for "corpora" also finds
+    `scripts/fetch_corpora.py`, which is how this check first reported a leak that was not
+    one.
+    """
+    import sqlite3
+
+    project = Path(".oxn/cache/graph.db")
+    if not project.exists():
+        return
+    with sqlite3.connect(project) as connection:
+        leaked = connection.execute(
+            "select count(*) from files where path like 'benchmarks/corpora/%'"
+        ).fetchone()[0]
+    assert leaked == 0, (
+        f"{leaked} corpus files are in OXN's own cache. If this is left over from before "
+        "the redirection, `rm -rf .oxn/cache` and re-run; it rebuilds."
+    )
