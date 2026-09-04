@@ -32,6 +32,23 @@ CALLABLE_KINDS: frozenset[str] = frozenset({"function", "method", "lambda"})
 FILE_KINDS: frozenset[str] = frozenset({"file", "module"})
 
 
+def _find_project(start: Path) -> Path:
+    """The nearest directory at or above `start` that configures OXN.
+
+    Bounded by the repository, not by the filesystem: ascending past a directory holding
+    `.git` would let someone's home-directory `oxn.yaml` govern an unrelated checkout. With
+    neither found, the answer is where we started, which is what an unconfigured project
+    wants anyway.
+    """
+    current = start.resolve()
+    for directory in (current, *current.parents):
+        if (directory / CONFIG_NAME).is_file():
+            return directory
+        if (directory / ".git").exists():
+            break
+    return current
+
+
 @dataclass(frozen=True, slots=True)
 class Gate:
     """One gateable rule: which measurement, on what, against which default.
@@ -136,8 +153,16 @@ class Config:
 
     @classmethod
     def load(cls, root: Path | None = None) -> Config:
-        """Read `oxn.yaml` from `root`, falling back to the defaults when it is absent."""
-        base = Path(root or Path.cwd())
+        """Read `oxn.yaml`, falling back to the defaults when there is none.
+
+        With no `root`, the project is *found* rather than assumed: `oxn.yaml` lives at the
+        top of a repository and commands get run from inside it. Assuming the working
+        directory was the project root meant that `cd src && oxn check --deep` reported "no
+        contracts declared in oxn.yaml" against a repository whose `oxn.yaml` declares
+        several -- the gate quietly weakening to defaults, and the baseline beside it going
+        unread, because both are paths relative to a root that was two levels up.
+        """
+        base = Path(root) if root is not None else _find_project(Path.cwd())
         path = base / CONFIG_NAME
         if not path.is_file():
             return cls.defaults(base)

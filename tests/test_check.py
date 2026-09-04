@@ -11,6 +11,7 @@ import json
 
 import pytest
 
+from oxn import thresholds
 from oxn.check import (
     EXIT_ERROR,
     EXIT_OK,
@@ -308,3 +309,53 @@ def test_a_measured_parameter_says_how_many_observations_back_it() -> None:
             assert parameter.fit_when, "a measured parameter should say what would improve it"
         else:
             assert parameter.observations == 0
+
+
+# ---- finding the project, rather than assuming the working directory --------------------
+
+
+def test_the_config_is_found_from_a_subdirectory(tmp_path, monkeypatch) -> None:
+    """`cd src && oxn check` must gate the same way `oxn check` does.
+
+    It did not. `oxn.yaml` was read from the working directory alone, so running OXN from
+    anywhere inside a repository silently fell back to default ceilings, no layers, no
+    contracts -- and no baseline, since that path is relative to the same root. A gate that
+    weakens depending on which directory you happen to be standing in is not a gate.
+    """
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "oxn.yaml").write_text("ceilings:\n  cognitive_complexity: 3\n")
+    nested = tmp_path / "src" / "deep"
+    nested.mkdir(parents=True)
+
+    monkeypatch.chdir(nested)
+    settings = Config.load()
+    assert settings.root == tmp_path.resolve()
+    assert settings.ceilings["cognitive_complexity"] == 3.0
+    assert settings.baseline_path == tmp_path.resolve() / ".oxn" / "baseline.json"
+
+
+def test_the_search_stops_at_the_repository_boundary(tmp_path, monkeypatch) -> None:
+    """An `oxn.yaml` outside the checkout governs nothing inside it.
+
+    Otherwise a stray config in a home directory silently configures every unrelated
+    repository below it, which is the failure mode where a gate is strictest on the machine
+    that least expects it.
+    """
+    (tmp_path / "oxn.yaml").write_text("ceilings:\n  cognitive_complexity: 1\n")
+    checkout = tmp_path / "checkout"
+    (checkout / ".git").mkdir(parents=True)
+    inner = checkout / "src"
+    inner.mkdir()
+
+    monkeypatch.chdir(inner)
+    settings = Config.load()
+    assert settings.ceilings["cognitive_complexity"] == thresholds.MAX_COGNITIVE_COMPLEXITY
+    assert settings.root == inner.resolve()
+
+
+def test_an_explicit_root_is_taken_literally(tmp_path) -> None:
+    """`Config.load(path)` means that path. Only the bare call goes looking."""
+    (tmp_path / "oxn.yaml").write_text("ceilings:\n  cognitive_complexity: 3\n")
+    nested = tmp_path / "src"
+    nested.mkdir()
+    assert Config.load(nested).ceilings["cognitive_complexity"] != 3.0
