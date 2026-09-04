@@ -184,7 +184,13 @@ def llm_lane() -> bool:
 
 
 def corpus_lane(*, fetch: bool) -> bool:
-    """Phase exit criteria, measured on real repositories."""
+    """Phase exit criteria, measured on real repositories.
+
+    Also where the rule engine's parity with the hand-coded gate is asserted. That belongs
+    here rather than in the fast lane for two reasons: it needs the pinned corpora, and a
+    fixture is the wrong instrument -- the evaluator's quadratic first join was invisible
+    on twelve files and took thirteen minutes on 1,913.
+    """
     lane = Lane("corpus (phase exit criteria)")
     if fetch:
         lane.run(
