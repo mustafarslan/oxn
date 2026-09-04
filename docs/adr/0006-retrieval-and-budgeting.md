@@ -112,6 +112,15 @@ or not the task description happens to use its vocabulary, and the failure of a 
 a two-line task ("fix the parser") is exactly that it cannot see this. Retrieval ranks what scope
 cannot decide.
 
+*Added 2026-09-04, from the measurement below.* When the caller gives **no** target files —
+`get_architectural_context("add a retry to the HTTP client")` with nothing else — there is no scope
+to partition by, and section 5 shows text alone performs near chance on a single-project corpus. So
+that path needs a third input: a **breadth prior**, the amount of code each constraint governs.
+It is the same relation the blast radius reads, marginalized over the repository instead of over a
+task's files, and on OXN's own labels it beats the text ranker outright. Naming it as a prior rather
+than letting it hide inside the text score keeps it visible in the emitted bundle, where "this
+governs most of the tree" is a fact the agent should see rather than a thumb on a scale it cannot.
+
 The bundle is capped by count, from `thresholds.py`, and emitted as a typed structure — pydantic,
 already a dependency, so the JSON Schema §3.2 asks for is free. Never prose paragraphs.
 
@@ -138,6 +147,55 @@ paraphrase of an ADR title:
 
 Both land as **tests asserting a floor**, not scripts that print a number. A metric that lives in a
 script drifts silently; one that lives in a test fails the build the day it regresses.
+
+### 5a. What the git labels actually measured — a negative result, recorded the day it appeared
+
+*Added 2026-09-04, before the bundle was built, which is the point of having measured first.*
+
+The labels extract cleanly: 93 commits, 53 pairs, five discriminating decisions. ADR-0001 is
+excluded because its scope is `**` — a decision that governs everything is correct for every commit
+and discriminates nothing, and a label set with an always-right answer measures nothing. Documents
+are title, tags and prose; `applies-to` is **not** in the ranked text, because the labels are made
+of it and a ranker reading its own gold would report a number about nothing.
+
+| ranker | P@1 | MRR |
+|---|---|---|
+| BM25 over decision text | 0.377 | 0.584 |
+| uniform random | 0.362 | — |
+| constant, ordered by how much code each decision governs | 0.698 | 0.787 |
+| constant, always the longest decision | 0.245 | — |
+
+**BM25 over ADR prose performs at chance here, and a constant beats it.** Four things that number
+is, and one it is not:
+
+1. **It is largely a statement about the labels.** The gold is *scope* and the ranker has no scope,
+   so the task being scored is "can a commit subject predict which decisions' globs the changed
+   files fall under". `refactor: halstead 15 -> under` cannot, and should not be expected to.
+2. **The winning baseline is that same signal wearing a hat.** The constant order is
+   `[0002, 0004, 0003, 0005, 0006]`, which is the decisions sorted by how much of the tree they
+   govern; it is estimated on the labels it is scored against, so it is not independent evidence.
+   It is still a baseline any ranker must beat, and this one does not.
+3. **The corpus is a single project, so its vocabulary is shared.** The misses are not
+   unanswerable: 32 of 33 share content words with a gold decision, a median of three. Every ADR
+   here discusses architecture, latency and the graph, so the words that match match everywhere.
+   This is the specific way a six-document, one-project corpus fails, and it is why section 5(a)
+   requires an external corpus rather than merely preferring one.
+4. **It is not a ranker bug.** Dropping ~20 stopwords moves P@1 by 0.000 and MRR by 0.001 —
+   expected, since with five documents the IDF ratio between a rare term and a universal one is
+   about 16:1, so common words never decide a rank. No stopword list was added on the strength of a
+   diagnostic that said it would do nothing.
+
+What it is **not** is a verdict on BM25 or on retrieval. It is a verdict on this corpus, and it
+converts section 4's argument into evidence: scope decides, text orders within. The external corpus
+moves from planned to load-bearing — no positive claim about text retrieval is available without
+it — and the quality floor lives there, not here.
+
+One reflexivity note, since it caught us while writing this section: **the corpus contains this
+document**, so recording the numbers changed the text being measured. The recorded values are taken
+after this amendment, and any edit to any ADR moves them. That is deliberate; the test carries the
+delta the way `.oxn/baseline.json` carries the gate's. Writing 0.584 into the table above left it
+at 0.584 — a fixed point rather than a regress, since substituting one rare token for another of
+the same length changes no document's length and no other term's frequency.
 
 ## Consequences
 

@@ -1,0 +1,427 @@
+{
+  "extracted_at": "92d996d7d1a801718aa70139acb72bf45c88e6a7",
+  "rule": "task = commit subject; gold = decisions whose applies-to covers a changed file. Decisions scoped `**` are excluded: one that governs everything discriminates nothing. Commits with no covering decision are dropped.",
+  "decisions": [
+    "ADR-0002",
+    "ADR-0003",
+    "ADR-0004",
+    "ADR-0005",
+    "ADR-0006"
+  ],
+  "pairs": [
+    {
+      "sha": "34078625c25f4226785e53610b8a1788f9953f91",
+      "task": "feat: P0 foundations -- package scaffold, CI, grammar verification",
+      "gold": [
+        "ADR-0003"
+      ]
+    },
+    {
+      "sha": "f74c475b56fecf8a733b39724317dd1feeb03b90",
+      "task": "feat: P1 parse layer and code graph IR",
+      "gold": [
+        "ADR-0002",
+        "ADR-0003",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "c10fdb7c55151b9219ac28ff70df51300c164102",
+      "task": "feat: P2 Tier-1 metrics and the differential oracle harness",
+      "gold": [
+        "ADR-0002",
+        "ADR-0003",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "24a868a21c82e1e877bea90943867b2c6c559f3b",
+      "task": "feat: P3 volume/erosion and VCS behavioural tiers",
+      "gold": [
+        "ADR-0002",
+        "ADR-0003",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "e911c52e39b3d8c754ba78c1d1081583dd96f5fb",
+      "task": "feat: P4 module graph, layer contracts and Tier-2 architecture metrics",
+      "gold": [
+        "ADR-0002",
+        "ADR-0003",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "d3b8e0520fa3f6cd73be30f37c7e3a792b615932",
+      "task": "feat: P5 part 1 -- SCIP ingestion, the L2 resolution rung",
+      "gold": [
+        "ADR-0002",
+        "ADR-0003",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "79d67c95dcff42cf8d7e784275dade4497bee3f0",
+      "task": "fix: tsconfig comment stripping, and reject unknown --by values",
+      "gold": [
+        "ADR-0002",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "aabf06a14d31f6dd15190c36719ae3061bb5f1a9",
+      "task": "feat: P5 part 2 -- L0 scope resolver, L1 symbol table, graded against L2",
+      "gold": [
+        "ADR-0002"
+      ]
+    },
+    {
+      "sha": "0cbd36e02d540e9a3f2ad38a18b6ca1187137355",
+      "task": "feat: P6 part 1 -- Tier-3 cohesion, coupling and call-graph metrics",
+      "gold": [
+        "ADR-0002",
+        "ADR-0003"
+      ]
+    },
+    {
+      "sha": "71c710b1d6f1dbef55d3a56fb1a72aba47dd3eef",
+      "task": "feat: P6 part 2 -- Go, Rust and Java profiles, plus an Ollama test lane",
+      "gold": [
+        "ADR-0002",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "312dda9b69a22b03bc94c5b0b34448de337d2bf9",
+      "task": "fix: `oxn metrics <file>` answered about the project, not the file",
+      "gold": [
+        "ADR-0002",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "b318d71e3e1d6cfaaa0471ba38330eda21492ee7",
+      "task": "refactor: apply the repair harness's first accepted candidate",
+      "gold": [
+        "ADR-0002"
+      ]
+    },
+    {
+      "sha": "dfa49e6304aae229d19c7d8314e1056eefdbdf2d",
+      "task": "feat: P2.5 -- wire `oxn check`, which has been a stub since P0",
+      "gold": [
+        "ADR-0002",
+        "ADR-0003",
+        "ADR-0004",
+        "ADR-0005"
+      ]
+    },
+    {
+      "sha": "651ed5f47ea1c3d3442d55c4665a6f117a4a9544",
+      "task": "feat: P2.5 -- `oxn init`, the baseline ratchet, and the calibration surface",
+      "gold": [
+        "ADR-0003"
+      ]
+    },
+    {
+      "sha": "a3049855895d82a9b1a3ffe05193f5b6ac1d335d",
+      "task": "fix: type-only imports, the contract ratchet, and OXN's own layering",
+      "gold": [
+        "ADR-0002",
+        "ADR-0003",
+        "ADR-0004",
+        "ADR-0005"
+      ]
+    },
+    {
+      "sha": "437b81b9177ebaff8f674f6b50421f3d9e0b4872",
+      "task": "fix: the gate had no anti-shredding rule, and told agents it did",
+      "gold": [
+        "ADR-0002",
+        "ADR-0003",
+        "ADR-0005"
+      ]
+    },
+    {
+      "sha": "823ff516ee12ab7ed4a0cf2522532ed92eb15861",
+      "task": "fix: two holes in the shredding rule, both of my own making",
+      "gold": [
+        "ADR-0003",
+        "ADR-0005"
+      ]
+    },
+    {
+      "sha": "a7d30b8047d4dd423c884d17a647d71e59ad6227",
+      "task": "refactor: _walk, 52 -> 7, with every score in five languages unchanged",
+      "gold": [
+        "ADR-0002"
+      ]
+    },
+    {
+      "sha": "a637a972bf38c4be1c77b16b8cce518b086b5212",
+      "task": "refactor: _score_comprehension 13 -> 6, and cognitive.py is clean",
+      "gold": [
+        "ADR-0002"
+      ]
+    },
+    {
+      "sha": "9b9ee73acf5da7fc802ced34b6e2cf5ba3f71c2f",
+      "task": "refactor: Tarjan 34 -> 7, with the algorithm's state given a home",
+      "gold": [
+        "ADR-0002",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "4cc87319d8d4ff92b6e6dd4dd9eb7a78bd74e1c9",
+      "task": "fix: a non-deterministic report, an undiagnosable model failure, and _python_candidates",
+      "gold": [
+        "ADR-0002",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "92762686b5fd1104770164cbbe0e8c0c7c71d044",
+      "task": "fix: a model that reasons itself out of budget, and `self` counted as a parameter",
+      "gold": [
+        "ADR-0002"
+      ]
+    },
+    {
+      "sha": "3f121d6204f10066aa75fc35f8603a248c428a19",
+      "task": "refactor: _strip_jsonc 27 -> a two-state scanner, and its first tests",
+      "gold": [
+        "ADR-0002",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "1b4f9535a4bd013190cfba1295e70948cebee644",
+      "task": "refactor: detect_smells 31 -> one function per smell",
+      "gold": [
+        "ADR-0002",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "f3615671af53f123d035f04ebc61bb7cca443cb4",
+      "task": "refactor: build_file 37 -> 6, by hand, because the harness could not",
+      "gold": [
+        "ADR-0002",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "28a5b9b5e10c0a6f4befc2c1f5b819712dc62104",
+      "task": "refactor: scopes._walk 28 -> under, and _bind_from with it",
+      "gold": [
+        "ADR-0002"
+      ]
+    },
+    {
+      "sha": "ca8e92211d94e624d898ae43240117a73512abb5",
+      "task": "refactor: build_dependency_graph 26 -> 5",
+      "gold": [
+        "ADR-0002",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "1e0a8ad6be591176204b02055ffbc49c65d8df94",
+      "task": "refactor: _extend, grade_file -- and the grading path gets its first running test",
+      "gold": [
+        "ADR-0002"
+      ]
+    },
+    {
+      "sha": "f3d84ecc17e763cfd68c9299d8158183a7f6599f",
+      "task": "refactor: ck_metrics 24 -> 7, and its three optional arguments become one question",
+      "gold": [
+        "ADR-0002"
+      ]
+    },
+    {
+      "sha": "d51241acd834ed0a1322d80f27550d532aafa3f7",
+      "task": "refactor: the member model -- _base_names, _declared_fields, build_class_models",
+      "gold": [
+        "ADR-0002"
+      ]
+    },
+    {
+      "sha": "4fd12bd423cbf2b4ce293d9c064e70bf6804da96",
+      "task": "fix: two bugs in Rust glob imports, found by writing the first tests for them",
+      "gold": [
+        "ADR-0002",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "a61334380e71b550c7b18fac5c59325cfb21b4b7",
+      "task": "refactor: check_contracts 22 -> 10, and contracts.py is clean",
+      "gold": [
+        "ADR-0002",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "a834cdf4de0359d6491b66419122b5ef0c2d5366",
+      "task": "fix: two bugs in Java imports, the same shape as the Rust pair",
+      "gold": [
+        "ADR-0002",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "294d01b6103472ad6aa3f7f0d83713415c35497c",
+      "task": "refactor: halstead 15 -> under, _components 20 -> clean",
+      "gold": [
+        "ADR-0002"
+      ]
+    },
+    {
+      "sha": "0768388e99ab1ec9e7060d3b6204e0b59bc76baf",
+      "task": "refactor: parse_log 17, _resolve_ecmascript 18 -- resolve.py and log.py clean",
+      "gold": [
+        "ADR-0002",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "7c4018b5065e40c7e4c50a4f0b57ed03bafcf2f5",
+      "task": "fix: `*` counted as a parameter; and one Output record for six report commands",
+      "gold": [
+        "ADR-0003"
+      ]
+    },
+    {
+      "sha": "9684e5eed4f2fba8fa136ed3260151002828b5a7",
+      "task": "refactor: _parse_occurrence, build_project_symbols, _collect_accesses",
+      "gold": [
+        "ADR-0002"
+      ]
+    },
+    {
+      "sha": "573c1981741fa54e4284587af5557b1519fbbda8",
+      "task": "refactor: four graph and metric functions, each verified against an oracle",
+      "gold": [
+        "ADR-0002",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "bc108089c0f44fd887d0d558184a4981e52ae245",
+      "task": "refactor: Indexer.index, normalized_tokens -- and one leaf walk instead of two",
+      "gold": [
+        "ADR-0002",
+        "ADR-0004"
+      ]
+    },
+    {
+      "sha": "bc2408f769199529cee0eb2dc44000b99b761511",
+      "task": "refactor: src/oxn reaches zero violations",
+      "gold": [
+        "ADR-0002"
+      ]
+    },
+    {
+      "sha": "f7c392b7968d9da3d6161a2fba3971a5cb2be8cf",
+      "task": "feat: P7 increment 1a -- the rule model and evaluator",
+      "gold": [
+        "ADR-0005"
+      ]
+    },
+    {
+      "sha": "44378c4f2fbfb9e1cb84a3e8b96901a9646b587d",
+      "task": "feat: P7 increment 1b -- facts, the eleven rules, and parity with the hand-coded gate",
+      "gold": [
+        "ADR-0005"
+      ]
+    },
+    {
+      "sha": "7bd9f7173f2d0a4257d4c1b0c8ede29c46588872",
+      "task": "feat: P7 increment 2 -- ADR frontmatter compiles to the same rules as oxn.yaml",
+      "gold": [
+        "ADR-0005",
+        "ADR-0006"
+      ]
+    },
+    {
+      "sha": "098ba58f4bde3999222b342353a8041c2948e7b8",
+      "task": "fix: the joins were scans, and the evaluator was 555x slower than it should be",
+      "gold": [
+        "ADR-0005"
+      ]
+    },
+    {
+      "sha": "a6a311a6ce4690f2c007a608aa8c19a78eeec899",
+      "task": "feat: P7 -- the rule engine is the gate, and an ADR can now block a build",
+      "gold": [
+        "ADR-0003",
+        "ADR-0005",
+        "ADR-0006"
+      ]
+    },
+    {
+      "sha": "4ea15ce3edd97350d7b15d287354c29d2751dd2e",
+      "task": "docs: the hand-coded checks are the oracle, and they stay",
+      "gold": [
+        "ADR-0003",
+        "ADR-0005"
+      ]
+    },
+    {
+      "sha": "e4e337f042a74a0eddd027d67f0e15676061298e",
+      "task": "fix: the hook checked the whole repository on every edit, 7.27s against a 200ms budget",
+      "gold": [
+        "ADR-0003"
+      ]
+    },
+    {
+      "sha": "9e9fee02ef607fe6f666cbb47e1aba238d905809",
+      "task": "fix: reading the hook payload could wait for an EOF that never comes",
+      "gold": [
+        "ADR-0003"
+      ]
+    },
+    {
+      "sha": "1a4692f6f0bd0a0fdc4efe33f35f065a55b2d581",
+      "task": "fix: `exclude` in oxn.yaml was parsed, validated, and read by nothing",
+      "gold": [
+        "ADR-0002",
+        "ADR-0003",
+        "ADR-0004",
+        "ADR-0005"
+      ]
+    },
+    {
+      "sha": "b5adc71b5dc23da15aff96cbbb1d7e42d7bb2b55",
+      "task": "fix: the gate weakened to defaults when run from a subdirectory",
+      "gold": [
+        "ADR-0005"
+      ]
+    },
+    {
+      "sha": "bec0d2fe720903f2fd50f26f0b8c95784aee1fdd",
+      "task": "fix: `oxn init` wired the directory it was run from, not the repository",
+      "gold": [
+        "ADR-0003"
+      ]
+    },
+    {
+      "sha": "0a2f150824150794a7855093bceb21c54230ebe8",
+      "task": "feat: P8 increment 1 -- the ADR body travels with the decision",
+      "gold": [
+        "ADR-0005",
+        "ADR-0006"
+      ]
+    },
+    {
+      "sha": "92d996d7d1a801718aa70139acb72bf45c88e6a7",
+      "task": "feat: P8 increment 2 -- BM25 in the standard library, and the one-way dependency",
+      "gold": [
+        "ADR-0006"
+      ]
+    }
+  ]
+}
