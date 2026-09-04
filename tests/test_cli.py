@@ -161,3 +161,70 @@ def test_unknown_granularity_is_rejected_not_silently_defaulted(tmp_path) -> Non
     payload = json.loads(result.stdout)
     assert payload["status"] == "ERROR"
     assert "nonsense" in payload["errors"]
+
+
+# ---- the PostToolUse payload on stdin ----------------------------------------------------
+
+
+def _hook(directory, payload: str | None, *args: str) -> dict:
+    """`oxn check --json` as the hook runs it: no path, the payload on stdin."""
+    result = subprocess.run(
+        [sys.executable, "-m", "oxn.cli", "check", "--json", *args],
+        capture_output=True,
+        text=True,
+        cwd=directory,
+        input=payload if payload is not None else "",
+    )
+    assert result.returncode in (0, 2), result.stderr
+    return json.loads(result.stdout)
+
+
+def test_the_payload_names_the_file_the_agent_edited(tmp_path) -> None:
+    (tmp_path / "edited.py").write_text("def one(a):\n    return a\n")
+    (tmp_path / "untouched.py").write_text("def two(a):\n    return a\n")
+    payload = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": "edited.py"}})
+    assert _hook(tmp_path, payload)["paths"] == ["edited.py"]
+
+
+def test_a_payload_that_edited_no_file_checks_nothing_rather_than_everything(tmp_path) -> None:
+    """The trap this guards: a `"."` fallback here reinstates the whole-tree walk.
+
+    The matcher in `.claude/settings.json` can be widened to a tool that writes no file, and
+    the payload shape is not ours to control. Falling back to the repository would turn every
+    such invocation into seconds of work with nothing to report -- which is precisely the bug
+    this branch was written to remove.
+    """
+    (tmp_path / "bystander.py").write_text("def one(a):\n    return a\n")
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": "ls"}})
+    report = _hook(tmp_path, payload)
+    assert report["paths"] == []
+    assert report["status"] == "PASSED"
+
+
+def test_a_file_the_edit_removed_is_not_reported_as_a_missing_path(tmp_path) -> None:
+    """Deleting a file is a legitimate edit; failing the hook for it is not legitimate."""
+    payload = json.dumps({"tool_name": "Write", "tool_input": {"file_path": "gone.py"}})
+    report = _hook(tmp_path, payload)
+    assert report["errors"] == {}
+    assert report["paths"] == []
+
+
+def test_an_explicit_path_wins_over_the_payload(tmp_path) -> None:
+    """CI and humans pass paths, and a stray payload on stdin must not redirect them."""
+    (tmp_path / "asked.py").write_text("def one(a):\n    return a\n")
+    (tmp_path / "edited.py").write_text("def two(a):\n    return a\n")
+    payload = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": "edited.py"}})
+    assert _hook(tmp_path, payload, "asked.py")["paths"] == ["asked.py"]
+
+
+def test_empty_stdin_still_means_the_whole_tree(tmp_path) -> None:
+    """No payload is the manual invocation, and `oxn check --json` there means everything."""
+    (tmp_path / "one.py").write_text("def one(a):\n    return a\n")
+    (tmp_path / "two.py").write_text("def two(a):\n    return a\n")
+    assert sorted(_hook(tmp_path, "")["paths"]) == ["one.py", "two.py"]
+
+
+def test_stdin_that_is_not_a_hook_payload_is_ignored(tmp_path) -> None:
+    """Something else on the pipe is not a reason to check nothing."""
+    (tmp_path / "one.py").write_text("def one(a):\n    return a\n")
+    assert _hook(tmp_path, "not json at all\n")["paths"] == ["one.py"]

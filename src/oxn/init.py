@@ -34,6 +34,10 @@ MARKER_END = "<!-- oxn:end -->"
 
 #: The hook command. Matched literally when deciding whether OXN is already wired, so it
 #: must stay stable: changing it silently installs a second hook beside the first.
+#:
+#: It names no path on purpose. Claude Code sends the `PostToolUse` payload on stdin and
+#: `oxn.cli._hook_targets` takes the edited file from it, which keeps this string stable
+#: across every existing install while checking one file instead of the tree.
 HOOK_COMMAND = "oxn check --json"
 
 CLAUDE_SECTION = f"""{MARKER_BEGIN}

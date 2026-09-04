@@ -13,6 +13,7 @@ as met. Every timing here now runs the real command over a real file.
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -26,8 +27,13 @@ HARD_CEILING_S = 0.400
 WORKLOAD = Path("src/oxn/metrics/cognitive.py")
 
 
-def _time_check(directory: Path, *args: str) -> float:
-    """Best of five runs of the real fast path, in seconds."""
+def _time_check(directory: Path, *args: str, payload: str | None = None) -> float:
+    """Best of five runs of the real fast path, in seconds.
+
+    ``stdin`` is explicit rather than inherited: the fast path now reads a hook payload from
+    it, and a test that leaves it to whatever pytest happened to attach is measuring the
+    runner rather than OXN.
+    """
     best = float("inf")
     for _ in range(5):
         start = time.perf_counter()
@@ -36,6 +42,8 @@ def _time_check(directory: Path, *args: str) -> float:
             capture_output=True,
             cwd=directory,
             check=False,
+            input=payload.encode() if payload is not None else None,
+            stdin=None if payload is not None else subprocess.DEVNULL,
         )
         # 0 is clean and 2 is "violations found". Both are successful runs; only 1 means
         # OXN failed, and a failed run is not a measurement.
@@ -88,3 +96,39 @@ def test_the_cache_makes_a_second_look_cheaper(tmp_path) -> None:
     )
     warm = _time_check(tmp_path, "workload.py")
     assert warm < HARD_CEILING_S, f"a warm run took {warm * 1000:.0f} ms"
+
+
+def test_the_hook_as_deployed_measures_one_file_not_the_repository(tmp_path) -> None:
+    """The shape `oxn init` actually installs: no arguments, the payload on stdin.
+
+    This is the test whose absence let a 36x budget breach ship. `oxn init` writes the hook
+    command as `oxn check --json` with no path, and every timing above passes one -- so the
+    suite measured 65 ms on a route the deployment never took, while the deployed route
+    walked the whole tree. On OXN's own repository with the benchmark corpora fetched that
+    was **7.27 s per edit** against a 200 ms budget, and warm, because re-walking 2,507 files
+    is not something a cache makes cheaper.
+
+    The directory here holds a second file precisely so that "checked one file" and "checked
+    the directory" are distinguishable outcomes rather than the same number.
+    """
+    shutil.copy(WORKLOAD, tmp_path / "workload.py")
+    shutil.copy(WORKLOAD, tmp_path / "bystander.py")
+    payload = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": "workload.py"}})
+
+    result = subprocess.run(
+        [sys.executable, "-m", "oxn.cli", "check", "--json"],
+        capture_output=True,
+        cwd=tmp_path,
+        check=False,
+        input=payload.encode(),
+    )
+    assert result.returncode in (0, 2), result.stderr.decode()
+    assert json.loads(result.stdout)["paths"] == ["workload.py"], (
+        "the hook checked something other than the file that was edited"
+    )
+
+    elapsed = _time_check(tmp_path, payload=payload)
+    assert elapsed < HARD_CEILING_S, (
+        f"the deployed hook shape took {elapsed * 1000:.0f} ms, over the "
+        f"{HARD_CEILING_S * 1000:.0f} ms hard ceiling"
+    )
