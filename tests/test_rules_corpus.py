@@ -18,6 +18,7 @@ below are deliberately loose -- they catch a regression in kind, not a slow afte
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -69,7 +70,12 @@ def _identity(finding) -> tuple:
 def corpus(request):
     """Both implementations run over one corpus, with the evaluation timed."""
     root = ROOTS[request.param]
-    settings = Config.load()
+    # OXN's own `oxn.yaml` excludes `benchmarks/corpora/*` -- the corpora are fetched
+    # third-party trees and have no business in OXN's own gate or metrics. These tests are
+    # the one caller that *wants* them, so the exclusion is dropped here explicitly. Without
+    # this the corpus is empty and parity holds vacuously; `MIN_FINDINGS` below is what
+    # turns that from a silent pass into a failure.
+    settings = replace(Config.load(), exclude=())
     targets = [root]
 
     report = CheckReport()
@@ -77,7 +83,7 @@ def corpus(request):
 
     with Indexer() as indexer:
         indexer.index(targets)
-        sources = list(iter_source_files(targets))
+        sources = indexer.sources(targets)
         wanted = [indexer.relative(path) for path in sources]
         layers = assign_layers(wanted, settings.layers) if settings.layers else {}
         facts = file_facts(indexer.store, wanted, settings, layers)
@@ -145,7 +151,7 @@ def test_the_hook_path_reports_no_adr_scope_findings(corpus) -> None:
     """
     from oxn.check import run_check
 
-    settings = Config.load()
+    settings = replace(Config.load(), exclude=())
     one_file = next(iter(sorted(iter_source_files([ROOTS[corpus["name"]]]))))
     report = run_check([str(one_file)], config=settings, deep=False, use_baseline=False)
     assert not [f for f in report.findings + report.advisory if f.rule.startswith("adr:")]

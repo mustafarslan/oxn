@@ -41,3 +41,12 @@ contracts:
 # Fixtures are source files on purpose -- a hand-built shred is supposed to look bad.
 advisory:
   - "tests/fixtures/*"
+
+# The benchmark corpora are fetched third-party trees (benchmarks/manifest.yaml), gitignored
+# and present only on machines that ran `scripts/fetch_corpora.py`. Measuring them alongside
+# OXN's own code makes every repository-wide number depend on who fetched what: before this
+# line, a bare `oxn check --deep` here reported 1,083 violations in other people's code.
+# `tests/test_rules_corpus.py` drops this exclusion explicitly -- it is the one caller whose
+# whole subject is those trees.
+exclude:
+  - "benchmarks/corpora/*"

@@ -234,7 +234,11 @@ def measure_corpus(root: Path, index_path: Path, language: str = "python") -> Re
     from oxn.scip.join import join_document
 
     index = load_index(index_path).by_path()
-    files = list(iter_source_files([root]))
+    # The grader measures the code the gate measures, `oxn.yaml`'s exclusions included:
+    # resolution accuracy over vendored code is not a number about this project.
+    from oxn.config import Config
+
+    files = list(iter_source_files([root], base=root, exclude=Config.load(root).exclude))
     graph = build_dependency_graph(root, files)
 
     parsed_files: dict[str, tuple[LanguageProfile, Node, list[Entity]]] = {}

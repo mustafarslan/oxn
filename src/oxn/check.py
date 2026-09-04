@@ -162,6 +162,24 @@ def run_check(
     return report
 
 
+def _indexer(settings: Config) -> Any:
+    """An indexer rooted where the config is, and told what the config excludes.
+
+    Both halves matter. `exclude`, `advisory` and `layers` are globs against the project
+    root, and a finding's path is two thirds of the key the baseline is stored under -- so an
+    indexer rooted somewhere else does not merely mis-filter, it silently resets every
+    accepted violation. Rooting it here is what makes `run_check(config=...)` mean anything.
+    """
+    from oxn.graph.indexer import Indexer
+    from oxn.graph.store import DEFAULT_CACHE_PATH
+
+    return Indexer(
+        root=settings.root,
+        cache_path=settings.root / DEFAULT_CACHE_PATH,
+        exclude=settings.exclude,
+    )
+
+
 def _rule_findings(
     targets: list[Path], settings: Config, report: CheckReport, *, deep: bool
 ) -> list[Finding]:
@@ -173,17 +191,15 @@ def _rule_findings(
     rule that changes here and not there fails parity loudly (ADR-0005, amended 2026-09-04).
     """
     from oxn.graph.contracts import assign_layers
-    from oxn.graph.indexer import Indexer
-    from oxn.graph.sources import iter_source_files
     from oxn.rules.adr import adr_facts, load_decisions, unscoped_rule
     from oxn.rules.builtin import rules_for_scope
     from oxn.rules.engine import evaluate
     from oxn.rules.facts import file_facts, graph_facts
 
-    with Indexer() as indexer:
+    with _indexer(settings) as indexer:
         index = indexer.index(targets)
         report.errors.update(index.errors)
-        sources = list(iter_source_files(targets))
+        sources = indexer.sources(targets)
         wanted = [indexer.relative(path) for path in sources]
         report.paths = wanted
         layer_of = assign_layers(wanted, settings.layers) if settings.layers else {}
@@ -224,14 +240,12 @@ def _as_finding(found: Any) -> Finding:
 def _measure(targets: list[Path], settings: Config, report: CheckReport) -> list[Finding]:
     """Tier-1 ceilings over every entity in `targets`. The hook path, and the whole budget."""
     from oxn.graph.contracts import assign_layers
-    from oxn.graph.indexer import Indexer
-    from oxn.graph.sources import iter_source_files
 
     findings: list[Finding] = []
-    with Indexer() as indexer:
+    with _indexer(settings) as indexer:
         index = indexer.index(targets)
         report.errors.update(index.errors)
-        wanted = [indexer.relative(path) for path in iter_source_files(targets)]
+        wanted = [indexer.relative(path) for path in indexer.sources(targets)]
         report.paths = wanted
         layer_of = assign_layers(wanted, settings.layers) if settings.layers else {}
 
@@ -291,11 +305,9 @@ def _architecture(targets: list[Path], settings: Config, report: CheckReport) ->
         return []
     from oxn.graph.contracts import check_contracts
     from oxn.graph.depgraph import build_dependency_graph
-    from oxn.graph.indexer import Indexer
-    from oxn.graph.sources import iter_source_files
 
-    with Indexer() as indexer:
-        files = list(iter_source_files(targets))
+    with _indexer(settings) as indexer:
+        files = indexer.sources(targets)
         graph = build_dependency_graph(indexer.root, files)
         # `check_contracts` wants the file-level graph: a layer is a set of paths, and a
         # violation has to name the file that caused it, not the directory it sits in.

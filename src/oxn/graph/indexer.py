@@ -19,7 +19,7 @@ from oxn.graph.store import DEFAULT_CACHE_PATH, GraphStore
 from oxn.profiles import profile_for_path
 
 if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Sequence
 
     from oxn.graph.model import ParsedFile
 
@@ -64,11 +64,32 @@ class Indexer:
         cache_path: Path | str = DEFAULT_CACHE_PATH,
         *,
         measure: bool = True,
+        exclude: Sequence[str] = (),
     ) -> None:
         self.root = Path(root).resolve()
         self.store = GraphStore(cache_path)
         self.measure = measure
+        #: `oxn.yaml`'s `exclude` globs. Held here so that every caller asking this indexer
+        #: for files gets the same answer, and so the walk skips them before parsing rather
+        #: than after: excluded code that is parsed and then dropped costs the same as
+        #: excluded code that is measured.
+        self.exclude = tuple(exclude)
         self._parsers: dict[str, object] = {}
+
+    def sources(self, roots: Iterable[Path] | None = None) -> list[Path]:
+        """Every file this indexer will look at under `roots`, exclusions applied.
+
+        The single answer to "which files", so a caller cannot measure one set and report
+        another. `Config.exclude` was accepted and validated by `oxn.yaml` for four phases
+        while no code read it; asking the indexer is how that stops being possible.
+        """
+        return list(
+            iter_source_files(
+                list(roots) if roots is not None else [self.root],
+                base=self.root,
+                exclude=self.exclude,
+            )
+        )
 
     def _parser(self, language: str) -> object:
         if language not in self._parsers:
@@ -148,7 +169,7 @@ class Indexer:
         report = IndexReport()
         seen: set[str] = set()
 
-        for path in iter_source_files(targets):
+        for path in self.sources(targets):
             rel = self.relative(path)
             seen.add(rel)
             self._record(path, rel, report, force=force)

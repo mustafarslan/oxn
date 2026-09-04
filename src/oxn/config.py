@@ -95,6 +95,12 @@ class Config:
     layer_ceilings: dict[str, dict[str, float]] = field(default_factory=dict)
     layers: tuple[Layer, ...] = ()
     contracts: tuple[Contract, ...] = ()
+    #: Path globs this project declares out of scope: generated code, vendored trees,
+    #: fetched corpora. Matched against the repo-relative path, and applied wherever files
+    #: are found -- the walk, and a file named directly on the command line -- because a
+    #: hook that names the file the agent just edited would otherwise gate exactly the
+    #: generated code this key exists to exempt. Distinct from `advisory`, which reports a
+    #: finding without blocking; `exclude` means the file is never looked at.
     exclude: tuple[str, ...] = ()
     #: Path globs whose findings are reported but never block. The escape hatch that keeps a
     #: gate from being switched off wholesale.

@@ -71,3 +71,52 @@ def test_polyglot_tree_indexes_both_languages(repo, tmp_path) -> None:
         indexer.index()
         assert indexer.store.entities_for("src/c.ts"), "TypeScript file produced no entities"
         assert indexer.store.entities_for("src/a.py")
+
+
+# ---- `oxn.yaml`'s `exclude`, which was accepted and ignored for four phases --------------
+
+
+def test_declared_exclusions_are_applied_to_the_walk(repo) -> None:
+    found = {p.name for p in iter_source_files([repo], base=repo, exclude=("src/b.py",))}
+    assert found == {"a.py", "c.ts"}
+
+
+def test_a_declared_exclusion_applies_to_a_file_named_directly(repo) -> None:
+    """The asymmetry with `DEFAULT_EXCLUDES`, and it is deliberate.
+
+    A named file passes through the directory exclusions -- asking for `node_modules/junk.ts`
+    by hand is asking for it. `oxn.yaml`'s `exclude` is a different claim: the project says
+    this code is not ours to measure, and that holds however the file is reached. It has to,
+    because the `PostToolUse` hook names the one file the agent edited, so an exclusion that
+    only applied to directory walks would gate the generated code it was written to exempt.
+    """
+    named = repo / "src" / "b.py"
+    assert list(iter_source_files([named])) == [named]
+    assert list(iter_source_files([named], base=repo, exclude=("src/*.py",))) == []
+
+
+def test_the_indexer_never_parses_what_the_project_excluded(repo, tmp_path) -> None:
+    """Filtering the file list after indexing would give the same findings at the same cost.
+
+    The whole point is the cost: excluded code that is parsed and then dropped is as
+    expensive as excluded code that is measured.
+    """
+    indexer = Indexer(root=repo, cache_path=tmp_path / "cache" / "g.db", exclude=("src/*.ts",))
+    report = indexer.index([repo])
+    indexer.close()
+    assert report.parsed == 2, "the TypeScript file was parsed despite being excluded"
+
+
+def test_a_check_ignores_excluded_files_entirely(repo, tmp_path) -> None:
+    """End to end, through the config the way a user writes it."""
+    from oxn.check import run_check
+    from oxn.config import Config
+
+    (repo / "src" / "generated.py").write_text("def wide(a, b, c, d, e, f, g, h):\n    return a\n")
+    over_ceiling = run_check([str(repo / "src")], config=Config.load(repo), use_baseline=False)
+    assert any(f.rule == "parameter_count" for f in over_ceiling.findings)
+
+    (repo / "oxn.yaml").write_text("exclude:\n  - 'src/generated.py'\n")
+    excluded = run_check([str(repo / "src")], config=Config.load(repo), use_baseline=False)
+    assert excluded.findings == []
+    assert "src/generated.py" not in excluded.paths

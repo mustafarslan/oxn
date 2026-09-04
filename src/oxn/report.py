@@ -26,6 +26,27 @@ if TYPE_CHECKING:  # pragma: no cover
     from oxn.graph.indexer import Indexer
 
 
+def _indexer() -> Indexer:
+    """An indexer that honours `oxn.yaml`'s `exclude`, like the gate does.
+
+    The report path is not a gate, so it reads no ceilings -- but *which files are ours to
+    measure* is the same question here as there. A metrics report that ranks vendored or
+    generated code alongside hand-written code is the noise `docs/metrics.md` warns about,
+    and a project that has already declared that boundary should not have to declare it
+    twice.
+    """
+    from oxn.config import Config
+    from oxn.graph.indexer import Indexer as _Indexer
+    from oxn.graph.store import DEFAULT_CACHE_PATH
+
+    settings = Config.load()
+    return _Indexer(
+        root=settings.root,
+        cache_path=settings.root / DEFAULT_CACHE_PATH,
+        exclude=settings.exclude,
+    )
+
+
 def run_parse(
     paths: list[str],
     output: Output = TO_JSON,
@@ -34,7 +55,6 @@ def run_parse(
     stats_only: bool = False,
 ) -> dict[str, Any]:
     """Index ``paths`` and render the result. Returns the payload either way."""
-    from oxn.graph.indexer import Indexer
 
     targets = [Path(raw) for raw in paths]
     missing = [str(target) for target in targets if not target.exists()]
@@ -46,7 +66,7 @@ def run_parse(
         _emit(failure, output)
         return failure
 
-    with Indexer() as indexer:
+    with _indexer() as indexer:
         report = indexer.index(targets, force=force)
         payload: dict[str, Any] = {
             "status": "OK",
@@ -62,9 +82,7 @@ def run_parse(
 
 def _file_entries(indexer: Indexer, targets: list[Path]) -> list[dict[str, Any]]:
     """The containment skeleton, per file, in source order."""
-    from oxn.graph.sources import iter_source_files
-
-    relatives = sorted({indexer.relative(path) for path in iter_source_files(targets)})
+    relatives = sorted({indexer.relative(path) for path in indexer.sources(targets)})
     entries: list[dict[str, Any]] = []
     for rel in relatives:
         entities: list[dict[str, Any]] = []
@@ -116,8 +134,6 @@ def run_metrics(
     explain: bool = False,
 ) -> dict[str, Any]:
     """Index ``paths`` and rank their entities by one metric."""
-    from oxn.graph.indexer import Indexer
-    from oxn.graph.sources import iter_source_files
 
     targets = [Path(raw) for raw in paths]
     missing = [str(target) for target in targets if not target.exists()]
@@ -129,9 +145,9 @@ def run_metrics(
         _emit(failure, output)
         return failure
 
-    with Indexer() as indexer:
+    with _indexer() as indexer:
         indexer.index(targets)
-        wanted = {indexer.relative(path) for path in iter_source_files(targets)}
+        wanted = {indexer.relative(path) for path in indexer.sources(targets)}
         rows = _ranked(indexer, sort_by, limit, wanted)
         trail = _explain_worst(indexer, rows[0]) if explain and rows else []
 
@@ -169,7 +185,6 @@ def run_volume(
     include_history: bool = True,
 ) -> dict[str, Any]:
     """Duplication, erosion and hotspots for ``paths``."""
-    from oxn.graph.indexer import Indexer
     from oxn.volume.scan import persist, scan_volume
 
     targets = [Path(raw) for raw in paths]
@@ -182,7 +197,7 @@ def run_volume(
         _emit(failure, output)
         return failure
 
-    with Indexer() as indexer:
+    with _indexer() as indexer:
         indexer.index(targets)
         report = scan_volume(indexer, targets, include_history=include_history)
         persist(indexer, report)
@@ -245,8 +260,6 @@ def run_arch(
     """Build the dependency graph for ``paths`` and report its architecture."""
     from oxn.graph.architecture import analyse
     from oxn.graph.depgraph import build_dependency_graph
-    from oxn.graph.indexer import Indexer
-    from oxn.graph.sources import iter_source_files
 
     targets = [Path(raw) for raw in paths]
     missing = [str(target) for target in targets if not target.exists()]
@@ -270,9 +283,9 @@ def run_arch(
         _emit(failure, output)
         return failure
 
-    with Indexer() as indexer:
+    with _indexer() as indexer:
         indexer.index(targets)
-        files = list(iter_source_files(targets))
+        files = indexer.sources(targets)
         graph = build_dependency_graph(indexer.root, files, component_of=component_of)
         sizes = _component_sizes(indexer, graph, component_of)
         types = _component_types(indexer, component_of)
@@ -390,8 +403,6 @@ def run_classes(
 ) -> dict[str, Any]:
     """Cohesion and coupling for every class under ``paths``."""
     from oxn.graph.depgraph import build_dependency_graph
-    from oxn.graph.indexer import Indexer
-    from oxn.graph.sources import iter_source_files
     from oxn.metrics.cohesion import cohesion
     from oxn.metrics.coupling import Evidence, build_hierarchy, ck_metrics
     from oxn.resolve.symbols import build_project_symbols
@@ -406,8 +417,8 @@ def run_classes(
         _emit(failure, output)
         return failure
 
-    with Indexer() as indexer:
-        files = list(iter_source_files(targets))
+    with _indexer() as indexer:
+        files = indexer.sources(targets)
         graph = build_dependency_graph(indexer.root, files)
         models_by_file: dict[str, Any] = {}
         entities_by_file: dict[str, Any] = {}
