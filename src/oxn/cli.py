@@ -108,16 +108,16 @@ def _hook_targets(paths: list[str]) -> list[str] | None:
     return [edited] if edited and _exists(edited) else None
 
 
+#: How long to let a hook finish writing its payload. Only ever paid when nothing arrives,
+#: because `select` returns the moment there is something to read.
+PAYLOAD_WAIT_S = 0.25
+
+
 def _stdin_payload() -> dict[str, object] | None:
     """The hook payload on stdin, or ``None`` when this was not invoked by a hook."""
     import json
 
-    if sys.stdin is None or sys.stdin.isatty():
-        return None
-    try:
-        raw = sys.stdin.read()
-    except (OSError, ValueError):  # closed, or not readable in this context
-        return None
+    raw = _read_available()
     if not raw.strip():
         return None
     try:
@@ -125,6 +125,39 @@ def _stdin_payload() -> dict[str, object] | None:
     except ValueError:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _read_available() -> str:
+    """Whatever is on stdin now, giving a hook a moment to write, and never blocking.
+
+    "Nothing to read" and "a payload that has not been written yet" are the same thing to a
+    file descriptor, so this waits briefly and then gives up rather than asking for EOF. A
+    plain ``sys.stdin.read()`` here is a deadlock, and not hypothetically: `oxn check --deep`
+    inside an ordinary shell pipeline inherits a pipe nobody ever writes to, and the first
+    version of this function hung OXN's own gate until it was killed.
+
+    The loop is bounded at both ends -- EOF, or a quiet quarter second -- so a writer that
+    sends half a payload and keeps the pipe open cannot hang it either.
+
+    Where ``select`` cannot watch a pipe, which means Windows, nothing is read and the caller
+    falls back to checking the tree. That is what OXN did before it read payloads at all;
+    hanging is the one outcome that is not acceptable.
+    """
+    import os
+    import select
+
+    if sys.stdin is None or sys.stdin.isatty():
+        return ""
+    chunks: list[bytes] = []
+    try:
+        while select.select([sys.stdin], [], [], PAYLOAD_WAIT_S)[0]:
+            chunk = os.read(sys.stdin.fileno(), 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    except (OSError, ValueError):  # closed, unwatchable, or not a real descriptor
+        return ""
+    return b"".join(chunks).decode("utf-8", "replace")
 
 
 #: Where the file-editing tools put the path they wrote. `file_path` is the documented key

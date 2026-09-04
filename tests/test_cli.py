@@ -228,3 +228,36 @@ def test_stdin_that_is_not_a_hook_payload_is_ignored(tmp_path) -> None:
     """Something else on the pipe is not a reason to check nothing."""
     (tmp_path / "one.py").write_text("def one(a):\n    return a\n")
     assert _hook(tmp_path, "not json at all\n")["paths"] == ["one.py"]
+
+
+def test_an_open_pipe_that_never_closes_does_not_hang_the_hook(tmp_path) -> None:
+    """The deadlock that reading stdin introduced, as a test.
+
+    `oxn check --json` inside an ordinary shell pipeline inherits a pipe that nobody writes
+    to and nobody closes. Asking it for EOF waits forever: the first version of the payload
+    read hung OXN's own gate at 0% CPU until it was killed by hand. "Nothing to read" and "a
+    payload not written yet" are indistinguishable on a descriptor, so the only safe answer
+    is to wait briefly and then get on with it.
+    """
+    (tmp_path / "one.py").write_text("def one(a):\n    return a\n")
+    process = subprocess.Popen(
+        [sys.executable, "-m", "oxn.cli", "check", "--json"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=tmp_path,
+    )
+    # Deliberately *not* `communicate()`: that closes stdin, which hands the process the EOF
+    # it was hanging for and makes this test pass against the very bug it names. The pipe is
+    # left open, exactly as a shell leaves it. Output is small enough not to fill its buffer.
+    try:
+        process.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        pytest.fail("`oxn check --json` blocked on an open stdin pipe instead of giving up")
+    assert process.stdout is not None
+    stdout = process.stdout.read()
+    assert process.returncode in (0, 2), process.stderr.read() if process.stderr else ""
+    assert json.loads(stdout)["paths"] == ["one.py"], "no payload arrived; the tree is the answer"
+    process.stdin.close() if process.stdin else None
