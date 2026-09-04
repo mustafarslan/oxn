@@ -1,7 +1,8 @@
 """P7's exit criterion, as a test: the rules reproduce the hand-coded suite exactly.
 
-The hand-coded checks are the oracle here, and they stay importable until this passes on
-every tree that matters. Parity means the same findings with the same identity -- the
+The hand-coded checks are the oracle here, and they stay: this test is what gives them a
+job, so deleting them deletes the property rather than the duplication (ADR-0005, amended
+2026-09-04). Parity means the same findings with the same identity -- the
 baseline is keyed `rule|path|entity`, so a rule engine producing equivalent findings under
 different keys would silently reset every user's accepted debt.
 

@@ -221,9 +221,19 @@ into it. One index per (relation, probed columns) serves the whole evaluation. T
 pinned by a test that counts how often a relation is read, because 555x is the kind of number that
 quietly comes back.
 
-**The hand-coded checks are the oracle and stay importable until the exit criterion is met.**
-Old-versus-new findings must be identical across `src` and every corpus before anything is deleted,
-and the deletion is its own commit.
+**The hand-coded checks are the oracle and stay.** Old-versus-new findings must be identical
+across `src` and every corpus.
+
+*Amended 2026-09-04.* This paragraph originally read "stay importable **until** the exit criterion
+is met", and scheduled a commit deleting them once parity held. That deletion is now declined. The
+exit criterion is met -- parity is byte-identical on `python-httpx` (101 findings), `typescript-nest`
+(656, 1,913 files) and the four-contract fixture -- but meeting it is what made the oracle
+*load-bearing* rather than redundant: `tests/test_rules_corpus.py` and `tests/test_rules_parity.py`
+assert parity against these functions, so deleting them deletes the property, not the duplication.
+Two implementations of eleven checks is the cost of that property, and it is the price this project
+already agreed to pay everywhere else -- the differential oracles of P2 run in CI forever for the
+same reason. The duplication is also a live tripwire while P10 is still adding rules: a rule that
+changes in `builtin.py` and not in the oracle fails parity loudly instead of shipping.
 
 **Rules become a supported surface.** A malformed rule must fail loudly at load time with the rule
 named — never be skipped, and never half-apply. `oxn.yaml` is already strict about unknown keys and

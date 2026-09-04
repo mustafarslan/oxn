@@ -167,9 +167,10 @@ def _rule_findings(
 ) -> list[Finding]:
     """Evaluate the declared rules. This is the gate (ADR-0005).
 
-    `_measure` and `_architecture` below are the hand-coded checks this replaced. They stay
-    importable as the oracle for the parity tests, which assert byte-identical findings
-    across `src`, two corpora and a purpose-built four-contract fixture.
+    `_measure` and `_architecture` below are the hand-coded checks this replaced. They are
+    kept deliberately, not pending deletion: they are the oracle for the parity tests, which
+    assert byte-identical findings across `src`, two corpora and a four-contract fixture. A
+    rule that changes here and not there fails parity loudly (ADR-0005, amended 2026-09-04).
     """
     from oxn.graph.contracts import assign_layers
     from oxn.graph.indexer import Indexer
