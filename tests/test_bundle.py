@@ -47,8 +47,8 @@ def _named(bundle) -> list[str]:
 
 
 def test_a_constraint_covering_the_target_outranks_a_better_worded_one() -> None:
-    """"Fix the parser" cannot be expected to name the ceiling it is about, which is why
-    scope decides and words only order what scope has already selected."""
+    """A task saying "fix the parser" cannot be expected to name the ceiling it is about,
+    which is why scope decides and words only order what scope has already selected."""
     project = _project(
         decisions=[
             _decision("NARROW", ("src/api/*",), body="unrelated prose about licensing"),

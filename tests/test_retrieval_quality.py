@@ -109,8 +109,8 @@ def test_no_label_names_a_decision_that_governs_everything(labels) -> None:
 
 
 def test_the_bundle_stays_under_budget_on_every_labelled_task(pairs) -> None:
-    """"Bundle size stays under budget on all corpus tasks" (ROADMAP P8), asserted against
-    the 53 real tasks rather than against a handful invented for the occasion.
+    """The ROADMAP's "bundle size stays under budget on all corpus tasks" (P8), asserted
+    against the 53 real tasks rather than a handful invented for the occasion.
 
     The cap is trivially satisfiable by a `[:limit]`, so what this actually guards is the
     accounting around it: `omitted` must always say how many were hidden, because a budget
