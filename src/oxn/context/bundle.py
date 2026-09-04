@@ -7,7 +7,14 @@ than a preference:
 * **Scope partitions, text orders within it.** A constraint governing a file the task is
   about comes before one that does not, whatever the words say -- because "fix the parser"
   cannot be expected to name the ceiling it is about, and section 5a measured what happens
-  when text is asked to decide alone (P@1 0.377 against 0.362 for chance).
+  when text is asked to decide alone.
+* **The budget is shared between what the gate enforces and what it cannot.** BM25 scores
+  are comparable between documents of a similar shape, and a six-token ceiling statement
+  and a 17,000-character ADR are not: ranked in one list, prose wins every slot. Measured
+  before the split, across the 53 labelled tasks, **159 of 159 top-three slots were prose**
+  -- the bundle had become "here are three documents to go read", which is the thing
+  section 4 exists to reject. So each side gets half the cap and orders itself, and
+  whichever side is shorter yields its slots to the other.
 * **With no target files, breadth decides.** There is no scope to partition by, so the
   ordering falls back to how much of the tree each constraint governs -- the one signal
   that beat the text ranker outright on OXN's own labels. It is emitted as a number the
@@ -96,15 +103,32 @@ def build_bundle(
     targets: Sequence[str] = (),
     limit: int = thresholds.MAX_BUNDLE_CONSTRAINTS,
 ) -> Bundle:
-    """Rank every constraint this project declares, and return the top `limit`."""
+    """Rank every constraint this project declares, and return `limit` of them."""
     candidates = _annotate(_candidates(project), project.paths, task)
     ordered = sorted(candidates, key=lambda c: _key(c, targets))
+    chosen = _share(
+        [c for c in ordered if c.enforced], [c for c in ordered if not c.enforced], limit
+    )
     return Bundle(
         task=task,
         targets=tuple(targets),
-        constraints=tuple(ordered[:limit]),
-        omitted=max(0, len(ordered) - limit),
+        constraints=tuple(chosen),
+        omitted=max(0, len(candidates) - len(chosen)),
     )
+
+
+def _share(gated: list[Constraint], prose: list[Constraint], limit: int) -> list[Constraint]:
+    """Half the budget to rules the gate enforces, half to decisions it cannot check.
+
+    Never a fixed split: whichever side has fewer constraints than its half takes what it
+    has and the other side takes the remainder, so the bundle is only short when the
+    project is. Gated rules are emitted first because they are what will actually reject
+    the edit.
+    """
+    half = limit // 2
+    for_prose = min(len(prose), max(half, limit - len(gated)))
+    for_gated = min(len(gated), limit - for_prose)
+    return gated[:for_gated] + prose[: min(len(prose), limit - for_gated)]
 
 
 def _key(constraint: Constraint, targets: Sequence[str]) -> tuple[bool, float, int, str]:

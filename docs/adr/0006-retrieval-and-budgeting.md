@@ -129,6 +129,26 @@ Without target files, there is nothing to be specific about and the order invert
 The bundle is capped by count, from `thresholds.py`, and emitted as a typed structure — pydantic,
 already a dependency, so the JSON Schema §3.2 asks for is free. Never prose paragraphs.
 
+*Added 2026-09-04, and it changed the design.* Ranking rules and decisions in **one** list does not
+work, because BM25 scores are comparable between documents of a similar shape and a six-token
+ceiling statement is not the same shape as a 17,000-character ADR. Measured across the 53 labelled
+tasks: **159 of 159 top-three slots were prose**, and ADR-0001 — the longest general document,
+scoped `**`, excluded from the labels precisely because it discriminates nothing — took a top-three
+slot on 14 of them. The bundle had become "here are three documents to go read", which is the thing
+this section opens by rejecting, and §5a's longest-document baseline is the same failure under
+another name.
+
+So **the cap is shared: half to constraints the gate enforces, half to decisions it cannot check**,
+each side ordered by the key above and the shorter side yielding its slots to the other. Gated rules
+are emitted first, because they are what will actually reject the edit. After the split, prose takes
+0 of 159 top-three slots and the layered contract leads a question about layering.
+
+One ordering choice is worth naming rather than leaving to be discovered: relevance still sits
+*above* specificity and breadth in the key, even though §5a measured text at near-chance. Within a
+stratum that is right — the documents are then of one shape, and matching "raise the file length
+limit" to `file_sloc` is exactly what text is for. It was the cross-stratum comparison that was
+invalid, not the ranking.
+
 ### 5. How we would know it works
 
 Precision@3 stands as the headline number, with two corrections.
@@ -165,7 +185,7 @@ of it and a ranker reading its own gold would report a number about nothing.
 
 | ranker | P@1 | MRR |
 |---|---|---|
-| BM25 over decision text | 0.377 | 0.584 |
+| BM25 over decision text | 0.377 | 0.581 |
 | uniform random | 0.362 | — |
 | constant, ordered by how much code each decision governs | 0.698 | 0.787 |
 | constant, always the longest decision | 0.245 | — |
@@ -198,9 +218,12 @@ it — and the quality floor lives there, not here.
 One reflexivity note, since it caught us while writing this section: **the corpus contains this
 document**, so recording the numbers changed the text being measured. The recorded values are taken
 after this amendment, and any edit to any ADR moves them. That is deliberate; the test carries the
-delta the way `.oxn/baseline.json` carries the gate's. Writing 0.584 into the table above left it
-at 0.584 — a fixed point rather than a regress, since substituting one rare token for another of
-the same length changes no document's length and no other term's frequency.
+delta the way `.oxn/baseline.json` carries the gate's — and the live value is the one pinned in
+`tests/test_retrieval_quality.py`, not the one in this table, since the table ages the moment
+anything here is edited. Writing the number into the table above does not move it further: swapping
+one rare token for another changes no document's length and no other term's frequency, so it is a
+fixed point rather than a regress. Amending the section *around* it does move it — 0.584 to 0.581
+when the budget split was recorded above, which is the test doing its job rather than a defect.
 
 ## Consequences
 

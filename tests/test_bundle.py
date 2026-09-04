@@ -175,3 +175,33 @@ def test_with_targets_the_narrower_of_two_covering_constraints_comes_first() -> 
     )
     names = _named(build_bundle(project, targets=["src/api/one.py"]))
     assert names.index("HERE") < names.index("EVERYWHERE")
+
+
+# ---- the budget is shared, because BM25 scores are not comparable across shapes ---------
+
+
+def test_prose_cannot_take_every_slot() -> None:
+    """A six-token ceiling statement and a 17,000-character ADR are not comparable
+    documents. Ranked in one list, prose wins everything: measured across the 53 labelled
+    tasks before this split, 159 of 159 top-three slots were decisions -- at which point the
+    bundle is "here are three documents to go read", which is what ADR-0006 section 4
+    exists to reject."""
+    project = _project(
+        ceilings={"cognitive_complexity": 12.0, "file_sloc": 500.0, "a": 1.0, "b": 2.0},
+        decisions=[_decision(f"ADR-{n}", ("src/*",), body="complexity " * 500) for n in range(9)],
+    )
+    shown = build_bundle(project, task="complexity", limit=6).constraints
+    assert sum(1 for c in shown if c.enforced) == 3
+    assert [c.enforced for c in shown] == [True, True, True, False, False, False]
+
+
+def test_the_shorter_side_yields_its_slots_rather_than_wasting_them() -> None:
+    """The bundle is only short when the project is."""
+    one_rule = _project(decisions=[_decision(f"ADR-{n}", ("src/*",)) for n in range(9)])
+    assert len(build_bundle(one_rule, limit=6).constraints) == 6
+
+    no_decisions = _project(
+        ceilings={f"rule_{n}": float(n) for n in range(9)},
+        decisions=[],
+    )
+    assert len(build_bundle(no_decisions, limit=6).constraints) == 6
