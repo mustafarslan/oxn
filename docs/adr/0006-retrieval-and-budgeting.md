@@ -121,6 +121,11 @@ task's files, and on OXN's own labels it beats the text ranker outright. Naming 
 than letting it hide inside the text score keeps it visible in the emitted bundle, where "this
 governs most of the tree" is a fact the agent should see rather than a thumb on a scale it cannot.
 
+The same number therefore reads in both directions, and the implementation says so: with target
+files, scope has already selected the covering constraints and the *narrower* of two comes first --
+a ceiling governing every file is ambient, one scoped to the area being edited exists because of it.
+Without target files, there is nothing to be specific about and the order inverts into the prior.
+
 The bundle is capped by count, from `thresholds.py`, and emitted as a typed structure — pydantic,
 already a dependency, so the JSON Schema §3.2 asks for is free. Never prose paragraphs.
 

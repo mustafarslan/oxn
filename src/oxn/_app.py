@@ -325,3 +325,48 @@ def doctor() -> None:
     from oxn.doctor import run_doctor
 
     run_doctor(_console())
+
+
+@app.command()
+def context(
+    task: str = typer.Argument(..., help="What you are about to do, in your own words."),
+    files: list[str] = typer.Option(
+        None, "--file", "-f", help="Files the task is about. Scope beats wording (ADR-0006)."
+    ),
+    limit: int = typer.Option(0, "--limit", help="Constraints to show; 0 uses the budget."),
+    json_output: bool = typer.Option(False, "--json", help="The bundle as typed JSON."),
+) -> None:
+    """Show the constraints that govern a task -- ranked, capped, and never a gate.
+
+    This is the human view of what P9's MCP `get_architectural_context` will serve. It
+    cannot pass or fail anything: ADR-0006 keeps retrieval out of the gate entirely.
+    """
+    from oxn import thresholds
+    from oxn.config import Config
+    from oxn.context.bundle import Project, build_bundle
+    from oxn.graph.sources import iter_source_files
+    from oxn.rules.adr import load_decisions
+
+    config = Config.load()
+    paths = iter_source_files([config.root], base=config.root, exclude=config.exclude)
+    project = Project(
+        config=config,
+        decisions=tuple(load_decisions(config.root)),
+        paths=tuple(str(path.relative_to(config.root)) for path in paths),
+    )
+    bundle = build_bundle(
+        project,
+        task=task,
+        targets=files or (),
+        limit=limit or thresholds.MAX_BUNDLE_CONSTRAINTS,
+    )
+
+    console = _console()
+    if json_output:
+        console.print_json(bundle.model_dump_json())
+        return
+    for constraint in bundle.constraints:
+        mark = "gated" if constraint.enforced else "prose"
+        console.print(f"[bold]{constraint.statement}[/bold]")
+        console.print(f"  {mark} · {constraint.source} · governs {constraint.governs} file(s)")
+    console.print(f"\n{bundle.omitted} more not shown. {bundle.note}")

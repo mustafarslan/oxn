@@ -103,3 +103,34 @@ def test_no_label_names_a_decision_that_governs_everything(labels) -> None:
     always-right answer measures nothing, and the extractor drops such decisions."""
     scoped = {d.identifier: d.applies_to for d in load_decisions(ROOT)}
     assert all("**" not in scoped[name] for name in labels["decisions"])
+
+
+# ---- the other half of P8's exit criterion: the bundle stays inside its budget -----------
+
+
+def test_the_bundle_stays_under_budget_on_every_labelled_task(pairs) -> None:
+    """"Bundle size stays under budget on all corpus tasks" (ROADMAP P8), asserted against
+    the 53 real tasks rather than against a handful invented for the occasion.
+
+    The cap is trivially satisfiable by a `[:limit]`, so what this actually guards is the
+    accounting around it: `omitted` must always say how many were hidden, because a budget
+    that silently drops constraints is indistinguishable from a gate that stopped enforcing
+    them.
+    """
+    from oxn import thresholds
+    from oxn.config import Config
+    from oxn.context.bundle import Project, build_bundle
+    from oxn.graph.sources import iter_source_files
+
+    config = Config.load(ROOT)
+    found = iter_source_files([ROOT], base=ROOT, exclude=config.exclude)
+    project = Project(
+        config=config,
+        decisions=tuple(load_decisions(ROOT)),
+        paths=tuple(str(path.relative_to(ROOT)) for path in found),
+    )
+    total = len(build_bundle(project, limit=10_000).constraints)
+    for task, _ in pairs:
+        bundle = build_bundle(project, task=task)
+        assert len(bundle.constraints) <= thresholds.MAX_BUNDLE_CONSTRAINTS
+        assert len(bundle.constraints) + bundle.omitted == total
