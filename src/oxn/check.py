@@ -155,13 +155,69 @@ def run_check(
         report.errors = dict.fromkeys(missing, "no such file or directory")
         return report
 
-    findings = _measure(targets, settings, report)
-    if deep:
-        findings.extend(_architecture(targets, settings, report))
+    findings = _rule_findings(targets, settings, report, deep=deep)
 
     baseline = _load_baseline(settings.baseline_path) if use_baseline else {}
     report.findings, report.baselined, report.regressed = _apply_baseline(findings, baseline)
     return report
+
+
+def _rule_findings(
+    targets: list[Path], settings: Config, report: CheckReport, *, deep: bool
+) -> list[Finding]:
+    """Evaluate the declared rules. This is the gate (ADR-0005).
+
+    `_measure` and `_architecture` below are the hand-coded checks this replaced. They stay
+    importable as the oracle for the parity tests, which assert byte-identical findings
+    across `src`, two corpora and a purpose-built four-contract fixture.
+    """
+    from oxn.graph.contracts import assign_layers
+    from oxn.graph.indexer import Indexer
+    from oxn.graph.sources import iter_source_files
+    from oxn.rules.adr import adr_facts, load_decisions, unscoped_rule
+    from oxn.rules.builtin import rules_for_scope
+    from oxn.rules.engine import evaluate
+    from oxn.rules.facts import file_facts, graph_facts
+
+    with Indexer() as indexer:
+        index = indexer.index(targets)
+        report.errors.update(index.errors)
+        sources = list(iter_source_files(targets))
+        wanted = [indexer.relative(path) for path in sources]
+        report.paths = wanted
+        layer_of = assign_layers(wanted, settings.layers) if settings.layers else {}
+        facts = file_facts(indexer.store, wanted, settings, layer_of)
+        rules = rules_for_scope(settings, deep=deep)
+        if deep and settings.contracts:
+            from oxn.graph.depgraph import build_dependency_graph
+
+            graph_facts(facts, build_dependency_graph(indexer.root, sources), settings)
+        elif deep:
+            report.diagnostics.append(
+                "no contracts declared in oxn.yaml; architectural check skipped"
+            )
+        # `--deep` is also what makes "this ADR governs nothing" a meaningful claim: it is
+        # a statement about the repository, and `wanted` is the whole tree only here.
+        adr_facts(facts, load_decisions(indexer.root), wanted, whole_project=deep)
+        if deep:
+            rules.append(unscoped_rule())
+
+    return [_as_finding(found) for found in evaluate(rules, facts)]
+
+
+def _as_finding(found: Any) -> Finding:
+    """A `RuleFinding` in the shape the report and the baseline expect."""
+    return Finding(
+        rule=found.rule,
+        path=found.path,
+        entity=found.entity,
+        line=found.line,
+        value=found.value,
+        ceiling=found.ceiling,
+        blocking=found.blocking,
+        explanation=found.explanation,
+        detail=found.detail,
+    )
 
 
 def _measure(targets: list[Path], settings: Config, report: CheckReport) -> list[Finding]:

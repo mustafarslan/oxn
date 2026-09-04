@@ -172,6 +172,29 @@ def _deep_import_rule(contract: object) -> Rule:
     )
 
 
+#: Relations that only exist once the whole tree has been parsed. A rule touching one is
+#: repository-scoped and never runs on the hook; ADR-0005 derives scope from the body rather
+#: than declaring it beside the rule, so a rule cannot be mislabelled.
+REPOSITORY_RELATIONS = frozenset({"imports", "cycle"})
+
+
+def is_repository_scoped(rule: Rule) -> bool:
+    return bool(rule.relations & REPOSITORY_RELATIONS)
+
+
 def all_rules(settings: Config) -> list[Rule]:
     """Every rule the current configuration declares."""
     return [*ceiling_rules(settings), *contract_rules(settings)]
+
+
+def rules_for_scope(settings: Config, *, deep: bool) -> list[Rule]:
+    """The rules this invocation may evaluate.
+
+    Without `--deep` the import graph does not exist, so a repository-scoped rule would
+    join against an empty relation and report nothing -- silence that reads exactly like
+    conformance. Excluding them is the honest form of the same outcome.
+    """
+    rules = all_rules(settings)
+    if deep:
+        return rules
+    return [rule for rule in rules if not is_repository_scoped(rule)]

@@ -108,8 +108,18 @@ def _frontmatter(path: Path) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
-def adr_facts(facts: Facts, decisions: list[Decision], paths: list[str]) -> None:
-    """Project decisions into relations, tightening ceilings the scope covers."""
+def adr_facts(
+    facts: Facts, decisions: list[Decision], paths: list[str], *, whole_project: bool = False
+) -> None:
+    """Project decisions into relations, tightening ceilings the scope covers.
+
+    `whole_project` says whether `paths` is the entire tree or a subset being checked. It
+    gates the *unscoped* projection only, and the distinction is not academic: "this scope
+    matches nothing" is a claim about the repository. Evaluated against a subset it is
+    nearly always true and always meaningless -- the hook checks one file, so every ADR
+    that does not happen to govern *that* file would be reported as governing nothing, on
+    every edit. Ceiling tightening is unaffected: it is a per-file question either way.
+    """
     for decision in decisions:
         if not decision.enforceable:
             continue
@@ -117,7 +127,7 @@ def adr_facts(facts: Facts, decisions: list[Decision], paths: list[str]) -> None
         facts.add("adr", (decision.identifier, decision.path, decision.title))
         if covered:
             facts.add("adr_scope", *[(decision.identifier, path) for path in covered])
-        else:
+        elif whole_project:
             # Derived at projection time rather than by a rule: `not adr_scope(Id, _)` needs
             # an existential a range-restricted body cannot bind, and a real Datalog backend
             # would introduce a helper relation in a lower stratum to say the same thing.

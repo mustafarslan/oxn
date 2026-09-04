@@ -120,7 +120,7 @@ def test_a_scope_matching_no_file_is_reported(adr_dir) -> None:
     """
     _write(adr_dir, scope='["nowhere/**"]')
     facts = Facts()
-    adr_facts(facts, load_decisions(adr_dir), ["src/parser/p.py"])
+    adr_facts(facts, load_decisions(adr_dir), ["src/parser/p.py"], whole_project=True)
     (finding,) = evaluate([unscoped_rule()], facts)
     assert finding.entity == "ADR-0042"
     assert finding.rule == "adr:unscoped"
@@ -129,14 +129,28 @@ def test_a_scope_matching_no_file_is_reported(adr_dir) -> None:
 def test_it_is_advisory_because_an_adr_may_predate_its_code(adr_dir) -> None:
     _write(adr_dir, scope='["src/server/**"]')
     facts = Facts()
-    adr_facts(facts, load_decisions(adr_dir), ["src/parser/p.py"])
+    adr_facts(facts, load_decisions(adr_dir), ["src/parser/p.py"], whole_project=True)
     assert evaluate([unscoped_rule()], facts)[0].blocking is False
+
+
+def test_checking_a_subset_never_reports_a_scope_as_empty(adr_dir) -> None:
+    """ "This governs nothing" is a claim about the repository, not about what you checked.
+
+    The hook checks a single file. Evaluated against that subset, every ADR not governing
+    *that* file looks unscoped -- so a per-edit hook would have reported OXN's own ADRs as
+    dead on almost every save. Measured before the fix: checking `src/oxn/check.py` alone
+    reported ADR-0002 and ADR-0004 as governing nothing.
+    """
+    _write(adr_dir, scope='["src/parser/*"]')
+    facts = Facts()
+    adr_facts(facts, load_decisions(adr_dir), ["src/other/o.py"], whole_project=False)
+    assert evaluate([unscoped_rule()], facts) == []
 
 
 def test_a_scope_that_matches_produces_no_finding(adr_dir) -> None:
     _write(adr_dir)
     facts = _facts_with_ceiling()
-    adr_facts(facts, load_decisions(adr_dir), ["src/parser/p.py"])
+    adr_facts(facts, load_decisions(adr_dir), ["src/parser/p.py"], whole_project=True)
     assert evaluate([unscoped_rule()], facts) == []
 
 

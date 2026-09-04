@@ -164,3 +164,31 @@ def test_findings_keep_the_identity_the_baseline_is_built_on(project) -> None:
     old = {(f.rule, f.path, f.entity) for f in _hand_coded(settings)}
     new = {(f.rule, f.path, f.entity) for f in _from_rules(settings)}
     assert old == new
+
+
+# ---- the ratchet must survive the engine change ------------------------------------------
+
+
+def test_a_baseline_written_by_the_hand_coded_gate_reads_clean_under_the_rules(project) -> None:
+    """The property the whole cutover depends on, and the reason identity is specified.
+
+    A user upgrades and their accepted debt must stay accepted. If the rule engine keyed
+    findings differently -- even producing exactly the same violations -- every baselined
+    entry would read as new, the build would fail everywhere, and the obvious fix would be
+    to regenerate: an amnesty dressed as an upgrade.
+    """
+    from oxn.check import run_check, write_baseline
+
+    settings = Config.load(project)
+
+    # A baseline recorded from the hand-coded findings, exactly as `oxn baseline` would.
+    report = CheckReport(scope="repository")
+    report.findings = _hand_coded(settings)
+    written = write_baseline(report, settings.baseline_path)
+    assert written > 5, "a baseline this small would not prove anything"
+
+    # Now the rule-driven gate reads it back on an unchanged tree.
+    after = run_check(["."], config=settings, deep=True, use_baseline=True)
+    assert after.regressed == [], [str(f) for f in after.regressed]
+    assert after.findings == [], [str(f) for f in after.findings]
+    assert after.passed
