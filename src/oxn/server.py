@@ -1,0 +1,277 @@
+"""The MCP stdio server: OXN's read surface for a coding agent.
+
+[ADR-0003](../../docs/adr/0003-enforcement-model.md) splits OXN in two -- the hook enforces
+and MCP informs -- and this module is the second half's transport.
+[ADR-0004](../../docs/adr/0004-freshness-model.md) makes it the warm process: it is alive
+for the whole agent session anyway, so the freshness model never needs a daemon.
+
+**The protocol is hand-written, and that is a decision rather than an omission.**
+[ADR-0001](../../docs/adr/0001-dependency-policy.md), amended 2026-09-05, admits the MCP
+Python SDK at runtime *in principle* and declines it here on a measurement: it installs 28
+packages and ~39 MB, including `cryptography` and `cffi` -- compiled wheels, pulled in for
+an OAuth flow a stdio server never performs. OXN's wedge is one `pip install` with no
+toolchain, and a compiled wheel is exactly what breaks that on a new Python. The SDK is a
+**CI oracle** instead (`tests/test_oracle_mcp.py`), which is what this project already does
+with every analyser it chose not to depend on: the conformance claim is checked by the real
+client rather than asserted.
+
+**Stdout is the wire.** Anything that prints -- a `rich` console, a lazily fetched grammar,
+a stray `print` -- corrupts the stream and the client sees a protocol error rather than the
+bug. `serve` therefore takes the real stdout away from the process and points `sys.stdout`
+at stderr for the server's lifetime, so a stray write is merely noisy.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+from pydantic import BaseModel, Field, ValidationError
+
+if TYPE_CHECKING:  # pragma: no cover
+    from collections.abc import Callable, Iterable, Iterator
+
+#: The protocol revision this server is written against. A client asking for a version we
+#: do not know is answered with this one rather than refused -- the spec's own guidance,
+#: and the alternative is a hard failure over a field neither side uses yet.
+PROTOCOL_VERSION = "2025-06-18"
+KNOWN_PROTOCOLS = frozenset({"2024-11-05", "2025-03-26", PROTOCOL_VERSION})
+
+PARSE_ERROR = -32700
+INVALID_REQUEST = -32600
+METHOD_NOT_FOUND = -32601
+INVALID_PARAMS = -32602
+
+
+class ProtocolError(Exception):
+    """A transport-level fault: the message was wrong, not the tool.
+
+    A *tool* that fails is not this. It returns `isError: true` with the reason as text,
+    because the agent is supposed to read it and try something else -- while a JSON-RPC
+    error is for the client's plumbing and never reaches the model.
+    """
+
+    def __init__(self, code: int, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+# ---- the tools ---------------------------------------------------------------------------
+
+
+class ContextRequest(BaseModel):
+    """Arguments to `get_architectural_context`."""
+
+    task: str = Field(description="What you are about to do, in your own words.")
+    files: list[str] = Field(
+        default_factory=list,
+        description="Files the task is about. Scope beats wording: a constraint governing "
+        "one of these outranks a better-worded one that governs nothing here.",
+    )
+    limit: int = Field(default=0, description="Constraints to return; 0 uses OXN's budget.")
+
+
+class CheckRequest(BaseModel):
+    """Arguments to `check_code`."""
+
+    paths: list[str] = Field(
+        default_factory=list, description="Files or directories to check. Empty means the tree."
+    )
+    deep: bool = Field(
+        default=False,
+        description="Also check repository-scoped contracts (layering, cycles). Slower.",
+    )
+
+
+def _architectural_context(request: ContextRequest) -> dict[str, Any]:
+    from oxn import thresholds
+    from oxn.config import Config
+    from oxn.context.bundle import build_bundle
+    from oxn.context.project import load_project
+
+    bundle = build_bundle(
+        load_project(Config.load()),
+        task=request.task,
+        targets=request.files,
+        limit=request.limit or thresholds.MAX_BUNDLE_CONSTRAINTS,
+    )
+    return bundle.model_dump()
+
+
+def _check_code(request: CheckRequest) -> dict[str, Any]:
+    from oxn.check import run_check
+
+    return run_check(list(request.paths) or ["."], deep=request.deep).as_dict()
+
+
+@dataclass(frozen=True, slots=True)
+class Tool:
+    """One callable surface, with the schema the client validates against."""
+
+    name: str
+    description: str
+    request: type[BaseModel]
+    run: Callable[[Any], dict[str, Any]]
+
+    def describe(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "inputSchema": self.request.model_json_schema(),
+        }
+
+
+TOOLS: tuple[Tool, ...] = (
+    Tool(
+        name="get_architectural_context",
+        description=(
+            "The constraints that govern a task -- ceilings, architectural contracts and "
+            "recorded decisions -- ranked against what you are doing and capped to a budget. "
+            "Call this BEFORE writing code, not after being rejected. It can never pass or "
+            "fail anything: the gate enforces every constraint, shown here or not."
+        ),
+        request=ContextRequest,
+        run=_architectural_context,
+    ),
+    Tool(
+        name="check_code",
+        description=(
+            "Run OXN's gate over files or directories and return what it found: blocking "
+            "violations, regressions against the accepted baseline, and advisory findings "
+            "that are reported but never block. This is the same verdict the PostToolUse "
+            "hook reaches, so an edit that passes here passes there."
+        ),
+        request=CheckRequest,
+        run=_check_code,
+    ),
+)
+
+
+# ---- the protocol ------------------------------------------------------------------------
+
+
+class Session:
+    """One client connection, for as long as the process lives."""
+
+    def __init__(self, tools: Iterable[Tool] = TOOLS) -> None:
+        self._tools = {tool.name: tool for tool in tools}
+        self._methods: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
+            "initialize": self._initialize,
+            "ping": lambda _params: {},
+            "tools/list": lambda _params: {
+                "tools": [tool.describe() for tool in self._tools.values()]
+            },
+            "tools/call": self._call,
+        }
+
+    def respond(self, message: object) -> dict[str, Any] | None:
+        """Answer one decoded message, or `None` when there is nothing to answer.
+
+        A message with no `id` is a **notification** -- `notifications/initialized` arrives
+        immediately after the handshake -- and answering one puts traffic on an id the client
+        never issued. The official SDK's client tolerates that (it drops the frame), which is
+        measured, not assumed: `tests/test_oracle_mcp.py` stays green with this guard removed.
+        The rule is the specification's, so it is asserted at the frame level instead.
+        """
+        if not isinstance(message, dict):
+            # A JSON array here is a batch, which this revision of the spec removed.
+            return _error(None, INVALID_REQUEST, "expected one JSON-RPC object per line")
+        if "id" not in message:
+            return None
+        identifier = message["id"]
+        handler = self._methods.get(str(message.get("method", "")))
+        if handler is None:
+            return _error(identifier, METHOD_NOT_FOUND, f"unknown method {message.get('method')!r}")
+        try:
+            result = handler(_params(message))
+        except ProtocolError as error:
+            return _error(identifier, error.code, error.message)
+        return {"jsonrpc": "2.0", "id": identifier, "result": result}
+
+    def _initialize(self, params: dict[str, Any]) -> dict[str, Any]:
+        from oxn import __version__
+
+        asked = str(params.get("protocolVersion", ""))
+        return {
+            "protocolVersion": asked if asked in KNOWN_PROTOCOLS else PROTOCOL_VERSION,
+            "capabilities": {"tools": {"listChanged": False}},
+            "serverInfo": {"name": "oxn", "version": __version__},
+        }
+
+    def _call(self, params: dict[str, Any]) -> dict[str, Any]:
+        name = str(params.get("name", ""))
+        tool = self._tools.get(name)
+        if tool is None:
+            raise ProtocolError(INVALID_PARAMS, f"no such tool: {name!r}")
+        try:
+            request = tool.request.model_validate(params.get("arguments") or {})
+        except ValidationError as error:
+            return _failed(f"{name}: arguments rejected\n{error}")
+        return _ran(tool, request)
+
+
+def _ran(tool: Tool, request: BaseModel) -> dict[str, Any]:
+    """Run one tool. Its failure is content for the agent, never a transport error.
+
+    The broad except is the point rather than a lapse: OXN analyses whatever tree it is
+    pointed at, and a malformed `oxn.yaml`, an unreadable file or a grammar that will not
+    load must reach the agent as something it can act on. A JSON-RPC error would reach the
+    client's plumbing and show the model nothing.
+    """
+    try:
+        payload = tool.run(request)
+    except Exception as error:  # noqa: BLE001 -- see the docstring
+        return _failed(f"{tool.name} failed: {type(error).__name__}: {error}")
+    return {
+        "content": [{"type": "text", "text": json.dumps(payload, indent=2, default=str)}],
+        "structuredContent": payload,
+        "isError": False,
+    }
+
+
+def _failed(reason: str) -> dict[str, Any]:
+    return {"content": [{"type": "text", "text": reason}], "isError": True}
+
+
+def _params(message: dict[str, Any]) -> dict[str, Any]:
+    params = message.get("params")
+    return params if isinstance(params, dict) else {}
+
+
+def _error(identifier: object, code: int, message: str) -> dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": identifier, "error": {"code": code, "message": message}}
+
+
+def serve(
+    lines: Iterator[str] | None = None, out: Any = None, session: Session | None = None
+) -> None:
+    """Read newline-delimited JSON-RPC until the client hangs up.
+
+    Takes stdout away from the rest of the process first, so that anything which prints --
+    a console, a lazily fetched tree-sitter grammar -- lands on stderr instead of corrupting
+    the wire. That is not defensive: `_console()` writes to stdout, and every OXN surface
+    reachable from here is one import away from it.
+    """
+    stream = out or sys.stdout
+    if out is None:
+        sys.stdout = sys.stderr
+    live = session or Session()
+    for line in lines if lines is not None else sys.stdin:
+        if not line.strip():
+            continue
+        response = _answer(live, line)
+        if response is None:
+            continue
+        stream.write(json.dumps(response, separators=(",", ":")) + "\n")
+        stream.flush()
+
+
+def _answer(session: Session, line: str) -> dict[str, Any] | None:
+    try:
+        message = json.loads(line)
+    except json.JSONDecodeError as error:
+        return _error(None, PARSE_ERROR, f"not JSON: {error}")
+    return session.respond(message)

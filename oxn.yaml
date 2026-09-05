@@ -22,7 +22,9 @@ ceilings:
 # that makes the indexer an orchestrator, not a data structure. The rule was right and the
 # layer assignment was wrong; the file moved layers rather than the contract being weakened.
 layers:
-  surfaces: ["src/oxn/cli.py", "src/oxn/_app.py", "src/oxn/report.py", "src/oxn/check.py", "src/oxn/init.py"]
+  # `server.py` is a surface, not orchestration: it decodes a request, calls the same
+  # functions `_app.py` calls, and encodes the answer. It holds no analysis of its own.
+  surfaces: ["src/oxn/cli.py", "src/oxn/_app.py", "src/oxn/report.py", "src/oxn/check.py", "src/oxn/init.py", "src/oxn/server.py"]
   orchestration: ["src/oxn/graph/indexer.py"]
   # `sources.py` is graph, not orchestration: finding source files is not orchestrating
   # anything, and every tier needs the walk. It lived beside `Indexer` until this contract

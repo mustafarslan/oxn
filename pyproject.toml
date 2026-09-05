@@ -45,6 +45,7 @@ oracle = [
     "grimp>=3.0",       # import-graph oracle for Python
     "networkx>=3.0",    # graph-algorithm oracle; never a runtime dependency
     "vulture>=2.11",    # dead-code oracle
+    "mcp>=2.0",         # MCP protocol oracle: the real client drives our hand-written server
 ]
 
 [project.scripts]

@@ -51,7 +51,8 @@ Anything failing these is **self-implemented**, or demoted to **dev/CI-only** us
 *Adopted at runtime:*
 - `tree-sitter` + `tree-sitter-language-pack` (MIT; 371 grammars, fetched lazily on first use) — parsing.
 - `pydantic`, `typer`, `pyyaml`, `rich` — plumbing.
-- MCP Python SDK / `fastmcp` (MIT) — protocol.
+- MCP Python SDK / `fastmcp` (MIT) — protocol. **Amended 2026-09-05: declined, and demoted to
+  a CI oracle.** See the amendment below.
 
 *Adopted as optional extras:*
 - SCIP indexers — `scip-python`, `scip-typescript`, `scip-java`, `scip-go`, `rust-analyzer --scip`
@@ -93,3 +94,59 @@ depend on.
 **Neutral.** Two dependencies remain where the work is genuinely commodity — parsing and name
 resolution. Rebuilding tree-sitter, or Python/TypeScript/Java type resolution, would be years of
 work for no differentiation.
+
+---
+
+## Amendment, 2026-09-05 — the MCP SDK is a CI oracle, not a runtime dependency
+
+The list above admitted "MCP Python SDK / `fastmcp` (MIT) — protocol" at runtime on a licence
+check alone. P9 needed the server, so the install tax finally got measured, and the four
+admissibility rules turn out not to be the whole test: rule 3 says "installs via `pip`", and
+what breaks a `pip install` is not whether a wheel exists but whether one exists *for your
+platform and Python*.
+
+**Measured 2026-09-05, `pip install mcp` into an empty 3.14 virtualenv:**
+
+| | |
+|---|---|
+| packages installed | **28** |
+| site-packages, excluding `pip` | **~39 MB** |
+| compiled wheels pulled in | **`cryptography` (13 MB), `cffi`** |
+| `import mcp.server.…` | **0.33 s** |
+
+The compiled wheels are the finding, not the megabytes. `cryptography` and `cffi` arrive for
+`PyJWT`-backed OAuth, which a **stdio** server never performs — there is no HTTP transport, no
+authorization server, no token. `starlette`, `uvicorn`, `httpx2`, `sse-starlette` and
+`python-multipart` arrive for the same unused half of the SDK. OXN's entire time-to-value wedge
+is one `pip install` with no toolchain (see *Consequences*, above); a compiled extension is
+precisely what fails to build on a Python release the wheel index has not caught up with, and OXN
+supports 3.10 through 3.14. Taking a compiled dependency for a feature the product does not use
+inverts the argument this ADR was written to make.
+
+Two smaller facts, recorded so the decision does not have to be re-derived:
+
+* **The API moved.** The installed SDK is 2.x, where `FastMCP` is renamed `MCPServer`; v1 code
+  raises `ModuleNotFoundError` with a migration link. A protocol surface OXN owns is worth more
+  than one that renames underneath it between phases.
+* **The light option was checked, and also declined.** `pip install mcp-types` is genuinely
+  small — 680 KB, and its only dependency is `pydantic`, which OXN already has. It was still
+  declined: it supplies the wire *types*, not the dispatch, framing or lifecycle, which is where
+  every trap in this protocol lives (notifications must not be answered; batching is gone; a
+  failing tool is `isError` content and not a JSON-RPC error). Four tools need about six message
+  shapes. Buying those six from a package that follows the SDK's release cadence trades a
+  hand-written 250 lines for a versioned coupling, and gets none of the hard part.
+
+**Decision.** `src/oxn/server.py` implements newline-delimited JSON-RPC over stdio directly,
+against protocol revision 2025-06-18, with the per-tool schemas generated from `pydantic` models
+OXN already declares. The SDK moves to the `oracle` extra and joins radon, lizard, grimp, PMD and
+vulture in the CI lane: `tests/test_oracle_mcp.py` spawns `oxn serve` as a subprocess and drives
+it with the **official client**, through a real handshake over a real pipe. That is the same trade
+this project makes with every analyser it chose not to depend on — implement it, then let the tool
+you declined adjudicate whether the implementation is right. `tests/test_server.py` asserts, in a
+third test, that importing `oxn.server` never imports `mcp`, so the demotion cannot quietly
+reverse.
+
+**What would reopen this.** A protocol revision OXN cannot follow from the specification, a client
+that rejects the hand-written server for a reason the oracle test does not catch, or the SDK
+splitting its stdio core away from the OAuth and HTTP transports — that last one removes the whole
+objection and the dependency should then be taken.

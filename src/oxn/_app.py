@@ -343,19 +343,11 @@ def context(
     """
     from oxn import thresholds
     from oxn.config import Config
-    from oxn.context.bundle import Project, build_bundle
-    from oxn.graph.sources import iter_source_files
-    from oxn.rules.adr import load_decisions
+    from oxn.context.bundle import build_bundle
+    from oxn.context.project import load_project
 
-    config = Config.load()
-    paths = iter_source_files([config.root], base=config.root, exclude=config.exclude)
-    project = Project(
-        config=config,
-        decisions=tuple(load_decisions(config.root)),
-        paths=tuple(str(path.relative_to(config.root)) for path in paths),
-    )
     bundle = build_bundle(
-        project,
+        load_project(Config.load()),
         task=task,
         targets=files or (),
         limit=limit or thresholds.MAX_BUNDLE_CONSTRAINTS,
@@ -370,3 +362,19 @@ def context(
         console.print(f"[bold]{constraint.statement}[/bold]")
         console.print(f"  {mark} · {constraint.source} · governs {constraint.governs} file(s)")
     console.print(f"\n{bundle.omitted} more not shown. {bundle.note}")
+
+
+@app.command()
+def serve() -> None:
+    """Speak MCP over stdio, so an agent can ask before it edits.
+
+    The server is also OXN's warm process (ADR-0004): it is alive for the whole session, so
+    "current when the agent asks" costs no daemon. It informs and never enforces -- the gate
+    is the `PostToolUse` hook, and `check_code` here reaches the same verdict without being
+    able to stop anything.
+
+    Wire it with `claude mcp add oxn -- oxn serve`. Nothing is printed: stdout is the wire.
+    """
+    from oxn.server import serve as run_server
+
+    run_server()
