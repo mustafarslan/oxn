@@ -83,6 +83,34 @@ python scripts/fetch_corpora.py --list
 python scripts/fetch_corpora.py --use eval
 ```
 
+## The MCP server
+
+`oxn init` writes `.mcp.json`, so an agent gets four read-only tools. They inform; the hook
+is what enforces ([ADR-0003](docs/adr/0003-enforcement-model.md)).
+
+| tool | what it answers |
+|---|---|
+| `get_architectural_context` | which constraints govern this task -- ranked, capped, and honest about what it left out |
+| `check_code` | the gate's verdict on these files, without the power to stop anything |
+| `get_metrics` | how the code measures, ranked by one metric |
+| `explain_violation` | why one finding is a violation: the increment trail, and where its ceiling was declared |
+
+```sh
+oxn serve                    # speak MCP over stdio; stdout is the wire, so nothing is printed
+claude mcp add oxn -- oxn serve
+```
+
+The protocol is hand-written against revision 2025-06-18 rather than taken from the MCP
+Python SDK, which pulls 28 packages and two compiled wheels for an OAuth flow a stdio server
+never performs — the measurement, and what would reverse it, are in
+[ADR-0001](docs/adr/0001-dependency-policy.md)'s amendment. The SDK is a CI oracle instead:
+`tests/test_oracle_mcp.py` drives `oxn serve` with the official client.
+
+**`oxn` has to be on the PATH of the shell your editor starts the server with**, which an
+unactivated virtualenv is not. `oxn init` detects that case and says so; the fix is a `pipx`
+or `--user` install, or editing the `oxn` entry in `.mcp.json` to a path that resolves — a
+hand-edited entry is left alone on every later `init`.
+
 ## Self-repair
 
 OXN gates coding agents on complexity, and used to violate its own ceilings.
