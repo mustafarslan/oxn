@@ -185,7 +185,7 @@ of it and a ranker reading its own gold would report a number about nothing.
 
 | ranker | P@1 | MRR |
 |---|---|---|
-| BM25 over decision text | 0.377 | 0.578 |
+| BM25 over decision text | 0.377 | 0.579 |
 | uniform random | 0.362 | — |
 | constant, ordered by how much code each decision governs | 0.698 | 0.787 |
 | constant, always the longest decision | 0.245 | — |
@@ -232,8 +232,62 @@ delta the way `.oxn/baseline.json` carries the gate's — and the live value is 
 `tests/test_retrieval_quality.py`, not the one in this table, since the table ages the moment
 anything here is edited. Writing the number into the table above does not move it further: swapping
 one rare token for another changes no document's length and no other term's frequency, so it is a
-fixed point rather than a regress. Amending the section *around* it does move it — 0.584 to 0.578
+fixed point rather than a regress. Amending the section *around* it does move it — 0.584 to 0.579
 as this section grew, which is the test doing its job rather than a defect.
+
+### 5b. The external corpus, and the number it produced
+
+*Added 2026-09-05.* Section 5(a) made this corpus load-bearing rather than planned. Finding it
+produced a second negative result before it produced a positive one, and the negative one is the
+more interesting of the two.
+
+**Teams cite decisions when writing them, not when obeying them.** The funnel: 100 repositories
+with an `adr-tools` tree, 18 with twenty or more numbered decisions, 15 cloned and measured. Of
+those, the citing commits are overwhelmingly `Add ADR-25`, `Reword ADR-25`, `Mark ADR-25 as
+Accepted` — the subject *is* the decision's title, so the pair is a paraphrase with the paraphrase
+left in. Commits citing a decision while doing the work it governs are rare: three repositories
+yielded fewer than ten each, one yielded none, and one yielded 76.
+
+That is worth stating as a finding rather than an obstacle, because it is the strongest argument
+this project has for its own convention: **OXN's decisions are evaluable because their scope is
+declared.** `applies-to` is what makes "which decisions govern this change" answerable without
+anyone remembering to mention an ADR in a commit message. No third-party corpus has it, which is
+why the label here had to be a citation instead.
+
+**The corpus.** Five repositories, pinned in `benchmarks/manifest.yaml` with `history: full`
+(a label here *is* a commit, so a shallow clone contains none of them): `querator`, `Darker`,
+`elsa-core`, `tessellation`, `agentic-dev-team` — 149 decisions and 100 pairs. Each pair is ranked
+**only against its own repository's decisions**, which is what `get_architectural_context` does;
+pooling is for the statistics and never for the ranking.
+
+| slice | n | BM25 P@1 | **P@3** | MRR | citation-prior P@3 |
+|---|---|---|---|---|---|
+| all | 100 | 0.610 | **0.820** | 0.726 | 0.470 |
+| human-authored commits | 48 | 0.604 | **0.833** | 0.722 | 0.479 |
+| task text does not restate the title | 44 | 0.545 | **0.773** | 0.680 | 0.318 |
+| strict — both of the above | 27 | 0.481 | **0.741** | 0.632 | 0.259 |
+| excluding the largest repository | 24 | 0.583 | **0.875** | 0.723 | 0.396 |
+
+**BM25 beats the citation-frequency prior in every slice**, including the strict one. That is the
+claim section 5(a) could not make, and it is asserted rather than reported:
+`tests/test_retrieval_external.py` fails if it stops holding.
+
+**This does not overturn 5(a); it explains it.** The two corpora ask different questions. There the
+gold is *scope* — which decisions' globs the changed files fall under — and a commit subject cannot
+recover that, which is why text scored at chance. Here the gold is *topic* — which decision this
+work is about — which is exactly what words are for. Read together they are section 4's split with
+evidence on both sides: **scope decides which constraints apply; text decides which of them this
+task is about.** A ranker that had been asked to do the first job was always going to look useless.
+
+**Half of every usable pair in open source is agent-written.** 52 of 100 carry
+`Co-Authored-By: Claude`. They are kept, and reported separately, on the grounds that OXN exists to
+govern agents — so agent-written commits are arguably the population rather than the confound. The
+`human-authored` and `excluding the largest repository` rows exist so a reader who disagrees can
+have the number their way; the conclusion does not change in either.
+
+**What is still not measured.** Whether a *better* ranker helps: `model2vec` is deferred, and the
+comparison it needs — a second ranker on these same labels — is now possible for the first time.
+And whether any of this helps an *agent*, which is P11 and needs the arms.
 
 ## Consequences
 

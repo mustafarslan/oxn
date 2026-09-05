@@ -1,0 +1,869 @@
+{
+  "rule": "task = a commit citing an ADR while doing the work it governs, minus the citation; gold = the cited decision. Authoring commits, citations of decisions absent at the pinned commit, and commits with nothing left after stripping are excluded. Task text is NOT stored: read it from the pinned clone.",
+  "corpora": {
+    "adr-querator": {
+      "sha": "a78c6ccfdf555bdd74ff9cacced8d4f4567f194b",
+      "adr_dir": "docs/adr",
+      "decisions": 25,
+      "pairs": [
+        {
+          "sha": "a8ea66b1eb73ceb05f884321e3769bd969432e6a",
+          "gold": [
+            9
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "1fd1bb2ba694088abbcc0b4672691703ceafd647",
+          "gold": [
+            19
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "1ac9f8abf96f195dc8373d9d600862f15bd0e5db",
+          "gold": [
+            19
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "02d7fd1415e705892103cbb0b9751f91abdeb5d9",
+          "gold": [
+            3
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "66b47fe1019a321396041d883709031f94096550",
+          "gold": [
+            22
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "51fe048412305333891e1f3519676485dfa49cf4",
+          "gold": [
+            22
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "ac508ee77ad8895b04cdd06410bb3050bb24d117",
+          "gold": [
+            25
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "3c5f5caf043334ddc0ff3e7fb1c45acd206cce7b",
+          "gold": [
+            16
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        }
+      ]
+    },
+    "adr-darker": {
+      "sha": "095c8bd8af8862d980c3b69f6e4d4e441190c93a",
+      "adr_dir": "docs/adr",
+      "decisions": 21,
+      "pairs": [
+        {
+          "sha": "ab96b38ab1b5a7d6a2acc4a38039f74ae7e0868b",
+          "gold": [
+            14
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "f70dd6b58bdf36c584594ecc6ca169e41e725917",
+          "gold": [
+            14
+          ],
+          "restates_title": false,
+          "agent_authored": true
+        },
+        {
+          "sha": "f9e20e4128d5198cb14f57df2956dda4e73e50c9",
+          "gold": [
+            13
+          ],
+          "restates_title": false,
+          "agent_authored": true
+        },
+        {
+          "sha": "2fefb79da5375515d95f5f255d5eb8d6767b0ae3",
+          "gold": [
+            12
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "7d60d699ad6f88af8b77a17f937b545fa6c61624",
+          "gold": [
+            9
+          ],
+          "restates_title": false,
+          "agent_authored": true
+        },
+        {
+          "sha": "aab0f4a7e2d56c878cad91c4c68ec8b1dc1581df",
+          "gold": [
+            8
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "2adcdedb57ac6ea44cd9b79b503a9b1955b5cc8b",
+          "gold": [
+            8
+          ],
+          "restates_title": false,
+          "agent_authored": true
+        }
+      ]
+    },
+    "adr-elsa-core": {
+      "sha": "53595b95d27a6717ac70333bdd6bfc10169b31ed",
+      "adr_dir": "doc/adr",
+      "decisions": 28,
+      "pairs": [
+        {
+          "sha": "767c97aad561ee0234fff41464fe7169bbe8737b",
+          "gold": [
+            10
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "74123110d59e805baefba38c3cb066199470a7db",
+          "gold": [
+            9,
+            10,
+            12
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "7bc9035f5edfe70796e705b139422f967ca28536",
+          "gold": [
+            8,
+            9
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "b09a56481231ebc9697f52694ff8ce5d4e410a9e",
+          "gold": [
+            5,
+            6,
+            7,
+            8
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "4266421a4cbce3ac6c2ef6d97a2c1c12df65f7cc",
+          "gold": [
+            4
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        }
+      ]
+    },
+    "adr-tessellation": {
+      "sha": "65b3667d414760763fe342e720a9486d2c0beb82",
+      "adr_dir": "docs/adr",
+      "decisions": 33,
+      "pairs": [
+        {
+          "sha": "a36c71166ad0b06f311b0351c290de2eb2137f33",
+          "gold": [
+            31
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "481d80872fbf4226112861b75a6b8af057fe53eb",
+          "gold": [
+            28
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "7ae6c487af94666dcfc0b43b1f7cbf1fdf98d41e",
+          "gold": [
+            30
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "089e25dc220e7ed15ea37578f25f4a796eef3e81",
+          "gold": [
+            25,
+            28
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        }
+      ]
+    },
+    "adr-agentic-dev-team": {
+      "sha": "52cc5efd1c445e71c55b956837c003911346d7e7",
+      "adr_dir": "docs/adr",
+      "decisions": 42,
+      "pairs": [
+        {
+          "sha": "b6514a7bb6a09747857b7de312145aef8f0f6d4b",
+          "gold": [
+            28
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "5084ae6a2229344fb3eccde6e6d86b31791b1f24",
+          "gold": [
+            36
+          ],
+          "restates_title": false,
+          "agent_authored": true
+        },
+        {
+          "sha": "4ff84e4b2cbd93434cffe4902c890542a717a0d2",
+          "gold": [
+            14,
+            31,
+            32,
+            36,
+            37,
+            42
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "efc97694488e0c63063ef14443026987c58daa54",
+          "gold": [
+            36
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "4428b5f5f729db2cf1c594bc85311d40ab4934c0",
+          "gold": [
+            22,
+            36,
+            41
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "efeda13281e62e8579c5df9c0a4f687db86f4a54",
+          "gold": [
+            36
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "bef8c710043e00329b5fa066308c8cc1507d2850",
+          "gold": [
+            14
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "1451d9a49f18c4557fd4f9997ca1bd6d71900c01",
+          "gold": [
+            38,
+            39
+          ],
+          "restates_title": false,
+          "agent_authored": true
+        },
+        {
+          "sha": "5d0d58a9d4aed993376b167b3d33240fd9013022",
+          "gold": [
+            11,
+            38,
+            39
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "4ce21e0ed81dafb4fd04d1f036e3d32ed71ec17d",
+          "gold": [
+            37,
+            38
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "a98bdab9b946b2b6405e6bcee36d464675b7e315",
+          "gold": [
+            16,
+            37
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "c9232bd9f3eeca480c2fa8864ec79dbdf0aec902",
+          "gold": [
+            37
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "2c79dc4f72393b19aecc07a79825dd161d935c5d",
+          "gold": [
+            36
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "32204beb204f8e9060edf959823adb7a07a8b845",
+          "gold": [
+            34
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "c51ebf7059d3024890fb592e930cb659faa27999",
+          "gold": [
+            11,
+            37
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "ab786d32bf5fc628688af2892b05b8868979fe3b",
+          "gold": [
+            36
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "9bed5da8172406d77530c0bb4e39a06d940347e7",
+          "gold": [
+            35
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "36f3ccd41a724a4b70fa76c3c43ee9f78c85691f",
+          "gold": [
+            20,
+            35
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "c0a1dc090b3e4bec4b2aa39f3f1889b82ff55120",
+          "gold": [
+            14
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "6f9c1f51db03a02dec2e9265e06e2b6c8c18263d",
+          "gold": [
+            14,
+            31
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "4c5baf3628f96d9799cb30c3432fed651b66ef74",
+          "gold": [
+            32
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "9cf8f5261719df97ecad6e55799af858d931fe5f",
+          "gold": [
+            17
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "ebb8a9c79d26a2f5a93999658deb3293663bbde4",
+          "gold": [
+            13
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "442ab59faffbb7e85fa7b8fdf5431c0a163c7e12",
+          "gold": [
+            32
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "f88cdb58bfd119af79885ba746b06ee8eaf97f65",
+          "gold": [
+            32
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "6230ae8aa7a88a586ad8b236af640bb152ab0b42",
+          "gold": [
+            14,
+            31
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "441a9ecae24a64b8ef8cf71a725faf7ba9a91be0",
+          "gold": [
+            13,
+            14
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "f486775e74255e3923d6eb3974033061407dfc68",
+          "gold": [
+            14
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "cbee1753cc11e431982225bcadfeb7113f0ba861",
+          "gold": [
+            14
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "c9907f9b32c1e552423ec077a32fb04a8ae3c4b3",
+          "gold": [
+            14
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "48101c0e901d8d01465c717a7a43b64674a9ae97",
+          "gold": [
+            26
+          ],
+          "restates_title": false,
+          "agent_authored": true
+        },
+        {
+          "sha": "e56f1b7166a39116fbce906eb616d42e4e67fc54",
+          "gold": [
+            26
+          ],
+          "restates_title": false,
+          "agent_authored": true
+        },
+        {
+          "sha": "b2c2544310852bd295ba74f90fdeaca2ea5abd2a",
+          "gold": [
+            14
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "3973f16300800bc1520793707da88ca75344eed2",
+          "gold": [
+            27
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "abca7251c80e027ae98f165a410fdef64c7d64f0",
+          "gold": [
+            12
+          ],
+          "restates_title": false,
+          "agent_authored": true
+        },
+        {
+          "sha": "155bb0edef8a8ed59c39416ae50474d4eefc1cf8",
+          "gold": [
+            29
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "94d779f9e8b8a1fde414abd21ce0a344c260fcde",
+          "gold": [
+            2
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "4056fb57913e74fd34222280e3c2e4b076db049f",
+          "gold": [
+            26
+          ],
+          "restates_title": false,
+          "agent_authored": true
+        },
+        {
+          "sha": "73c45df1a59cc92a6302b162ee4854329c197cb2",
+          "gold": [
+            28
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "e256120a0dd6b25f6de48c81ded5f454540d4d62",
+          "gold": [
+            27,
+            28
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "677c805453a25d94150838943bd6b0d93c289a94",
+          "gold": [
+            27
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "57fd8237e2927b863755e62b84f57f1d6b9c552d",
+          "gold": [
+            4
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "72c965a0c2a6732512dd12113820f6c54cf34fe8",
+          "gold": [
+            26
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "e8fa54b0a14302173ebe3d81f013438554e174b5",
+          "gold": [
+            26
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "5e5b082bc52e067e4882604228da0b4ed3d55b5b",
+          "gold": [
+            26
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "21cb1690dce87704e7cb831ab1970198db5d0986",
+          "gold": [
+            22
+          ],
+          "restates_title": false,
+          "agent_authored": true
+        },
+        {
+          "sha": "1b4cdd09420bd4de4ab4eea16bcd04937dd6a39e",
+          "gold": [
+            10
+          ],
+          "restates_title": false,
+          "agent_authored": true
+        },
+        {
+          "sha": "8591414fa72db2b6ed53d3f94b24c861c9be81bf",
+          "gold": [
+            24
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "26a5b519f2b14647e7e2ebbf7ccee6764ca42ea1",
+          "gold": [
+            23
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "f2f0fc022ba41eb33d8f6dcdebdc82614a8daac3",
+          "gold": [
+            14
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "fe2a76e5d8444a15da0e84c8884788ce18c53f83",
+          "gold": [
+            8
+          ],
+          "restates_title": false,
+          "agent_authored": true
+        },
+        {
+          "sha": "e8fe721b488d50fdebdf465332cba2a9c096aa12",
+          "gold": [
+            15
+          ],
+          "restates_title": false,
+          "agent_authored": true
+        },
+        {
+          "sha": "1989b381a24d0d5b89741ed1f4e07ca94288f950",
+          "gold": [
+            8
+          ],
+          "restates_title": false,
+          "agent_authored": true
+        },
+        {
+          "sha": "54e3e8bd224790ac0d7a302fce7a9e65b1422d53",
+          "gold": [
+            8
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "93669b0a31f7c9d933c123cdb85f034cb4b211de",
+          "gold": [
+            17
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "08ee6e05d260c0f6cb72cfdb35a91695d6a09e31",
+          "gold": [
+            15
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "bba1f9b984b19e6a538e5853bce0c2be00ef8d80",
+          "gold": [
+            14
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "5704a04cbf262c85a24339f0249f61d94277c9b4",
+          "gold": [
+            15
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "d8b1ab509aa4f469c386995629b3ccb984bebda5",
+          "gold": [
+            14,
+            15
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "7843112277b596b65fbaf35ad31e222093c2e7f1",
+          "gold": [
+            15
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "d6af7e266bce71cf000af25deed6ae346928ffc6",
+          "gold": [
+            14,
+            15
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "d5ed5fce8d214da092f7e01a948c17d4458e35a3",
+          "gold": [
+            14
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "9d6715d3fc2f44f0376caf13365e5d1950765a46",
+          "gold": [
+            14
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "f2fb9e9da67d53e9e4328b5b2041e7a4ac3e18ea",
+          "gold": [
+            14
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "f5c2cd04e6acd8c90b8b57dda7ffbe24ccdaec52",
+          "gold": [
+            8
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "ba9ff783414630ef780700278dae359de09cf49a",
+          "gold": [
+            12
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "7fac5b4d724caef3197056adeea42eb29c2e5052",
+          "gold": [
+            8,
+            11
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "56af9df8981d628b58127ea1ee4c55d4bee9a6c8",
+          "gold": [
+            4
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "2fda3c1ef292410b0bb060a09892564eedd3fb32",
+          "gold": [
+            4,
+            8
+          ],
+          "restates_title": true,
+          "agent_authored": false
+        },
+        {
+          "sha": "b56088082f4952bd51178bb1d66843e61788b8ed",
+          "gold": [
+            7
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "d05886080c458ec579b58f1f63ea3bf7524f3433",
+          "gold": [
+            6
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "384138b0a6954a9f1516579e4829cf5dce9d616b",
+          "gold": [
+            6
+          ],
+          "restates_title": false,
+          "agent_authored": false
+        },
+        {
+          "sha": "8cc937baf56501f052c2845b554d557f92afd7c5",
+          "gold": [
+            4
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "1b29809972ba4c784dda9b923dbf48cf3ffd0eb8",
+          "gold": [
+            4
+          ],
+          "restates_title": true,
+          "agent_authored": true
+        },
+        {
+          "sha": "5aa50e9f3398c4b2bd093520743533526642f8bc",
+          "gold": [
+            5
+          ],
+          "restates_title": false,
+          "agent_authored": true
+        },
+        {
+          "sha": "d56876551c057c1c7a8b9ef41f68b1f3a023efd4",
+          "gold": [
+            3
+          ],
+          "restates_title": false,
+          "agent_authored": true
+        }
+      ]
+    }
+  }
+}
