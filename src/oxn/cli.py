@@ -17,7 +17,7 @@ test_import_guard.py`` fails the build if that slips.
 from __future__ import annotations
 
 import sys
-from typing import NoReturn
+from typing import Any, NoReturn
 
 # Modules that must never be reachable from the hook fast path. Kept here so the guard
 # test and the humans reading this file see the same list.
@@ -54,16 +54,18 @@ def _run_fast_path(argv: list[str]) -> int:
     args = parser.parse_args(argv[1:])
 
     from oxn.check import CheckReport, run_check  # noqa: PLC0415 -- lazy; see the docstring
-    from oxn.config import ConfigError  # noqa: PLC0415
+    from oxn.config import Config, ConfigError  # noqa: PLC0415
 
-    targets = _hook_targets(args.paths)
+    targets, session = _hook_request(args.paths)
     if targets is None:
-        json.dump(CheckReport(scope="files").as_dict(), sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        _emit(CheckReport(scope="files"))
         return 0
 
     try:
-        report = run_check(targets, deep=args.deep, use_baseline=not args.no_baseline)
+        settings = Config.load()
+        report = run_check(
+            targets, config=settings, deep=args.deep, use_baseline=not args.no_baseline
+        )
     except ConfigError as error:
         json.dump(
             {"status": "ERROR", "errors": {"oxn.yaml": str(error)}, "violations": []},
@@ -71,37 +73,90 @@ def _run_fast_path(argv: list[str]) -> int:
             indent=2,
         )
         sys.stdout.write("\n")
+        sys.stderr.write(f"OXN could not read oxn.yaml, so nothing was checked: {error}\n")
         return 1
 
-    json.dump(report.as_dict(), sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    if session:
+        _charge_retries(report, settings, session)
+    _emit(report)
     return report.exit_code
 
 
-def _hook_targets(paths: list[str]) -> list[str] | None:
+def _emit(report: Any) -> None:
+    """Write the report to both streams, because the two readers are different.
+
+    **stdout** carries the JSON: CI parses it, `oxn baseline` and the MCP server's
+    `check_code` consume the same shape, and `tests/test_cli.py` asserts it is always there.
+
+    **stderr** carries the prose, and it is not a duplicate. Claude Code's `PostToolUse`
+    contract shows *stderr* to the agent on exit 2 and puts stdout in the transcript, so for
+    the whole of P9 a rejected edit reached Claude as `No stderr output` — the gate blocking
+    correctly and explaining nothing. Silence on a passing check is deliberate: a hook that
+    speaks when nothing is wrong is a hook people stop reading.
+    """
+    import json  # noqa: PLC0415 -- lazy; see the module docstring
+
+    from oxn.check import remediation  # noqa: PLC0415
+
+    json.dump(report.as_dict(), sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    if report.exit_code != 0:
+        sys.stderr.write(remediation(report) + "\n")
+
+
+def _charge_retries(report: Any, settings: Any, session: str) -> None:
+    """Count this run against the session's budget, and record where each violation stands.
+
+    Every path this run *measured* is passed down, not just the failing ones: a file that
+    came back clean is how the ledger learns a violation was repaired, and omitting it would
+    leave the count standing until the session ended.
+    """
+    if settings.retry_budget <= 0:
+        return
+    from oxn.retry import charge, ledger_path  # noqa: PLC0415 -- lazy; see the docstring
+
+    measured: dict[str, dict[str, float]] = {path: {} for path in report.paths}
+    for finding in report.failing:
+        measured.setdefault(finding.path, {})[finding.key] = finding.value
+    report.attempts = charge(ledger_path(settings.root, session), measured)
+    report.retry_budget = settings.retry_budget
+
+
+def _hook_request(paths: list[str]) -> tuple[list[str] | None, str]:
+    """What to measure, and which agent session asked — the payload is read exactly once.
+
+    The session id is what makes a retry budget possible at all: `PostToolUse` fires per
+    edit and remembers nothing, so "this is the third time I have told you about this
+    function" is a claim only a ledger keyed by session can make. It is absent whenever OXN
+    is run by a person or by CI, and the budget is then not applied — halting a build after
+    three commits touched the same debt would be nonsense.
+    """
+    if paths:
+        return paths, ""
+    payload = _stdin_payload()
+    if payload is None:
+        return ["."], ""
+    session = payload.get("session_id")
+    return _edited_targets(payload), session if isinstance(session, str) else ""
+
+
+def _edited_targets(payload: dict[str, object]) -> list[str] | None:
     """What ``oxn check --json`` should measure, or ``None`` for "nothing to measure".
 
-    Explicit arguments win. With none, stdin decides, because the two callers that pass no
-    path want opposite things:
-
-    * A **PostToolUse hook** sends a JSON payload naming the file the agent just edited.
-      That file is the entire job. Checking the repository instead is what this function
-      exists to stop: measured on OXN's own tree with the benchmark corpora fetched, the
-      whole-tree walk cost **7.27 s per edit** against ADR-0002's 200 ms budget, while the
-      one named file costs 67 ms. `tests/test_latency.py` never caught it because it passed
-      a path -- it measured a route the deployed hook does not take.
-    * A **human or CI** runs it with stdin empty or a terminal, and means the whole tree.
+    A **PostToolUse hook** sends a JSON payload naming the file the agent just edited. That
+    file is the entire job. Checking the repository instead is what this function exists to
+    stop: measured on OXN's own tree with the benchmark corpora fetched, the whole-tree walk
+    cost **7.27 s per edit** against ADR-0002's 200 ms budget, while the one named file
+    costs 67 ms. `tests/test_latency.py` never caught it because it passed a path -- it
+    measured a route the deployed hook does not take. (A **human or CI** runs OXN with stdin
+    empty or a terminal and means the whole tree, which `_hook_request` answers above,
+    before there is a payload to read.)
 
     A payload that names nothing analysable returns ``None`` rather than falling back to the
     tree. The fallback is the trap: the matcher can be widened to a tool that edits no file
     (or the payload shape can change), and a tree-walking fallback would quietly reinstate
     the seven seconds with nothing to show for it.
     """
-    if paths:
-        return paths
-    payload = _stdin_payload()
-    if payload is None:
-        return ["."]
     edited = _edited_path(payload)
     # A file the edit deleted or moved is not a violation, and reporting it as a missing
     # path would fail the hook on a legitimate edit.

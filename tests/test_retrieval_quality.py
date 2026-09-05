@@ -37,8 +37,14 @@ LABELS = ROOT / "benchmarks" / "retrieval-labels-oxn.json"
 #: ADR-0004 gained amendments, and a longer body changes its own BM25 length normalisation.
 #: That is the cost of pinning a corpus made of the documents under edit, and it is paid
 #: knowingly -- the alternative is a number nobody can reproduce.
-RECORDED_P_AT_1 = 0.377
-RECORDED_MRR = 0.577
+#:
+#: 0.377/0.577 -> 0.396/0.596 later the same day, again with no ranker change: ADR-0003
+#: gained the amendment recording the stderr defect and the retry budget. The direction is
+#: worth noting and not worth celebrating -- ADR-0003 is gold for the surfaces, and it grew
+#: several hundred words of hook, agent and remediation vocabulary, so the pairs it already
+#: won got easier. It is the corpus moving towards the queries, not the ranker improving.
+RECORDED_P_AT_1 = 0.396
+RECORDED_MRR = 0.596
 
 
 @pytest.fixture(scope="module")

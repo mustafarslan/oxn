@@ -110,10 +110,21 @@ def test_the_hook_as_deployed_measures_one_file_not_the_repository(tmp_path) -> 
 
     The directory here holds a second file precisely so that "checked one file" and "checked
     the directory" are distinguishable outcomes rather than the same number.
+
+    The payload carries a `session_id` for the same reason it carries a path: Claude Code
+    sends one, and it is what switches on the retry ledger's read and write. A payload
+    without it measures a route with one less file operation than the deployed hook has --
+    the same shape of gap as the one described above, one layer down.
     """
     shutil.copy(WORKLOAD, tmp_path / "workload.py")
     shutil.copy(WORKLOAD, tmp_path / "bystander.py")
-    payload = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": "workload.py"}})
+    payload = json.dumps(
+        {
+            "session_id": "latency",
+            "tool_name": "Edit",
+            "tool_input": {"file_path": "workload.py"},
+        }
+    )
 
     result = subprocess.run(
         [sys.executable, "-m", "oxn.cli", "check", "--json"],
@@ -125,6 +136,9 @@ def test_the_hook_as_deployed_measures_one_file_not_the_repository(tmp_path) -> 
     assert result.returncode in (0, 2), result.stderr.decode()
     assert json.loads(result.stdout)["paths"] == ["workload.py"], (
         "the hook checked something other than the file that was edited"
+    )
+    assert (tmp_path / ".oxn" / "cache" / "attempts" / "latency.json").is_file(), (
+        "the ledger was not written, so this timing does not cover the deployed route"
     )
 
     elapsed = _time_check(tmp_path, payload=payload)

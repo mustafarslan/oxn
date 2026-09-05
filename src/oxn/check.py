@@ -32,9 +32,18 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover
     from oxn.config import Config
+    from oxn.retry import Attempt
 
-#: Exit codes. 2 is what a Claude Code `PostToolUse` hook must return to feed its output
-#: back to the agent as something to act on; 1 is reserved for OXN failing to run at all.
+#: Exit codes. 2 is what a Claude Code `PostToolUse` hook returns to feed a message back to
+#: the agent; 1 is reserved for OXN failing to run at all.
+#:
+#: **The message travels on stderr, and for the whole of P9 it did not.** Claude Code's hook
+#: contract is explicit -- exit 2 "shows stderr to Claude" -- while `oxn check --json` wrote
+#: every finding to *stdout*, which a `PostToolUse` hook shows only in transcript mode. The
+#: gate was therefore working perfectly and telling the agent nothing: what actually reached
+#: Claude on a rejected edit was the string `No stderr output`. The increment trail is the
+#: product, so `remediation()` below renders it to stderr while the JSON stays on stdout for
+#: CI and for `check_code`.
 EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_VIOLATIONS = 2
@@ -100,6 +109,11 @@ class CheckReport:
     regressed: list[Finding] = field(default_factory=list)
     diagnostics: list[str] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)
+    #: Retry accounting, populated only on the hook path — a CLI or CI run has no session
+    #: to count attempts against, and must never halt asking for a fix.
+    attempts: dict[str, Attempt] = field(default_factory=dict)
+    #: The budget those attempts are counted against; 0 means no budget applied.
+    retry_budget: int = 0
 
     @property
     def blocking(self) -> list[Finding]:
@@ -108,6 +122,26 @@ class CheckReport:
     @property
     def advisory(self) -> list[Finding]:
         return [finding for finding in self.findings if not finding.blocking]
+
+    @property
+    def failing(self) -> list[Finding]:
+        """Everything that fails this build: new violations and baselined ones made worse.
+
+        `regressed` is not in `findings`, so anything counting what the agent has to fix has
+        to add it back — a baselined violation the agent keeps making worse is exactly the
+        case a retry budget exists for.
+        """
+        return [*self.blocking, *self.regressed]
+
+    @property
+    def exhausted(self) -> list[Finding]:
+        """Findings this session has already spent its whole budget failing to repair."""
+        return [
+            finding
+            for finding in self.failing
+            if (attempt := self.attempts.get(finding.key)) is not None
+            and attempt.exhausted(self.retry_budget)
+        ]
 
     @property
     def passed(self) -> bool:
@@ -122,7 +156,7 @@ class CheckReport:
     def as_dict(self) -> dict[str, Any]:
         from oxn import __version__
 
-        return {
+        payload: dict[str, Any] = {
             "oxn_version": __version__,
             "status": "PASSED" if self.passed else "FAILED",
             "scope": self.scope,
@@ -134,6 +168,16 @@ class CheckReport:
             "diagnostics": self.diagnostics,
             "errors": self.errors,
         }
+        if self.retry_budget:
+            payload["retry"] = {
+                "budget": self.retry_budget,
+                "attempts": {
+                    key: {"count": attempt.count, "values": list(attempt.values)}
+                    for key, attempt in sorted(self.attempts.items())
+                },
+                "exhausted": sorted(finding.key for finding in self.exhausted),
+            }
+        return payload
 
 
 def run_check(
@@ -397,6 +441,96 @@ def write_baseline(report: CheckReport, path: Path) -> int:
         + "\n"
     )
     return len(recorded)
+
+
+# ---- what the agent is told ------------------------------------------------------------
+
+#: How many findings the hook spells out in full. One edit can break a dozen ceilings at
+#: once, and a wall of text is the failure mode constraint decay predicts: the agent reads
+#: the top and acts on the top. The rest are counted, and the next edit surfaces them.
+MAX_REPORTED = 5
+
+
+def remediation(report: CheckReport) -> str:
+    """What a rejected edit should say to the agent that made it. Plain text, for stderr.
+
+    Not the JSON in a different shape. The JSON on stdout is for CI and for `check_code`,
+    which want every field; this is for a model deciding what to do next, so it leads with
+    the increment trail -- *which* construct added *how much* at *which line* -- and ends
+    with the one instruction the finding implies. `rich` is never imported here for the same
+    reason `render` does not import it: this runs on every edit, inside a 200 ms budget.
+    """
+    if report.errors:
+        problems = "\n".join(f"  {path}: {why}" for path, why in sorted(report.errors.items()))
+        return f"OXN could not run, so nothing was checked:\n{problems}"
+
+    spent = report.exhausted
+    live = [finding for finding in report.failing if finding not in spent]
+    sections = [
+        section
+        for section in (_repair_section(live, report), _halt_section(spent, report))
+        if section
+    ]
+    return "\n\n".join(sections)
+
+
+def _repair_section(findings: list[Finding], report: CheckReport) -> str:
+    """The violations the agent still has budget to fix."""
+    if not findings:
+        return ""
+    shown = [_describe(finding, report) for finding in findings[:MAX_REPORTED]]
+    if len(findings) > MAX_REPORTED:
+        shown.append(f"  ...and {len(findings) - MAX_REPORTED} more, not listed.")
+    return "\n".join(
+        [
+            f"OXN: this edit breaks {len(findings)} invariant(s). Fix them before moving on.",
+            "",
+            *shown,
+            "",
+            "Fix the cause, not the number. Splitting the body into one-line helpers is "
+            "detected: rule `shredding` totals a function with the private, trivial helpers "
+            "only it calls, so a dedicated helper does not raise the budget.",
+        ]
+    )
+
+
+def _describe(finding: Finding, report: CheckReport) -> str:
+    """One finding, with the increment trail that says where its score came from."""
+    attempt = report.attempts.get(finding.key)
+    header = f"  {finding}"
+    if attempt is not None and report.retry_budget:
+        header += f"  [attempt {attempt.count} of {report.retry_budget}]"
+    return "\n".join([header, *(f"    {line}" for line in finding.explanation)])
+
+
+def _halt_section(findings: list[Finding], report: CheckReport) -> str:
+    """The report OXN makes when the loop did not converge (ADR-0003 section 4).
+
+    Deliberately an instruction to *stop and escalate* rather than another repair request.
+    A `PostToolUse` hook cannot halt anything by itself -- the tool has already run and the
+    exit code does not end the turn -- so the only thing that bounds the loop is telling the
+    agent, in as many words, that further attempts are not wanted and why.
+    """
+    if not findings:
+        return ""
+    trails = [
+        f"  {finding.path}:{finding.line} {finding.entity} — {finding.rule} "
+        f"{report.attempts[finding.key].trend} (ceiling {finding.ceiling:g})"
+        for finding in findings
+    ]
+    return "\n".join(
+        [
+            f"OXN: retry budget spent. {report.retry_budget} repair(s) have not cleared "
+            f"{len(findings)} violation(s), and this is what each attempt scored:",
+            "",
+            *trails,
+            "",
+            "Stop editing these entities and report to the user. Say what you tried, what "
+            "the numbers did, and that the alternatives are a different design or "
+            "`oxn baseline`, which records a violation as accepted debt that may not grow. "
+            "Choosing between those is theirs, not yours.",
+        ]
+    )
 
 
 # ---- human-readable output ------------------------------------------------------------

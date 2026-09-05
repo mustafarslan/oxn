@@ -4,6 +4,11 @@
 # shippable to anyone else. Every value here is a default from `oxn.thresholds` unless a
 # comment says otherwise, and the reasoning for each default lives beside it in that file.
 
+# How many repairs an agent may spend on one violation before the hook stops asking and
+# tells it to escalate instead (ADR-0003 section 4). Set to the default explicitly, because
+# a bound nobody can see in the config is a bound nobody expects when it fires.
+retry_budget: 3
+
 ceilings:
   cognitive_complexity: 12   # the headline gate; chosen over SonarSource's 15, idea.md's 8
   cyclomatic_complexity: 10
@@ -33,7 +38,11 @@ layers:
   # source is unassigned -- so every import the rule engine made was ungoverned. `context/*`
   # (ADR-0006) is analysis for the same reason `metrics/*` is: it reads the graph and the
   # rules, and the surfaces read it.
-  analysis: ["src/oxn/metrics/*", "src/oxn/resolve/*", "src/oxn/volume/*", "src/oxn/vcs/*", "src/oxn/scip/*", "src/oxn/rules/*", "src/oxn/context/*"]
+  # `retry.py` is analysis for the same reason `context/*` is: the surfaces call it, it
+  # calls nothing back, and it holds policy rather than presentation. It imports no part of
+  # OXN at all -- it deals in path strings and floats -- which is what lets a module the
+  # gate itself depends on sit under the contract instead of beside it.
+  analysis: ["src/oxn/metrics/*", "src/oxn/resolve/*", "src/oxn/volume/*", "src/oxn/vcs/*", "src/oxn/scip/*", "src/oxn/rules/*", "src/oxn/context/*", "src/oxn/retry.py"]
   graph: ["src/oxn/graph/*"]
   # Not part of the layered contract below -- tests may reach anywhere, that is their job --
   # but named so they can carry their own ceilings.

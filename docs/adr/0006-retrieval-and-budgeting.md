@@ -190,6 +190,15 @@ of it and a ranker reading its own gold would report a number about nothing.
 | constant, ordered by how much code each decision governs | 0.698 | 0.787 |
 | constant, always the longest decision | 0.245 | — |
 
+Measured on the ADR bodies as they stood on 2026-09-05, and that qualifier is load-bearing:
+BM25's row had moved to 0.396 / 0.596 by the end of the same day, because ADR-0003 gained an
+amendment. The ranker did not change. A decision that grows several hundred words of the
+vocabulary its own commits use gets easier to retrieve, which is the corpus moving towards
+the queries rather than a better ranking -- and one more reason the quality claim lives on
+the external corpus of section 5b. The reproducible pair is pinned in
+`tests/test_retrieval_quality.py`; the table stays as the record of what was measured when
+the negative result was found.
+
 **BM25 over ADR prose performs at chance here, and a constant beats it.** Four things that number
 is, and one it is not:
 

@@ -83,6 +83,46 @@ python scripts/fetch_corpora.py --list
 python scripts/fetch_corpora.py --use eval
 ```
 
+## The hook, and what it says
+
+`oxn init` writes a `PostToolUse` hook on `Edit`/`Write`/`MultiEdit`. On a violation it exits
+2 and tells the agent what broke, at which line, and by how much:
+
+```
+OXN: this edit breaks 1 invariant(s). Fix them before moving on.
+
+  src/api/client.py:6 api.client.send has cognitive_complexity 24, above the ceiling of 12  [attempt 1 of 3]
+    +1 at line 8: `for`
+    +2 at line 9: `if` nested 1 deep
+    +3 at line 10: `for` nested 2 deep
+```
+
+That text goes to **stderr**, which is the stream Claude Code shows the agent on exit 2; the
+JSON goes to stdout for CI and for `check_code`. Getting that backwards is not cosmetic, and
+OXN had it backwards until 2026-09-05: the gate blocked every bad edit correctly and the
+agent received the string `No stderr output`
+([ADR-0003](docs/adr/0003-enforcement-model.md)'s amendment).
+
+**The loop is bounded.** LLM refactoring does not reliably converge (arXiv 2508.11958), so
+after `retry_budget` failed repairs of the *same* violation the hook stops asking and reports
+instead, with the trajectory that shows whether the agent was getting anywhere:
+
+```
+OXN: retry budget spent. 3 repair(s) have not cleared 1 violation(s), and this is what each attempt scored:
+
+  src/api/client.py:6 api.client.send — cognitive_complexity 24 -> 17 -> 17 -> 17 (ceiling 12)
+
+Stop editing these entities and report to the user.
+```
+
+Attempts are counted per session and per violation, and repairing one forgets it. Set
+`retry_budget: 0` in `oxn.yaml` to disable the bound — the right setting for CI, where there
+is no agent to escalate to. Note the honest limit: a `PostToolUse` hook runs *after* the tool
+and cannot end a turn, so the halt is an instruction rather than an enforcement.
+
+The hook is file-scoped and does not check layer contracts — those need the whole import
+graph. Run `oxn check --deep` in CI for those.
+
 ## The MCP server
 
 `oxn init` writes `.mcp.json`, so an agent gets four read-only tools. They inform; the hook

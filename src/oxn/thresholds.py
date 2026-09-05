@@ -139,3 +139,23 @@ BM25_B: Final[float] = 0.75
 #: The cap is a display policy and never an enforcement one: the gate still checks every
 #: constraint, shown or not.
 MAX_BUNDLE_CONSTRAINTS: Final[int] = 7
+
+# ---- P9: the bounded remediation loop ---------------------------------------------------
+
+#: How many times OXN will report the *same* violation to the same agent session before it
+#: stops asking for a repair and reports the failure instead (ADR-0003 section 4).
+#:
+#: The cap exists because the loop is not guaranteed to converge: "Clean Code, Better
+#: Models" (arXiv 2508.11958) finds LLM refactoring frequently fails to get under a
+#: complexity threshold at all. Without a bound, a gate that keeps saying no to an agent
+#: that keeps saying yes is an infinite loop with a token budget attached.
+#:
+#: 3 is a judgement, and a deliberately unfitted one: it is the smallest number that lets an
+#: agent fail, read the increment trail, and try a genuinely different shape. There is no
+#: literature on the right number of retries for this loop -- what exists (2508.11958)
+#: measures whether the repair lands, not how many attempts help -- so this is listed in
+#: `oxn calibration` with zero observations like every other provisional value.
+#:
+#: Counted per (session, finding), never per file: an agent editing three violations in one
+#: file is making progress on each of them independently.
+RETRY_BUDGET: Final[int] = 3

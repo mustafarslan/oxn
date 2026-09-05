@@ -44,6 +44,12 @@ def test_a_violation_exits_two_so_the_hook_can_feed_it_back(tmp_path) -> None:
     A Claude Code `PostToolUse` hook treats exit 2 as "tell the agent about this"; anything
     else is either silence or a broken tool. 1 is reserved for OXN itself failing, which is
     a different situation and must not read as a code violation.
+
+    **The number was never sufficient, and this test's confidence in it was the problem.**
+    Exit 2 shows the agent *stderr*, and OXN wrote its findings to stdout, so for months
+    this assertion passed while a rejected edit told Claude nothing at all. What travels on
+    which stream is asserted in `test_retry.py`; exit 2 alone proves only that something was
+    rejected.
     """
     (tmp_path / "tangled.py").write_text(
         "def tangled(rows):\n"

@@ -12,6 +12,10 @@ invariant, and the JSON names the entity, the rule and the number.
   not raise the budget.
 * `.oxn/baseline.json` records pre-existing debt. It may not grow: a baselined violation
   that gets worse fails the build exactly as a new one does.
+* The loop is bounded. After `retry_budget` failed repairs of the *same* violation, the
+  hook stops asking for a fix and says so: stop editing, and report to the user what you
+  tried and what the numbers did. Repairing it on a later attempt is fine -- the count is
+  per violation, and clearing one forgets it.
 
 Run `oxn check` yourself at any time; `oxn check --deep` adds the architectural tier.
 

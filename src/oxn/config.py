@@ -122,6 +122,11 @@ class Config:
     #: Path globs whose findings are reported but never block. The escape hatch that keeps a
     #: gate from being switched off wholesale.
     advisory: tuple[str, ...] = ()
+    #: How many repairs an agent may spend on one violation before OXN stops asking and
+    #: reports instead (ADR-0003 section 4). `0` disables the budget: the gate keeps saying
+    #: no for as long as the violation is there, which is the correct behaviour in CI and
+    #: the wrong one in front of an agent that cannot converge.
+    retry_budget: int = thresholds.RETRY_BUDGET
 
     @property
     def baseline_path(self) -> Path:
@@ -203,7 +208,21 @@ class Config:
             contracts=tuple(_read_contract(entry, known) for entry in _as_list_of_dicts(raw)),
             exclude=tuple(_as_list(raw.get("exclude"), "exclude")),
             advisory=tuple(_as_list(raw.get("advisory"), "advisory")),
+            retry_budget=_read_retry_budget(raw.get("retry_budget")),
         )
+
+
+def _read_retry_budget(raw: object) -> int:
+    """A whole number of attempts, or the default. Rejected loudly rather than coerced.
+
+    `True` is an `int` in Python and would arrive here as a budget of one, which is a
+    silently working configuration that means nothing anybody wrote it to mean.
+    """
+    if raw is None:
+        return thresholds.RETRY_BUDGET
+    if not isinstance(raw, int) or isinstance(raw, bool) or raw < 0:
+        raise ConfigError(f"retry_budget must be a non-negative whole number, got {raw!r}")
+    return raw
 
 
 def _read_ceilings(raw: object, *, where: str) -> dict[str, float]:

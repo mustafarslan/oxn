@@ -221,6 +221,31 @@ _RETRIEVAL: tuple[Parameter, ...] = (
 )
 
 
+#: Enforcement policy (P9, ADR-0003 section 4). Unlike the retrieval group, a wrong value
+#: here has teeth: too low halts an agent that was converging, too high spends a token
+#: budget on a repair that was never going to land.
+_ENFORCEMENT: tuple[Parameter, ...] = (
+    Parameter(
+        name="RETRY_BUDGET",
+        value=float(thresholds.RETRY_BUDGET),
+        evidence=Evidence.JUDGEMENT,
+        observations=0,
+        provenance=(
+            "3, the smallest count that lets an agent fail, read the increment trail and "
+            "try a different shape. arXiv 2508.11958 establishes that the loop needs a "
+            "bound -- LLM refactoring often fails to reach the threshold at all -- but "
+            "measures whether a repair lands, not how many attempts are worth paying for"
+        ),
+        fit_when=(
+            "the attempt trajectories this budget already records are collected across "
+            "sessions. The question is empirical and cheaply answered: of the repairs that "
+            "eventually succeed, what fraction needed a third attempt or a fourth? A budget "
+            "set below that quantile halts work that would have converged"
+        ),
+    ),
+)
+
+
 def parameters() -> list[Parameter]:
     """The whole tunable surface. Adding a threshold anywhere means adding it here.
 
@@ -228,7 +253,7 @@ def parameters() -> list[Parameter]:
     91-line function this used to be on the day it was written -- and a function whose entire
     body is a list is a list.
     """
-    return [*_CEILINGS, *_ANTI_GAMING, *_RETRIEVAL]
+    return [*_CEILINGS, *_ANTI_GAMING, *_RETRIEVAL, *_ENFORCEMENT]
 
 
 def summary() -> dict[str, object]:

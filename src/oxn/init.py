@@ -68,6 +68,10 @@ invariant, and the JSON names the entity, the rule and the number.
   not raise the budget.
 * `.oxn/baseline.json` records pre-existing debt. It may not grow: a baselined violation
   that gets worse fails the build exactly as a new one does.
+* The loop is bounded. After `retry_budget` failed repairs of the *same* violation, the
+  hook stops asking for a fix and says so: stop editing, and report to the user what you
+  tried and what the numbers did. Repairing it on a later attempt is fine -- the count is
+  per violation, and clearing one forgets it.
 
 Run `oxn check` yourself at any time; `oxn check --deep` adds the architectural tier.
 
@@ -111,6 +115,12 @@ STARTER_CONFIG = f"""# OXN — architecture and quality invariants for this repo
 # Paths that are reported but never block.
 # advisory:
 #   - "tests/fixtures/*"
+
+# How many repairs an agent may spend on one violation before the hook stops asking for a
+# fix and tells it to escalate instead. LLM refactoring does not always converge, and an
+# unbounded gate is an infinite loop with a token budget attached. 0 disables the bound,
+# which is what CI wants: there is no agent there to escalate to.
+# retry_budget: 3
 """
 
 
