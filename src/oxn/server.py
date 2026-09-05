@@ -107,6 +107,67 @@ def _check_code(request: CheckRequest) -> dict[str, Any]:
     return run_check(list(request.paths) or ["."], deep=request.deep).as_dict()
 
 
+class MetricsRequest(BaseModel):
+    """Arguments to `get_metrics`."""
+
+    paths: list[str] = Field(description="Files or directories to measure.")
+    sort_by: str = Field(
+        default="cognitive_complexity", description="The metric to rank entities by."
+    )
+    limit: int = Field(default=20, description="How many entities to return.")
+    explain: bool = Field(
+        default=False,
+        description="Include the increment trail for the worst entity: what scored, where.",
+    )
+
+
+class ExplainRequest(BaseModel):
+    """Arguments to `explain_violation` -- a finding's identity, as `check_code` reported it."""
+
+    path: str = Field(description="The `path` of the finding.")
+    entity: str = Field(description="The `entity` of the finding: its qualified name.")
+    rule: str = Field(description="The `rule` of the finding, e.g. `cognitive_complexity`.")
+
+
+def _get_metrics(request: MetricsRequest) -> dict[str, Any]:
+    from oxn.report import metrics_payload
+
+    return metrics_payload(
+        list(request.paths),
+        sort_by=request.sort_by,
+        limit=request.limit,
+        explain=request.explain,
+    )
+
+
+def _explain_violation(request: ExplainRequest) -> dict[str, Any]:
+    """Re-measure one file, find that finding again, and say where its ceiling came from.
+
+    Re-measuring rather than trusting the arguments is the point: between `check_code` and
+    this call the agent has probably edited the file, and "that is no longer a violation" is
+    a better answer than an explanation of something that is no longer true.
+    """
+    from oxn.check import run_check
+    from oxn.config import Config
+    from oxn.context.bundle import declarations_of
+    from oxn.context.project import load_project
+
+    report = run_check([request.path])
+    key = f"{request.rule}|{request.path}|{request.entity}"
+    every = [*report.findings, *report.baselined, *report.regressed]
+    found = next((finding for finding in every if finding.key == key), None)
+    declared = declarations_of(load_project(Config.load()), request.rule, request.path)
+    return {
+        "status": "resolved" if found is None else "violation",
+        "key": key,
+        "finding": found.as_dict() if found else None,
+        "increments": list(found.explanation) if found else [],
+        # `relevance` is excluded rather than emitted as zero: there is no task text to rank
+        # against here, and a score of 0.0 reads as "irrelevant" rather than "not asked".
+        "declared_by": [constraint.model_dump(exclude={"relevance"}) for constraint in declared],
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class Tool:
     """One callable surface, with the schema the client validates against."""
@@ -146,6 +207,29 @@ TOOLS: tuple[Tool, ...] = (
         ),
         request=CheckRequest,
         run=_check_code,
+    ),
+    Tool(
+        name="get_metrics",
+        description=(
+            "Measure files and rank their functions, classes and modules by one metric -- "
+            "cognitive complexity, nesting, length, coupling. This reports; it never judges. "
+            "Use it to find where the risk is before you touch anything, or to see how far "
+            "under a ceiling something sits."
+        ),
+        request=MetricsRequest,
+        run=_get_metrics,
+    ),
+    Tool(
+        name="explain_violation",
+        description=(
+            "Why one finding from `check_code` is a violation: the increment trail -- what "
+            "scored, at which line, and why -- and where its ceiling was declared, from the "
+            "project default through any layer override to a decision record that tightened "
+            "it. The file is re-measured, so a violation you have already fixed comes back "
+            "as `resolved` rather than as an explanation of something no longer true."
+        ),
+        request=ExplainRequest,
+        run=_explain_violation,
     ),
 )
 

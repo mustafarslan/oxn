@@ -70,6 +70,8 @@ def test_the_official_client_completes_a_session_against_our_server() -> None:
     assert {(tool.name, tool.input_schema["type"]) for tool in outcome["tools"]} == {
         ("get_architectural_context", "object"),
         ("check_code", "object"),
+        ("get_metrics", "object"),
+        ("explain_violation", "object"),
     }
 
     bundle, report = outcome["results"]

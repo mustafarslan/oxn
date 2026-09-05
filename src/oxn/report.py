@@ -125,25 +125,24 @@ def _ranked(indexer: Indexer, sort_by: str, limit: int, wanted: set[str]) -> lis
     ]
 
 
-def run_metrics(
+def metrics_payload(
     paths: list[str],
-    output: Output = TO_JSON,
     *,
     sort_by: str = "cognitive_complexity",
     limit: int = 20,
     explain: bool = False,
 ) -> dict[str, Any]:
-    """Index ``paths`` and rank their entities by one metric."""
+    """Index ``paths`` and rank their entities by one metric. Writes nothing.
 
+    Split from :func:`run_metrics` for the MCP server, which wants the payload and not the
+    rendering: stdout is the wire there, so a surface that prints is a surface the server
+    cannot call. Every ``run_*`` in this module has the same shape, and this is the first
+    one a second caller needed -- the others follow when they get one.
+    """
     targets = [Path(raw) for raw in paths]
     missing = [str(target) for target in targets if not target.exists()]
     if missing:
-        failure: dict[str, Any] = {
-            "status": "ERROR",
-            "errors": dict.fromkeys(missing, "no such file or directory"),
-        }
-        _emit(failure, output)
-        return failure
+        return {"status": "ERROR", "errors": dict.fromkeys(missing, "no such file or directory")}
 
     with _indexer() as indexer:
         indexer.index(targets)
@@ -159,7 +158,22 @@ def run_metrics(
     }
     if trail:
         payload["explanation"] = trail
+    return payload
 
+
+def run_metrics(
+    paths: list[str],
+    output: Output = TO_JSON,
+    *,
+    sort_by: str = "cognitive_complexity",
+    limit: int = 20,
+    explain: bool = False,
+) -> dict[str, Any]:
+    """Index ``paths``, rank their entities by one metric, and render the result."""
+    payload = metrics_payload(paths, sort_by=sort_by, limit=limit, explain=explain)
+    if payload["status"] == "ERROR":
+        _emit(payload, output)
+        return payload
     _emit_metrics(payload, output)
     return payload
 

@@ -60,6 +60,14 @@ class Constraint(BaseModel):
     kind: str
     #: The invariant itself, as a statement rather than a paragraph.
     statement: str
+    #: For a `ceiling`, the gated rule it is about -- the join key between this channel and
+    #: the gate's findings, which report `rule` and nothing about where the number came from.
+    #: Empty for a contract or a decision, which are not about one metric.
+    rule: str = ""
+    #: For a `ceiling`, the number itself. `statement` says "cognitive_complexity <= 12" and
+    #: an agent should not have to parse that back out: ADR-0006 section 4 asks for a
+    #: machine-parseable form, and a sentence with a number in it is not one.
+    limit: float | None = None
     #: Path globs this governs. Empty means "declared, but matching nothing here".
     scope: tuple[str, ...] = ()
     #: Where it came from: `oxn.yaml`, or the ADR's path.
@@ -117,6 +125,30 @@ def build_bundle(
     )
 
 
+def declarations_of(project: Project, rule: str, path: str) -> list[Constraint]:
+    """Every declaration of `rule` that governs `path`, tightest first.
+
+    The gate resolves one number and keeps none of how it got there: a `Finding` carries
+    `ceiling` and nothing about whether that came from the project default, a layer
+    override, or a decision that tightened both. "Why 12?" is the question an agent has to
+    answer before it can decide whether to refactor or to argue, and it is a *join*, not a
+    measurement -- so it belongs here rather than in the gate.
+
+    Tightest first because that is the one in force: `rules/adr.py` replaces a ceiling row
+    only where a decision is stricter than what is already there, so the minimum over the
+    covering declarations is the number the gate used. `tests/test_bundle.py` asserts that
+    equality rather than trusting it.
+    """
+    covering = [
+        candidate.model_copy(update={"governs": _governs(candidate.scope, project.paths)})
+        for candidate in _candidates(project)
+        if candidate.rule == rule
+        and candidate.limit is not None
+        and _covers(candidate.scope, [path])
+    ]
+    return sorted(covering, key=lambda candidate: (candidate.limit, candidate.name))
+
+
 def _share(gated: list[Constraint], prose: list[Constraint], limit: int) -> list[Constraint]:
     """Half the budget to rules the gate enforces, half to decisions it cannot check.
 
@@ -166,12 +198,18 @@ def _annotate(candidates: list[Constraint], paths: Sequence[str], task: str) -> 
     return [
         candidate.model_copy(
             update={
-                "governs": sum(1 for path in paths if _covers(candidate.scope, [path])),
+                "governs": _governs(candidate.scope, paths),
                 "relevance": scores.get(str(position), 0.0),
             }
         )
         for position, candidate in enumerate(candidates)
     ]
+
+
+def _governs(scope: Sequence[str], paths: Sequence[str]) -> int:
+    """How much of the tree a constraint covers -- the breadth prior, and the specificity
+    an agent reads to tell an ambient ceiling from one written about the file in front of it."""
+    return sum(1 for path in paths if _covers(scope, [path]))
 
 
 def _covers(scope: Sequence[str], paths: Sequence[str]) -> bool:
@@ -185,6 +223,8 @@ def _ceilings(config: Config) -> list[Constraint]:
         Constraint(
             name=rule,
             kind="ceiling",
+            rule=rule,
+            limit=value,
             statement=f"{rule} <= {value:g}",
             scope=("**",),
             source="oxn.yaml",
@@ -196,6 +236,8 @@ def _ceilings(config: Config) -> list[Constraint]:
         Constraint(
             name=f"{rule} in {layer}",
             kind="ceiling",
+            rule=rule,
+            limit=value,
             statement=f"{rule} <= {value:g} within layer {layer}",
             scope=patterns.get(layer, ()),
             source="oxn.yaml",
@@ -255,6 +297,8 @@ def _decisions(decisions: Iterable[Decision]) -> list[Constraint]:
             Constraint(
                 name=f"{rule} ({decision.identifier})",
                 kind="ceiling",
+                rule=rule,
+                limit=value,
                 statement=f"{rule} <= {value:g}",
                 scope=decision.applies_to,
                 source=decision.path,

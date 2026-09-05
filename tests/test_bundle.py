@@ -205,3 +205,39 @@ def test_the_shorter_side_yields_its_slots_rather_than_wasting_them() -> None:
         decisions=[],
     )
     assert len(build_bundle(no_decisions, limit=6).constraints) == 6
+
+
+# ---- provenance: where a ceiling was declared -------------------------------------------
+
+
+def test_a_declaration_that_does_not_cover_the_path_is_not_part_of_its_chain() -> None:
+    """`declarations_of` answers "why is the ceiling here 8" and a layer the file is not in
+    is not part of that answer, however tightly it constrains somewhere else."""
+    from oxn.context.bundle import declarations_of
+
+    project = _project(
+        ceilings={"cognitive_complexity": 12.0},
+        layers=(
+            Layer(name="api", patterns=("src/api/*",)),
+            Layer(name="core", patterns=("src/core/*",)),
+        ),
+        layer_ceilings={
+            "api": {"cognitive_complexity": 8.0},
+            "core": {"cognitive_complexity": 4.0},
+        },
+    )
+    chain = declarations_of(project, "cognitive_complexity", "src/api/one.py")
+
+    assert [(constraint.limit, constraint.name) for constraint in chain] == [
+        (8.0, "cognitive_complexity in api"),
+        (12.0, "cognitive_complexity"),
+    ]
+
+
+def test_the_chain_ignores_ceilings_for_other_rules() -> None:
+    from oxn.context.bundle import declarations_of
+
+    project = _project(ceilings={"cognitive_complexity": 12.0, "function_sloc": 60.0})
+    chain = declarations_of(project, "function_sloc", "src/api/one.py")
+
+    assert [constraint.limit for constraint in chain] == [60.0]

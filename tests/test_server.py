@@ -127,7 +127,12 @@ def test_initialize_substitutes_its_own_version_for_one_it_does_not_know() -> No
 
 def test_every_tool_advertises_a_schema_with_its_arguments() -> None:
     tools = _exchange(_request(1, "tools/list"))[0]["result"]["tools"]
-    assert {tool["name"] for tool in tools} == {"get_architectural_context", "check_code"}
+    assert {tool["name"] for tool in tools} == {
+        "get_architectural_context",
+        "check_code",
+        "get_metrics",
+        "explain_violation",
+    }
     for tool in tools:
         assert tool["inputSchema"]["type"] == "object"
         assert tool["inputSchema"]["properties"], f"{tool['name']} advertises no arguments"
@@ -214,3 +219,104 @@ def test_the_server_does_not_depend_on_the_protocol_sdk(module: str) -> None:
         [sys.executable, "-c", probe], capture_output=True, text=True, cwd=ROOT, check=True
     )
     assert module not in json.loads(out.stdout.splitlines()[-1])
+
+
+# ---- explaining one finding -------------------------------------------------------------
+
+TANGLED = """def tangled(items, flag, mode):
+    total = 0
+    for item in items:
+        if flag:
+            if mode == "a":
+                for sub in item:
+                    if sub:
+                        total += sub
+            elif mode == "b":
+                total -= 1
+    return total
+"""
+
+ADR = """---
+id: ADR-0001
+title: The hot path stays simple
+status: accepted
+date: 2026-09-05
+tags: [complexity]
+applies-to: ["src/bad.py"]
+constraints:
+  ceilings: {cognitive_complexity: 5}
+---
+# ADR-0001
+Because it is read on every request.
+"""
+
+
+@pytest.fixture
+def tightened(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A repository where all three ways of declaring a ceiling are in play at once."""
+    (tmp_path / "src").mkdir()
+    (tmp_path / "docs" / "adr").mkdir(parents=True)
+    (tmp_path / "oxn.yaml").write_text(
+        "ceilings:\n  cognitive_complexity: 12\n"
+        'layers:\n  hot: ["src/*.py"]\n'
+        "layer_ceilings:\n  hot:\n    cognitive_complexity: 8\n"
+    )
+    (tmp_path / "docs" / "adr" / "0001-tight.md").write_text(ADR)
+    (tmp_path / "src" / "bad.py").write_text(TANGLED)
+    monkeypatch.chdir(tmp_path)
+    return tmp_path
+
+
+def test_explain_violation_names_the_declaration_the_gate_actually_used(tightened: Path) -> None:
+    """The chain, tightest first: a decision that tightened it, the layer override it
+    tightened, and the project default beneath both.
+
+    The equality on the last line is the claim worth having. `Finding` carries a resolved
+    number and no provenance, so this join is computed a second way -- from `oxn.yaml` and
+    the decision records rather than from the rule engine's `ceiling` relation -- and the
+    two must agree. Loosen the ADR to 9 and both the order and the equality change.
+    """
+    served = _call(
+        "explain_violation",
+        path="src/bad.py",
+        entity="src.bad.tangled",
+        rule="cognitive_complexity",
+    )["result"]["structuredContent"]
+
+    assert served["status"] == "violation"
+    assert [(row["limit"], row["source"]) for row in served["declared_by"]] == [
+        (5.0, "docs/adr/0001-tight.md"),
+        (8.0, "oxn.yaml"),
+        (12.0, "oxn.yaml"),
+    ]
+    assert served["declared_by"][0]["limit"] == served["finding"]["ceiling"]
+    assert "+3 at line 5: `if` nested 2 deep" in served["increments"]
+
+
+def test_explain_violation_re_measures_rather_than_trusting_its_arguments(
+    tightened: Path,
+) -> None:
+    """Between `check_code` and this call the agent has probably edited the file, and
+    "that is fixed" is a better answer than an explanation of something no longer true."""
+    (tightened / "src" / "bad.py").write_text("def tangled(items):\n    return sum(items)\n")
+    served = _call(
+        "explain_violation",
+        path="src/bad.py",
+        entity="src.bad.tangled",
+        rule="cognitive_complexity",
+    )["result"]["structuredContent"]
+
+    assert served["status"] == "resolved"
+    assert served["finding"] is None
+    assert served["declared_by"], "the ceiling still exists; only the violation is gone"
+
+
+def test_get_metrics_reports_without_judging(tightened: Path) -> None:
+    """A ranking, not a verdict: `tangled` is over every ceiling in that tree and this tool
+    still has no opinion about it."""
+    served = _call("get_metrics", paths=["src"], explain=True)["result"]["structuredContent"]
+
+    assert served["status"] == "OK"
+    assert served["entities"][0]["qualified_name"] == "src.bad.tangled"
+    assert "violations" not in served, "a report must not carry a verdict"
+    assert any("nested 2 deep" in line for line in served["explanation"])
