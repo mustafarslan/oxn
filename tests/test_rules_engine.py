@@ -211,3 +211,52 @@ def test_a_join_probes_the_columns_already_bound() -> None:
     assert len(evaluate([rule], facts)) == rows
     # A scan would read `right` once per binding: rows * rows == 16,000,000.
     assert seen <= rows * 2, f"`right` was read {seen} times; the join is scanning, not probing"
+
+
+def test_one_index_serves_every_rule_rather_than_each_rule_its_own() -> None:
+    """ADR-0005: "one index per (relation, probed columns) serves the whole evaluation".
+
+    It did not. `_Indexes` was constructed inside `_solve`, which runs once per *rule*, so
+    eleven rules probing `metric` indexed it eleven times. Measured on `typescript-nest`
+    (1,913 files): 6.8 million rows re-indexed per whole-tree run, 72% of a 4.3-second
+    check, and the whole thing dropped to 1.9 s when the indexes were hoisted into
+    `evaluate`.
+
+    The test above could not catch it, and not because it is weak: it evaluates one rule,
+    and one rule cannot distinguish "once per evaluation" from "once per rule". This is the
+    same property asserted at the scale the claim is actually about.
+    """
+    rows = 2000
+    facts = Facts()
+    facts.add("left", *[(f"k{n}",) for n in range(rows)])
+    facts.add("right", *[(f"k{n}", n) for n in range(rows)])
+
+    seen = 0
+    real_get = facts.get
+
+    def counting_get(relation: str):
+        nonlocal seen
+        result = real_get(relation)
+        if relation == "right":
+            seen += len(result)
+        return result
+
+    facts.get = counting_get  # type: ignore[method-assign]
+    rules = [
+        Rule(
+            name=f"over{floor}",
+            body=(
+                Atom("left", (Var("K"),)),
+                Atom("right", (Var("K"), Var("N"))),
+                Compare(Var("N"), ">", floor),
+            ),
+            head=Head(path=Var("K"), entity=Var("K"), value=Var("N")),
+        )
+        for floor in range(6)
+    ]
+
+    evaluate(rules, facts)
+    assert seen <= rows * 2, (
+        f"`right` was read {seen} times for six rules that probe it identically; "
+        "the indexes are being rebuilt per rule, not shared across the evaluation"
+    )

@@ -29,11 +29,16 @@ from oxn.rules.adr import load_decisions
 ROOT = Path(__file__).resolve().parent.parent
 LABELS = ROOT / "benchmarks" / "retrieval-labels-oxn.json"
 
-#: Measured 2026-09-04 on 53 pairs over five decisions. Update these in the same commit as
+#: Measured 2026-09-05 on 53 pairs over five decisions. Update these in the same commit as
 #: whatever moved them -- a ranker change, or an edit to any ADR body, since the corpus
 #: being ranked is the repository's own decisions.
+#:
+#: MRR moved 0.579 -> 0.577 on 2026-09-05 with no change to the ranker: ADR-0001 and
+#: ADR-0004 gained amendments, and a longer body changes its own BM25 length normalisation.
+#: That is the cost of pinning a corpus made of the documents under edit, and it is paid
+#: knowingly -- the alternative is a number nobody can reproduce.
 RECORDED_P_AT_1 = 0.377
-RECORDED_MRR = 0.579
+RECORDED_MRR = 0.577
 
 
 @pytest.fixture(scope="module")

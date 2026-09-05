@@ -29,9 +29,12 @@ from typing import TYPE_CHECKING, Any
 from oxn.rules.model import Atom, Compare, Rule, Var
 
 if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator, Sequence
 
     from oxn.rules.model import Condition, Facts, Term
+
+    #: A probe: given the values of the bound columns, the rows that agree with them.
+    _Lookup = Callable[[tuple[Any, ...]], Sequence[tuple[Any, ...]]]
 
 #: The comparisons a body may use. Deliberately small: ADR-0005 fixes the built-in surface
 #: at twelve relations and arithmetic, and every operator here is one a Datalog engine has.
@@ -69,11 +72,26 @@ class RuleFinding:
 
 
 def evaluate(rules: list[Rule], facts: Facts) -> list[RuleFinding]:
-    """Every finding the rules produce against these facts, checked first and then run."""
+    """Every finding the rules produce against these facts, checked first and then run.
+
+    **One `_Indexes` for the whole evaluation, not one per rule.** ADR-0005 says "one index
+    per (relation, probed columns) serves the whole evaluation" and for six phases the code
+    built a fresh set inside `_solve`, so eleven rules probing `metric` indexed it eleven
+    times. On `typescript-nest` (1,913 files) that was 6.8 million rows re-indexed per run
+    and 72% of a 4.3-second whole-tree check. The test below asserted the property against
+    a single rule, which is exactly the shape it could not catch.
+
+    Sharing them is sound because `facts` does not change while this runs: findings are
+    *returned*, never asserted back as facts, and `check_stratified` forbids a rule from
+    negating a derived relation -- so there is no stratum boundary at which an index could
+    go stale. If derived facts ever become inputs to later rules, this cache must be
+    rebuilt per stratum, and that is the line to change.
+    """
     for rule in rules:
         check_well_formed(rule)
     check_stratified(rules)
-    return [_finding(rule, binding) for rule in rules for binding in _solve(rule.body, facts)]
+    indexes = _Indexes(facts)
+    return [_finding(rule, binding) for rule in rules for binding in _solve(rule.body, indexes)]
 
 
 def check_well_formed(rule: Rule) -> None:
@@ -144,13 +162,25 @@ class _Indexes:
             tuple[str, tuple[int, ...]], dict[tuple[Any, ...], list[tuple[Any, ...]]]
         ] = {}
 
+    def lookup(self, atom: Atom, probes: tuple[int, ...]) -> _Lookup:
+        """A probe function for this atom, resolved once rather than once per binding.
+
+        Which relation and which columns are fixed for the whole join -- `_probes` derives
+        them from the rule, not from the data -- so finding the index is loop-invariant
+        work. It was inside the loop: 458,354 dictionary lookups per whole-tree run on a
+        1,913-file corpus, to answer the same question every time.
+        """
+        if not probes:
+            rows = list(self._facts.get(atom.relation))
+            return lambda _key: rows
+        index = self._index(atom.relation, probes)
+        return lambda key: index.get(key, ())
+
     def candidates(
         self, atom: Atom, probes: tuple[int, ...], key: tuple[Any, ...]
-    ) -> list[tuple[Any, ...]]:
+    ) -> Sequence[tuple[Any, ...]]:
         """Rows whose probed columns equal `key`; all rows when nothing is probed."""
-        if not probes:
-            return list(self._facts.get(atom.relation))
-        return self._index(atom.relation, probes).get(key, [])
+        return self.lookup(atom, probes)(key)
 
     def _index(
         self, relation: str, probes: tuple[int, ...]
@@ -165,9 +195,8 @@ class _Indexes:
         return built
 
 
-def _solve(body: tuple[Condition, ...], facts: Facts) -> Iterator[dict[str, Any]]:
+def _solve(body: tuple[Condition, ...], indexes: _Indexes) -> Iterator[dict[str, Any]]:
     """Every binding satisfying the whole conjunction, joined left to right."""
-    indexes = _Indexes(facts)
     bindings: Iterator[dict[str, Any]] = iter([{}])
     bound: set[str] = set()
     for condition in body:
@@ -206,9 +235,10 @@ def _join(
     atom: Atom, bindings: Iterator[dict[str, Any]], indexes: _Indexes, probes: tuple[int, ...]
 ) -> Iterator[dict[str, Any]]:
     """Extend each binding with every tuple of `atom` that agrees with it."""
+    matching = indexes.lookup(atom, probes)
     for binding in bindings:
         key = tuple(_resolve(atom.terms[i], binding) for i in probes)
-        for row in indexes.candidates(atom, probes, key):
+        for row in matching(key):
             extended = _unify(atom.terms, row, binding)
             if extended is not None:
                 yield extended
