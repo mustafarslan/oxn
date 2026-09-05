@@ -53,15 +53,30 @@ def resolve(url: str, ref: str) -> str:
     return out.split()[0]
 
 
+def _fetch_args(entry: dict[str, Any]) -> list[str]:
+    """How much history this corpus needs.
+
+    `--depth 1` is right for every corpus measured at a *state*: the metric tiers read the
+    tree, never the log. It is wrong for `use: retrieval`, where a label **is** a commit --
+    a shallow clone contains none of the commits the labels name, so the lane would skip
+    with a corpus sitting on disk. Those clone every commit and no blobs; the checkout then
+    pulls only the trees and files it actually needs.
+    """
+    if entry.get("history") == "full":
+        return ["fetch", "--filter=blob:none", "origin"]
+    return ["fetch", "--depth", "1", "origin"]
+
+
 def fetch(entry: dict[str, Any], sha: str) -> Path:
-    """Shallow-clone one corpus at an exact SHA."""
+    """Clone one corpus at an exact SHA, with as little history as it can do its job with."""
     target = DEST / entry["name"]
+    fetch_args = _fetch_args(entry)
     if (target / ".git").exists():
         current = git("rev-parse", "HEAD", cwd=target)
         if current == sha:
             print(f"  ok       {entry['name']} @ {sha[:12]}")
             return target
-        git("fetch", "--depth", "1", "origin", sha, cwd=target)
+        git(*fetch_args, sha, cwd=target)
         git("checkout", "--detach", sha, cwd=target)
         print(f"  updated  {entry['name']} @ {sha[:12]}")
         return target
@@ -69,7 +84,7 @@ def fetch(entry: dict[str, Any], sha: str) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     git("init", "--quiet", str(target))
     git("remote", "add", "origin", entry["url"], cwd=target)
-    git("fetch", "--depth", "1", "origin", sha, cwd=target)
+    git(*fetch_args, sha, cwd=target)
     git("checkout", "--detach", sha, cwd=target)
     print(f"  cloned   {entry['name']} @ {sha[:12]}")
     return target

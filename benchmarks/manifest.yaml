@@ -8,6 +8,10 @@
 #   fixture   -- small, hand-checkable; golden-file and differential-oracle tests (P2)
 #   threshold -- real code at scale; percentile calibration of metric thresholds (P10)
 #   eval      -- agent evaluation beds (P11)
+#   retrieval -- repositories whose commits *cite* their own ADRs; the external corpus
+#                ADR-0006 section 5 requires, because precision@3 over OXN's own six
+#                decisions is not evidence. These need `history: full`: the labels are
+#                commits, and a `--depth 1` clone has none of them.
 
 version: 1
 
@@ -76,3 +80,69 @@ corpora:
     url: https://github.com/spring-projects/spring-petclinic
     ref: main
     why: Small, canonical layered Java app; the standard teaching example for architecture conformance.
+
+  # ---- retrieval (P8, ADR-0006 section 5) -------------------------------------------
+  # Chosen by a property almost no repository has: commits that cite an ADR *while doing
+  # the work it governs*, rather than while writing the ADR. Of 100 repositories with 20 or
+  # more numbered ADR files, these five are what survived -- see docs/adr/0006 section 5b
+  # for the funnel and the two negative results it produced.
+  #
+  # `adr_dir` and `license` are read by `scripts/extract_citation_labels.py`; `history:
+  # full` makes the fetcher clone every commit (blobless), because a label here *is* a
+  # commit and the default shallow fetch would leave none of them.
+  - name: adr-querator
+    use: retrieval
+    history: full
+    adr_dir: docs/adr
+    license: none stated
+    url: https://github.com/kapetan-io/querator
+    ref: main
+    why: >
+      The cleanest sample found: 9 pairs over 25 ADRs, no agent co-authorship, and no pair
+      whose text restates the cited decision's title. Its citations read as reasons --
+      "the request loop may still apply a request after its caller has gone (ADR-0009)".
+
+  - name: adr-darker
+    use: retrieval
+    history: full
+    adr_dir: docs/adr
+    license: MIT
+    url: https://github.com/BrighterCommand/Darker
+    ref: master
+    why: >
+      7 pairs over 21 ADRs, citing decisions by clause ("ADR 0014 Decisions 2 and 5").
+      Every one is Claude co-authored, which is a fact about the corpus rather than a
+      defect -- see the provenance split in the results.
+
+  - name: adr-elsa-core
+    use: retrieval
+    history: full
+    adr_dir: doc/adr
+    license: MIT
+    url: https://github.com/elsa-workflows/elsa-core
+    ref: main
+    why: 5 pairs over 28 ADRs, human-authored, large multi-ADR changes.
+
+  - name: adr-tessellation
+    use: retrieval
+    history: full
+    adr_dir: docs/adr
+    license: Apache-2.0
+    url: https://github.com/Constellation-Labs/tessellation
+    ref: develop
+    why: 4 pairs over 33 ADRs, human-authored, consensus-protocol decisions.
+
+  - name: adr-agentic-dev-team
+    use: retrieval
+    history: full
+    adr_dir: docs/adr
+    license: MIT
+    url: https://github.com/bdfinst/agentic-dev-team
+    ref: main
+    why: >
+      76 of the 101 pairs, over 42 ADRs, and the reason the pooled set reaches a usable
+      size at all. Also the most confounded: agent-written, squash-merged so one commit
+      cites up to six decisions, and 45 of its pairs restate the cited decision's wording.
+      Included deliberately -- OXN exists to govern agents, so agent-written commits are
+      arguably the population rather than the confound -- and every result is reported
+      with and without it.

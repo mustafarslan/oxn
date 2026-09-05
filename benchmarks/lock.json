@@ -1,4 +1,9 @@
 {
+  "adr-agentic-dev-team": "52cc5efd1c445e71c55b956837c003911346d7e7",
+  "adr-darker": "095c8bd8af8862d980c3b69f6e4d4e441190c93a",
+  "adr-elsa-core": "53595b95d27a6717ac70333bdd6bfc10169b31ed",
+  "adr-querator": "a78c6ccfdf555bdd74ff9cacced8d4f4567f194b",
+  "adr-tessellation": "65b3667d414760763fe342e720a9486d2c0beb82",
   "go-kit": "78fbbceece7bbcf073bee814a7772f4397ea756c",
   "java-spring-petclinic": "818c4136ea971c21674525f9053de0d9c7ad8cfe",
   "python-airflow": "144a87dfe94747f322e4ddcab476fb40dd1a24d4",

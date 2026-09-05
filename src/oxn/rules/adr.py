@@ -27,6 +27,7 @@ because an ADR may legitimately predate the code it governs.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from fnmatch import fnmatch
 from pathlib import Path
@@ -83,7 +84,7 @@ def load_decisions(root: Path, directory: Path | None = None) -> list[Decision]:
 def _parse(path: Path, root: Path) -> Decision | None:
     parsed = _frontmatter(path)
     if parsed is None:
-        return None
+        return _nygard(path, root)
     data, body = parsed
     ceilings = _mapping(data.get("constraints") or {}, "ceilings")
     return Decision(
@@ -95,6 +96,48 @@ def _parse(path: Path, root: Path) -> Decision | None:
         ceilings={key: float(value) for key, value in ceilings.items()},
         tags=_sequence(data, "tags"),
         body=body,
+    )
+
+
+#: `adr-tools` numbers every decision in its filename, and the number is what a commit
+#: citing "ADR-0009" names. Requiring it keeps a `README.md` sitting in the same directory
+#: from being read as a decision -- an index is not a decision, and it would be a poor
+#: retrieval target dressed as a good one.
+_NUMBERED = re.compile(r"\d+[-_]")
+
+#: A Nygard-style heading: `# 12. Use an event bus`, the number repeated from the filename.
+_NYGARD_TITLE = re.compile(r"^#\s+(?:\d+\.\s*)?(.+?)\s*$", re.MULTILINE)
+
+#: The `## Status` section's first non-empty line. `Accepted`, `Superseded by ADR-14`, ...
+_NYGARD_STATUS = re.compile(r"^##\s*Status\s*$\n+(.+?)\s*$", re.MULTILINE | re.IGNORECASE)
+
+
+def _nygard(path: Path, root: Path) -> Decision | None:
+    """An ADR with no frontmatter: title from the first heading, status from `## Status`.
+
+    Every external corpus OXN could find is this shape -- five of five, all created by
+    `adr-tools`, none carrying a YAML header. Before this, `load_decisions` returned an
+    empty list for all of them, which made the ADR corpus of
+    [ADR-0006](../../../docs/adr/0006-retrieval-and-budgeting.md) section 5 unreadable by
+    the one parser section 2 says there must be exactly one of.
+
+    Such a decision has **no `applies-to`**, so it constrains nothing and tightens nothing;
+    it is retrievable and never gated. The identifier is the filename's number, which is
+    what a commit citing "ADR-0009" is naming.
+    """
+    if not _NUMBERED.match(path.name):
+        return None
+    text = path.read_text(errors="replace")
+    title = _NYGARD_TITLE.search(text)
+    if title is None:
+        return None
+    status = _NYGARD_STATUS.search(text)
+    return Decision(
+        identifier=path.stem.split("-")[0],
+        path=str(path.relative_to(root)),
+        title=title.group(1),
+        status=status.group(1) if status else "",
+        body=text,
     )
 
 
@@ -145,18 +188,26 @@ def adr_facts(
     every edit. Ceiling tightening is unaffected: it is a per-file question either way.
     """
     for decision in decisions:
-        if not decision.enforceable:
-            continue
-        covered = [path for path in paths if _covers(decision, path)]
-        facts.add("adr", (decision.identifier, decision.path, decision.title))
-        if covered:
-            facts.add("adr_scope", *[(decision.identifier, path) for path in covered])
-        elif whole_project:
-            # Derived at projection time rather than by a rule: `not adr_scope(Id, _)` needs
-            # an existential a range-restricted body cannot bind, and a real Datalog backend
-            # would introduce a helper relation in a lower stratum to say the same thing.
-            facts.add("adr_unscoped", (decision.identifier, decision.path))
-        _tighten(facts, decision, covered)
+        if decision.enforceable:
+            _project(facts, decision, paths, whole_project=whole_project)
+
+
+def _project(facts: Facts, decision: Decision, paths: list[str], *, whole_project: bool) -> None:
+    """One decision's rows. Separate from the loop because it is where the judgement is."""
+    covered = [path for path in paths if _covers(decision, path)]
+    facts.add("adr", (decision.identifier, decision.path, decision.title))
+    if covered:
+        facts.add("adr_scope", *[(decision.identifier, path) for path in covered])
+    elif whole_project and decision.applies_to:
+        # Derived at projection time rather than by a rule: `not adr_scope(Id, _)` needs an
+        # existential a range-restricted body cannot bind, and a real Datalog backend would
+        # introduce a helper relation in a lower stratum to say the same thing.
+        #
+        # `and decision.applies_to` because a decision that declared no scope has not
+        # claimed to govern anything: there is no stale pattern to report, and reporting one
+        # anyway greets every Nygard-style repository with an advisory per decision.
+        facts.add("adr_unscoped", (decision.identifier, decision.path))
+    _tighten(facts, decision, covered)
 
 
 def _covers(decision: Decision, path: str) -> bool:
