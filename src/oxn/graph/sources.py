@@ -92,14 +92,28 @@ def _out_of_scope(path: Path, project: Path, patterns: Sequence[str]) -> bool:
     Matched the way `oxn.yaml` writes paths: relative to the project root, POSIX, no `./`.
     A path outside that root cannot be described by a repo-relative glob, so it is matched
     absolute and simply will not hit one.
+
+    `resolve()` is a `realpath` syscall per file and this runs on every candidate the walk
+    produces, so it is skipped for the paths that provably do not need it -- exactly as
+    `Indexer.relative` does, and with the same `..` guard, since `relative_to` does not
+    normalize and a glob must be matched against one spelling of a path rather than two.
+    Only projects that declare `exclude` ever paid this, which is why it hid: OXN's own
+    configuration declares one and the corpus it was benchmarked against does not.
     """
     if not patterns:
         return False
-    resolved = path.resolve()
-    try:
-        relative = resolved.relative_to(project).as_posix()
-    except ValueError:
-        relative = resolved.as_posix()
+    relative = None
+    if ".." not in path.parts:
+        try:
+            relative = path.relative_to(project).as_posix()
+        except ValueError:
+            relative = None
+    if relative is None:
+        resolved = path.resolve()
+        try:
+            relative = resolved.relative_to(project).as_posix()
+        except ValueError:
+            relative = resolved.as_posix()
     return any(fnmatch(relative, pattern) for pattern in patterns)
 
 

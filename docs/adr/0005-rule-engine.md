@@ -355,6 +355,15 @@ hook and `--deep` produce byte-identical keys for the same edge, without which
 `.oxn/baseline.json` would stop being a ratchet: an accepted layer violation would re-fire
 as new the next time anyone touched the file.
 
+That identity test is also the **only** oracle this path has, and the amendment above is
+where that is written down rather than left to be discovered. The parity suite asserts the
+rules against `check._measure` and `check._architecture`, the hand-coded checks kept as the
+oracle -- and `_architecture` has no file-scoped mode, so it cannot answer what the hook now
+answers. `--deep` stands in for it: the same repository, the same edge, the same key, from
+two scopes. "Byte-identical to the hand-coded suite" remains true of every rule the
+hand-coded suite can express, and this is the first path where that sentence needed a
+qualifier.
+
 The honest limit is that a file-scoped contract check sees the edges a file *makes*, never
 the edges made *at* it. That is not a weakening — the file that made an illegal import had
 its own edit gated — but it is a different claim from `--deep`, and `check` says so in a

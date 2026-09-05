@@ -19,10 +19,11 @@ baseline is a way to switch the gate off one entry at a time.
 Two scopes, because they have different budgets, and the line between them moved on
 2026-09-05. The default is file-scoped — Tier-1 ceilings on the paths given, plus the layer
 contracts those paths' own imports can settle — and belongs in a `PostToolUse` hook at
-~130 ms. `--deep` adds what one file cannot answer: edges *into* the measured files, and
-cycles. Contracts were `--deep`-only until that date on the assumption that any import
-graph meant parsing the whole tree; resolution in fact needs the tree's layout and one
-file's text, so the hook was silent about layer violations for no reason it was paying for.
+~150 ms on a 1,900-file tree. `--deep` adds what one file cannot answer: edges *into* the
+measured files, and cycles. Contracts were `--deep`-only until that date, on the assumption
+that any import graph meant parsing the whole tree; resolution in fact needs the tree's
+layout and one file's text, so the hook was silent about layer violations for a cost it was
+never actually paying.
 The `scope` field in the JSON says which ran, so a baseline is never compared against a
 different question from the one that produced it.
 """

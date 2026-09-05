@@ -113,11 +113,20 @@ class Indexer:
         the syscall on the paths that need it. `os.walk` does not follow symlinks and
         `self.root` is already resolved, so every path the walk yields takes the fast branch
         and gets the same string it did before.
+
+        **`..` disqualifies the fast branch**, because `relative_to` does not normalize:
+        `/repo/src/../src/x.py` comes back as `src/../src/x.py` where `resolve()` gives
+        `src/x.py`. That is a different string, and this string is a cache key, a
+        `Finding.path` and therefore a third of a baseline key -- so the same file named two
+        ways would be two violations, and accepting one would not accept the other. The walk
+        never produces such a path; a person on a command line and a foreign hook payload
+        both can.
         """
-        try:
-            return path.relative_to(self.root).as_posix()
-        except ValueError:
-            pass
+        if ".." not in path.parts:
+            try:
+                return path.relative_to(self.root).as_posix()
+            except ValueError:
+                pass
         try:
             return path.resolve().relative_to(self.root).as_posix()
         except ValueError:

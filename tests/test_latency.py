@@ -111,11 +111,24 @@ def test_the_hook_as_deployed_measures_one_file_not_the_repository(tmp_path) -> 
     The directory here holds a second file precisely so that "checked one file" and "checked
     the directory" are distinguishable outcomes rather than the same number.
 
-    The payload carries a `session_id` for the same reason it carries a path: Claude Code
-    sends one, and it is what switches on the retry ledger's read and write. A payload
-    without it measures a route with one less file operation than the deployed hook has --
-    the same shape of gap as the one described above, one layer down.
+    Three things here exist because leaving each one out measures a cheaper route than the
+    deployed hook takes, which is the same mistake as the one above at smaller scale:
+
+    * the payload carries a `session_id`, which is what switches on the retry ledger's read
+      and write;
+    * `oxn.yaml` declares a **contract**, which is what makes the hook walk the tree to
+      resolve the edited file's imports and check them against the layer rules;
+    * and it declares an **exclude** glob, because that is what makes the walk match a
+      pattern against every candidate it finds.
+
+    OXN's own configuration has all three. A fixture with none of them passes comfortably
+    while saying nothing about the route anybody actually runs.
     """
+    (tmp_path / "oxn.yaml").write_text(
+        "exclude:\n  - 'generated/*'\n"
+        "layers:\n  top: ['workload.py']\n  bottom: ['bystander.py']\n"
+        "contracts:\n  - name: layered\n    kind: layered\n    order: [top, bottom]\n"
+    )
     shutil.copy(WORKLOAD, tmp_path / "workload.py")
     shutil.copy(WORKLOAD, tmp_path / "bystander.py")
     payload = json.dumps(

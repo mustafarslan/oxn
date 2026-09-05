@@ -33,24 +33,19 @@ LABELS = ROOT / "benchmarks" / "retrieval-labels-oxn.json"
 #: whatever moved them -- a ranker change, or an edit to any ADR body, since the corpus
 #: being ranked is the repository's own decisions.
 #:
-#: MRR moved 0.579 -> 0.577 on 2026-09-05 with no change to the ranker: ADR-0001 and
-#: ADR-0004 gained amendments, and a longer body changes its own BM25 length normalisation.
-#: That is the cost of pinning a corpus made of the documents under edit, and it is paid
-#: knowingly -- the alternative is a number nobody can reproduce.
+#: **Four re-pins on 2026-09-05, none of them a ranker change**, and the trajectory is the
+#: useful part: 0.377/0.579 -> 0.377/0.577 (ADR-0001 and ADR-0004 amended) -> 0.396/0.596
+#: (ADR-0003 amended) -> 0.396/0.592 -> 0.377/0.583 (ADR-0005 amended, twice).
 #:
-#: 0.377/0.577 -> 0.396/0.596 later the same day, again with no ranker change: ADR-0003
-#: gained the amendment recording the stderr defect and the retry budget. The direction is
-#: worth noting and not worth celebrating -- ADR-0003 is gold for the surfaces, and it grew
-#: several hundred words of hook, agent and remediation vocabulary, so the pairs it already
-#: won got easier. It is the corpus moving towards the queries, not the ranker improving.
-#:
-#: MRR 0.596 -> 0.592 on the same day again, from ADR-0005's amendment. Note the sign: this
-#: one made the ranking *worse*. ADR-0005 grew a section about hooks and layer contracts,
-#: which is vocabulary ADR-0003 owns, so it now competes for pairs it is not gold for. Two
-#: edits to two documents, one number up and one down, neither telling you anything about
-#: BM25 -- which is the whole argument for reporting quality on the external corpus.
-RECORDED_P_AT_1 = 0.396
-RECORDED_MRR = 0.592
+#: Up, then down, then back to where it started. ADR-0003's amendment grew hundreds of words
+#: of hook, agent and remediation vocabulary, which made the pairs it is gold for easier;
+#: ADR-0005's grew a section about hooks and layer contracts, which is the same vocabulary
+#: on a decision that is *not* gold for those pairs, so it took them back. Nothing here is
+#: evidence about BM25. It is a corpus of five documents moving under a query set, and it is
+#: the whole argument for putting the quality claim on the external corpus (section 5b)
+#: while this file asserts only that the number is reproducible.
+RECORDED_P_AT_1 = 0.377
+RECORDED_MRR = 0.583
 
 
 @pytest.fixture(scope="module")

@@ -120,3 +120,33 @@ def test_a_check_ignores_excluded_files_entirely(repo, tmp_path) -> None:
     excluded = run_check([str(repo / "src")], config=Config.load(repo), use_baseline=False)
     assert excluded.findings == []
     assert "src/generated.py" not in excluded.paths
+
+
+def test_a_path_spelled_with_a_parent_step_gets_the_same_key(repo, tmp_path) -> None:
+    """`relative()` produces cache keys, `Finding.path`, and a third of every baseline key,
+    so one file must have exactly one spelling.
+
+    `relative_to` is pure text and does not normalize: `src/../src/a.py` stays
+    `src/../src/a.py` where `resolve()` gives `src/a.py`. Skipping the syscall for speed is
+    fine for the paths a directory walk produces and wrong for a path a person or a foreign
+    hook payload can type -- the same file would become two findings, and accepting one
+    would not accept the other.
+    """
+    indexer = Indexer(root=repo, cache_path=tmp_path / "cache" / "g.db")
+    direct = indexer.relative(repo / "src" / "a.py")
+    detoured = indexer.relative(repo / "src" / ".." / "src" / "a.py")
+    indexer.close()
+
+    assert direct == "src/a.py"
+    assert detoured == direct
+
+
+def test_an_exclusion_glob_matches_the_same_path_spelled_either_way(repo, tmp_path) -> None:
+    """`_out_of_scope` skips the same syscall under the same guard, and a glob that matched
+    one spelling and not the other would exclude a file only when it was named plainly."""
+    from oxn.graph.sources import iter_source_files
+
+    detour = repo / "src" / ".." / "src"
+    found = iter_source_files([detour], base=repo, exclude=("src/a.py",))
+
+    assert "a.py" not in {path.name for path in found}
