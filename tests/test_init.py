@@ -120,14 +120,42 @@ def test_no_hook_leaves_settings_untouched(tmp_path) -> None:
     assert any("--no-hook" in note for note in report.notes)
 
 
-def test_the_mcp_client_is_not_wired_to_a_server_that_does_not_exist(tmp_path) -> None:
-    """P2.5's original plan writes `.mcp.json`; the MCP server lands in P9.
+def test_the_mcp_server_is_wired_now_that_it_exists(tmp_path) -> None:
+    """P2.5 withheld `.mcp.json` because the server did not exist and a client wired to a
+    missing server is a broken tool in someone's editor. It exists as of P9."""
+    report = run_init(tmp_path)
+    assert ".mcp.json" in report.created
+    written = json.loads((tmp_path / ".mcp.json").read_text())
+    assert written["mcpServers"]["oxn"] == {"command": "oxn", "args": ["serve"]}
 
-    Wiring a client to a missing server produces a broken tool in someone's editor and a bug
-    report about OXN. `init` only wires surfaces that work today.
-    """
-    run_init(tmp_path)
-    assert not (tmp_path / ".mcp.json").exists()
+
+def test_another_teams_mcp_servers_are_not_replaced(tmp_path) -> None:
+    """`.mcp.json` is usually committed and usually already has entries in it."""
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"postgres": {"command": "pg-mcp"}}})
+    )
+    report = run_init(tmp_path)
+    written = json.loads((tmp_path / ".mcp.json").read_text())
+    assert written["mcpServers"]["postgres"] == {"command": "pg-mcp"}
+    assert "oxn" in written["mcpServers"]
+    assert ".mcp.json" in report.updated
+
+
+def test_a_hand_edited_oxn_entry_is_left_alone(tmp_path) -> None:
+    """A pinned interpreter or a wrapper script is someone solving the PATH problem their
+    own way, and overwriting it every `init` would undo the fix on every run."""
+    pinned = {"command": "/opt/venv/bin/oxn", "args": ["serve"]}
+    (tmp_path / ".mcp.json").write_text(json.dumps({"mcpServers": {"oxn": pinned}}))
+    report = run_init(tmp_path)
+    assert json.loads((tmp_path / ".mcp.json").read_text())["mcpServers"]["oxn"] == pinned
+    assert any("left alone" in note for note in report.notes)
+
+
+def test_a_malformed_mcp_file_is_reported_rather_than_replaced(tmp_path) -> None:
+    (tmp_path / ".mcp.json").write_text("{ not json")
+    report = run_init(tmp_path)
+    assert (tmp_path / ".mcp.json").read_text() == "{ not json"
+    assert any(".mcp.json is not valid JSON" in note for note in report.notes)
 
 
 def test_the_baseline_is_never_gitignored(tmp_path) -> None:

@@ -109,17 +109,20 @@ def init(
     no_hook: bool = typer.Option(
         False, "--no-hook", help="Write config and docs but do not install the hook."
     ),
+    no_mcp: bool = typer.Option(
+        False, "--no-mcp", help="Do not wire the MCP server into .mcp.json."
+    ),
 ) -> None:
     """Wire OXN into this repository. Additive and idempotent -- run it twice safely.
 
     Nothing is overwritten. `oxn.yaml` is written only if absent, the `CLAUDE.md` section
-    lives between markers, and an existing `.claude/settings.json` is merged rather than
-    replaced.
+    lives between markers, and existing `.claude/settings.json` and `.mcp.json` files are
+    merged rather than replaced.
     """
     from oxn.init import run_init
 
     console = _console()
-    report = run_init(with_hook=not no_hook)
+    report = run_init(with_hook=not no_hook, with_mcp=not no_mcp)
     for label, paths in (
         ("created", report.created),
         ("updated", report.updated),

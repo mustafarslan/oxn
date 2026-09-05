@@ -14,4 +14,9 @@ invariant, and the JSON names the entity, the rule and the number.
   that gets worse fails the build exactly as a new one does.
 
 Run `oxn check` yourself at any time; `oxn check --deep` adds the architectural tier.
+
+OXN also serves MCP over stdio (`oxn serve`, wired in `.mcp.json`). It informs; it never
+blocks. Call `get_architectural_context` *before* writing code to see the constraints that
+govern the task, and `explain_violation` on anything the hook rejects -- it gives the
+increment trail and where that ceiling was declared.
 <!-- oxn:end -->

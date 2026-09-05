@@ -12,16 +12,26 @@ repository. So:
   outside the markers is never touched.
 * `.claude/settings.json` is merged, preserving hooks already configured, and OXN's own
   entry is matched by command so a second run updates rather than duplicates it.
+* `.mcp.json` is merged the same way, and an `oxn` entry someone has edited is left alone.
 
-Deliberately **not** written: `.mcp.json`. The original P2.5 plan lists it, but the MCP
-server lands in P9 and does not exist yet. Wiring a client to a server that is not there
-produces a broken tool in someone's editor and a bug report about OXN, so `init` only wires
-surfaces that work today.
+`.mcp.json` was withheld through P2.5 on the grounds that wiring a client to a server that
+does not exist produces a broken tool in someone's editor and a bug report about OXN. The
+server exists as of P9, so it is written -- and the rule it was withheld under is the reason
+it may be written now.
+
+**Both wirings name `oxn`, not a path**, and that is a decision rather than an oversight.
+`.mcp.json` is committed and shared: an absolute interpreter path resolves on the machine
+that ran `init` and on no one else's. The cost is that `oxn` must be on the `PATH` of the
+shell a hook or an MCP client is started with, which is *not* true for a project installed
+only into a virtualenv -- and a hook that cannot start is a gate that silently is not there.
+`init` cannot fix that without pinning a path it must not pin, so it detects the case and
+says so in its report. Silently absent was the failure; visibly absent is not.
 """
 
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -40,6 +50,10 @@ MARKER_END = "<!-- oxn:end -->"
 #: across every existing install while checking one file instead of the tree.
 HOOK_COMMAND = "oxn check --json"
 
+#: The MCP server entry, in the shape every MCP client reads. `oxn serve` rather than an
+#: interpreter path: see the module docstring.
+MCP_SERVER: dict[str, object] = {"command": "oxn", "args": ["serve"]}
+
 CLAUDE_SECTION = f"""{MARKER_BEGIN}
 ## Architecture and quality invariants (OXN)
 
@@ -56,6 +70,11 @@ invariant, and the JSON names the entity, the rule and the number.
   that gets worse fails the build exactly as a new one does.
 
 Run `oxn check` yourself at any time; `oxn check --deep` adds the architectural tier.
+
+OXN also serves MCP over stdio (`oxn serve`, wired in `.mcp.json`). It informs; it never
+blocks. Call `get_architectural_context` *before* writing code to see the constraints that
+govern the task, and `explain_violation` on anything the hook rejects -- it gives the
+increment trail and where that ceiling was declared.
 {MARKER_END}"""
 
 STARTER_CONFIG = f"""# OXN — architecture and quality invariants for this repository.
@@ -113,7 +132,9 @@ class InitReport:
         }
 
 
-def run_init(root: Path | None = None, *, with_hook: bool = True) -> InitReport:
+def run_init(
+    root: Path | None = None, *, with_hook: bool = True, with_mcp: bool = True
+) -> InitReport:
     """Wire OXN into `root`. Safe to run repeatedly, and safe to run on a populated repo.
 
     With no `root`, this wires the *repository*, not the working directory. `Config.load`
@@ -132,7 +153,12 @@ def run_init(root: Path | None = None, *, with_hook: bool = True) -> InitReport:
         _write_hook(base, report)
     else:
         report.notes.append("hook not written (--no-hook)")
+    if with_mcp:
+        _write_mcp(base, report)
+    else:
+        report.notes.append(".mcp.json not written (--no-mcp)")
     _write_gitignore(base, report)
+    _note_how_oxn_resolves(report)
     return report
 
 
@@ -232,6 +258,65 @@ def _mentions_oxn(entry: object) -> bool:
         return False
     return any(
         isinstance(hook, dict) and HOOK_COMMAND in str(hook.get("command", "")) for hook in hooks
+    )
+
+
+def _write_mcp(base: Path, report: InitReport) -> None:
+    """Merge OXN's server into `.mcp.json`, keeping every other server and any hand edit."""
+    path = base / ".mcp.json"
+    config: dict[str, object] = {}
+    if path.exists():
+        loaded = _json_object(path, report)
+        if loaded is None:
+            return
+        config = loaded
+
+    servers = config.setdefault("mcpServers", {})
+    if not isinstance(servers, dict):
+        report.notes.append("`mcpServers` in .mcp.json is not an object; left alone")
+        return
+    if "oxn" in servers:
+        # Equal means a previous run wrote it; different means someone changed it on
+        # purpose -- a wrapper script, a pinned interpreter -- and that is theirs to keep.
+        if servers["oxn"] != MCP_SERVER:
+            report.notes.append(".mcp.json already configures `oxn` differently; left alone")
+        else:
+            report.unchanged.append(".mcp.json")
+        return
+
+    servers["oxn"] = dict(MCP_SERVER)
+    existed = path.exists()
+    path.write_text(json.dumps(config, indent=2) + "\n")
+    (report.updated if existed else report.created).append(".mcp.json")
+
+
+def _json_object(path: Path, report: InitReport) -> dict[str, object] | None:
+    """Read a JSON object, or report why it was left alone. Never raises at a user."""
+    try:
+        loaded = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        report.notes.append(f"{path.name} is not valid JSON; it was left alone")
+        return None
+    if not isinstance(loaded, dict):
+        report.notes.append(f"{path.name} is not an object; it was left alone")
+        return None
+    return loaded
+
+
+def _note_how_oxn_resolves(report: InitReport) -> None:
+    """Say it when `oxn` will not be on the PATH of the shells that have to run it.
+
+    The hook and the MCP client are started by an editor, not by the terminal that ran
+    `oxn init`, and an editor launched from the desktop inherits none of a virtualenv's
+    activation. This is the one case `init` can detect from inside its own process.
+    """
+    if sys.prefix == sys.base_prefix:
+        return
+    report.notes.append(
+        f"oxn is installed in the virtualenv at {sys.prefix}, so `oxn` resolves only in "
+        "shells that have activated it. A PostToolUse hook or an MCP client started from "
+        "an editor will not find it -- install oxn with pipx, or `pip install --user`, for "
+        "those to work outside this shell."
     )
 
 

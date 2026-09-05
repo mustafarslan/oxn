@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "oxn": {
+      "command": "oxn",
+      "args": [
+        "serve"
+      ]
+    }
+  }
+}
