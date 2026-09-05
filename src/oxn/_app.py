@@ -368,7 +368,11 @@ def context(
 
 
 @app.command()
-def serve() -> None:
+def serve(
+    root: str = typer.Option(
+        "", "--root", help="The repository to serve. Defaults to $OXN_ROOT, else discovery."
+    ),
+) -> None:
     """Speak MCP over stdio, so an agent can ask before it edits.
 
     The server is also OXN's warm process (ADR-0004): it is alive for the whole session, so
@@ -380,4 +384,4 @@ def serve() -> None:
     """
     from oxn.server import serve as run_server
 
-    run_server()
+    run_server(root=root or None)

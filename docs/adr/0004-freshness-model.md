@@ -119,7 +119,9 @@ finding. Per-file cost is dominated by *starting*; whole-tree cost is dominated 
 *computing*, and holding an `Indexer` open does nothing about computation. Measured directly:
 three consecutive whole-tree checks in one process took 4,282, 4,244 and 4,284 ms before the
 fixes below — the second call is not cheaper than the first, because there is no warm state
-left to exploit. The content-addressed cache was already 100% hits on all three.
+left to exploit. A profile of the third puts indexing at 0.74 s of 8.1 s, so the cache is
+doing its job; the other 90% is the join and the rule evaluation, and those are recomputed
+whatever the cache knows.
 
 **So mechanism 3's remedy does not work, and is not implemented.** "The MCP server should
 pre-warm on startup" assumes the expensive thing is cache-fillable. It is not: pre-warming a

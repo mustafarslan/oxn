@@ -31,7 +31,7 @@ says so in its report. Silently absent was the failure; visibly absent is not.
 from __future__ import annotations
 
 import json
-import sys
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -158,7 +158,7 @@ def run_init(
     else:
         report.notes.append(".mcp.json not written (--no-mcp)")
     _write_gitignore(base, report)
-    _note_how_oxn_resolves(report)
+    _note_how_oxn_resolves(base, report)
     return report
 
 
@@ -290,33 +290,71 @@ def _write_mcp(base: Path, report: InitReport) -> None:
     (report.updated if existed else report.created).append(".mcp.json")
 
 
-def _json_object(path: Path, report: InitReport) -> dict[str, object] | None:
-    """Read a JSON object, or report why it was left alone. Never raises at a user."""
+def _json_object(path: Path, report: InitReport | None = None) -> dict[str, object] | None:
+    """Read a JSON object, or say why it was left alone. Never raises at a user.
+
+    With no `report` this is a quiet read for a file that may not be there: the caller is
+    inspecting what is already wired, not proposing to write it.
+    """
+    if not path.exists():
+        return None
     try:
         loaded = json.loads(path.read_text())
     except json.JSONDecodeError:
-        report.notes.append(f"{path.name} is not valid JSON; it was left alone")
+        if report:
+            report.notes.append(f"{path.name} is not valid JSON; it was left alone")
         return None
     if not isinstance(loaded, dict):
-        report.notes.append(f"{path.name} is not an object; it was left alone")
+        if report:
+            report.notes.append(f"{path.name} is not an object; it was left alone")
         return None
     return loaded
 
 
-def _note_how_oxn_resolves(report: InitReport) -> None:
+def _wirings_that_look_oxn_up_on_the_path(base: Path) -> bool:
+    """Does anything `init` wired still depend on `oxn` being on PATH?
+
+    A note saying "an MCP client will not find it" is simply false once the entry names a
+    path, and a tool that says it anyway is a tool people stop reading. Both wirings are
+    matched on the *bare* command: JSON-encoded, `"oxn check --json"` cannot match a
+    `"…/bin/oxn check --json"` that someone has already fixed.
+    """
+    settings = json.dumps(_json_object(base / ".claude" / "settings.json") or {})
+    servers = (_json_object(base / ".mcp.json") or {}).get("mcpServers")
+    entry = servers.get("oxn") if isinstance(servers, dict) else None
+    command = entry.get("command") if isinstance(entry, dict) else None
+    return f'"{HOOK_COMMAND}"' in settings or command == MCP_SERVER["command"]
+
+
+def _note_how_oxn_resolves(base: Path, report: InitReport) -> None:
     """Say it when `oxn` will not be on the PATH of the shells that have to run it.
 
     The hook and the MCP client are started by an editor, not by the terminal that ran
     `oxn init`, and an editor launched from the desktop inherits none of a virtualenv's
-    activation. This is the one case `init` can detect from inside its own process.
+    activation.
+
+    The test is *activation*, not `sys.prefix != sys.base_prefix`. A `pipx install` and a
+    `uv tool install` both put OXN in a virtualenv too -- and they are the fix, so a prefix
+    check greets the people who already did the right thing by telling them to do it. What
+    distinguishes the broken case is that `oxn` is on this shell's PATH only because the
+    shell was activated (`VIRTUAL_ENV`), or is not on it at all -- and that only matters
+    while something OXN wired is still looking `oxn` up on PATH.
     """
-    if sys.prefix == sys.base_prefix:
+    import shutil
+
+    if not _wirings_that_look_oxn_up_on_the_path(base):
         return
+    activated = os.environ.get("VIRTUAL_ENV")
+    if not activated and shutil.which("oxn") is not None:
+        return
+    where = f" at {activated}" if activated else ""
     report.notes.append(
-        f"oxn is installed in the virtualenv at {sys.prefix}, so `oxn` resolves only in "
-        "shells that have activated it. A PostToolUse hook or an MCP client started from "
-        "an editor will not find it -- install oxn with pipx, or `pip install --user`, for "
-        "those to work outside this shell."
+        f"`oxn` is not on this shell's PATH independently of a virtualenv{where}, so a "
+        "PostToolUse hook or an MCP client started by an editor will not find it. Install "
+        "it with pipx or `pip install --user`, or point the hook command and the `oxn` "
+        "entry in .mcp.json at a path that resolves. Claude Code expands variables in "
+        '.mcp.json, so `"command": "${CLAUDE_PROJECT_DIR:-.}/.venv/bin/oxn"` names the venv '
+        "without naming your machine -- and a hand-edited entry is left alone on re-run."
     )
 
 

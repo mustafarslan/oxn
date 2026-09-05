@@ -138,6 +138,11 @@ def declarations_of(project: Project, rule: str, path: str) -> list[Constraint]:
     only where a decision is stricter than what is already there, so the minimum over the
     covering declarations is the number the gate used. `tests/test_bundle.py` asserts that
     equality rather than trusting it.
+
+    That holds while a file belongs to one layer, which is what `assign_layers` gives it. If
+    two layers' patterns both match a path, the gate resolves against the single layer it
+    was assigned and this join lists both overrides. Overlapping layer patterns are probably
+    a configuration OXN should reject; until it does, this is where the discrepancy shows.
     """
     covering = [
         candidate.model_copy(update={"governs": _governs(candidate.scope, project.paths)})

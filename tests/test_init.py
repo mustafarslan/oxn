@@ -198,3 +198,60 @@ def test_init_outside_a_checkout_still_wires_where_it_stands(tmp_path, monkeypat
     monkeypatch.chdir(tmp_path)
     run_init()
     assert (tmp_path / "oxn.yaml").is_file()
+
+
+# ---- saying when `oxn` will not resolve -------------------------------------------------
+
+
+def test_an_activated_virtualenv_is_reported(tmp_path, monkeypatch) -> None:
+    """A hook or an MCP client is started by an editor, which inherits no activation."""
+    monkeypatch.setenv("VIRTUAL_ENV", "/somewhere/.venv")
+    report = run_init(tmp_path)
+    assert any("/somewhere/.venv" in note for note in report.notes)
+
+
+def test_a_pipx_style_install_is_not_lectured(tmp_path, monkeypatch) -> None:
+    """`pipx` and `uv tool install` put OXN in a virtualenv too -- and they are the fix.
+
+    A `sys.prefix != sys.base_prefix` check, which is what this function did first, greets
+    the people who already did the right thing by telling them to do it.
+    """
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+    monkeypatch.setattr("shutil.which", lambda name: f"/opt/pipx/bin/{name}")
+    report = run_init(tmp_path)
+    assert not [note for note in report.notes if "PATH" in note]
+
+
+def test_oxn_missing_from_the_path_entirely_is_reported(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+    monkeypatch.setattr("shutil.which", lambda _name: None)
+    report = run_init(tmp_path)
+    assert any("will not find it" in note for note in report.notes)
+
+
+def test_nothing_is_said_once_both_wirings_name_a_path(tmp_path, monkeypatch) -> None:
+    """The note is about PATH. Once neither wiring looks `oxn` up there it is simply false,
+    and a tool that says it anyway is a tool people stop reading."""
+    monkeypatch.setenv("VIRTUAL_ENV", "/somewhere/.venv")
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"oxn": {"command": "/opt/venv/bin/oxn", "args": ["serve"]}}})
+    )
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PostToolUse": [
+                        {
+                            "matcher": "Edit",
+                            "hooks": [
+                                {"type": "command", "command": "/opt/venv/bin/oxn check --json"}
+                            ],
+                        }
+                    ]
+                }
+            }
+        )
+    )
+    report = run_init(tmp_path)
+    assert not [note for note in report.notes if "PATH" in note]

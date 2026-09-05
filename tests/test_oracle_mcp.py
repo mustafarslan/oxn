@@ -28,13 +28,13 @@ pytestmark = pytest.mark.oracle
 ROOT = Path(__file__).resolve().parent.parent
 
 
-async def _drive(calls: list[tuple[str, dict[str, Any]]]) -> dict[str, Any]:
+async def _drive(calls: list[tuple[str, dict[str, Any]]], cwd: Path) -> dict[str, Any]:
     """Run the whole client lifecycle against `oxn serve` and report what came back."""
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
     parameters = StdioServerParameters(
-        command=sys.executable, args=["-m", "oxn", "serve"], cwd=str(ROOT)
+        command=sys.executable, args=["-m", "oxn", "serve"], cwd=str(cwd)
     )
     async with stdio_client(parameters) as (read, write), ClientSession(read, write) as session:
         initialized = await session.initialize()
@@ -43,8 +43,8 @@ async def _drive(calls: list[tuple[str, dict[str, Any]]]) -> dict[str, Any]:
         return {"initialize": initialized, "tools": listed.tools, "results": results}
 
 
-def _run(calls: list[tuple[str, dict[str, Any]]]) -> dict[str, Any]:
-    return asyncio.run(asyncio.wait_for(_drive(calls), timeout=120))
+def _run(calls: list[tuple[str, dict[str, Any]]], cwd: Path = ROOT) -> dict[str, Any]:
+    return asyncio.run(asyncio.wait_for(_drive(calls, cwd), timeout=120))
 
 
 def test_the_official_client_completes_a_session_against_our_server() -> None:
@@ -90,3 +90,26 @@ def test_a_tool_failure_reaches_the_client_as_content_rather_than_a_transport_er
     (result,) = outcome["results"]
     payload = json.loads(result.content[0].text)
     assert payload["errors"], "a missing path must be reported, not silently passed"
+
+
+def test_the_server_answers_about_the_repository_wherever_the_client_started_it() -> None:
+    """An editor starts an MCP server in whatever directory it likes.
+
+    Before `serve` moved to the project root, this was the split that made the server a
+    broken tool rather than a failing one: `get_architectural_context` walked up to
+    `oxn.yaml` and answered about the whole repository, while `check_code` resolved its
+    argument paths against the client's cwd and answered "no such file or directory" for a
+    file that is plainly there. One tool right and one silently wrong.
+    """
+    outcome = _run(
+        [
+            ("check_code", {"paths": ["src/oxn/server.py"]}),
+            ("get_architectural_context", {"task": "add a rule", "limit": 2}),
+        ],
+        cwd=ROOT / "src",
+    )
+    report, bundle = (json.loads(result.content[0].text) for result in outcome["results"])
+
+    assert report["errors"] == {}, "the server resolved a repo-relative path against the client"
+    assert report["paths"] == ["src/oxn/server.py"]
+    assert bundle["constraints"], "the bundle is about the repository, as it always was"

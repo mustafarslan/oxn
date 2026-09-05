@@ -24,8 +24,10 @@ at stderr for the server's lifetime, so a stray write is merely noisy.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field, ValidationError
@@ -330,7 +332,10 @@ def _error(identifier: object, code: int, message: str) -> dict[str, Any]:
 
 
 def serve(
-    lines: Iterator[str] | None = None, out: Any = None, session: Session | None = None
+    lines: Iterator[str] | None = None,
+    out: Any = None,
+    session: Session | None = None,
+    root: str | None = None,
 ) -> None:
     """Read newline-delimited JSON-RPC until the client hangs up.
 
@@ -338,10 +343,19 @@ def serve(
     a console, a lazily fetched tree-sitter grammar -- lands on stderr instead of corrupting
     the wire. That is not defensive: `_console()` writes to stdout, and every OXN surface
     reachable from here is one import away from it.
+
+    Then moves to the project root, because an editor starts an MCP server in whatever
+    directory it likes and the tools disagree about what that means. `Config.load` walks up
+    to `oxn.yaml`, so `get_architectural_context` was already answering about the whole
+    repository -- while `check_code(paths=["src/oxn/server.py"])` resolved that path against
+    the *client's* cwd and answered "no such file or directory". One tool right and one
+    silently wrong is the broken-editor-tool failure this phase exists to avoid; every path
+    the server takes or returns is now repository-relative.
     """
     stream = out or sys.stdout
     if out is None:
         sys.stdout = sys.stderr
+    os.chdir(_root(root))
     live = session or Session()
     for line in lines if lines is not None else sys.stdin:
         if not line.strip():
@@ -351,6 +365,22 @@ def serve(
             continue
         stream.write(json.dumps(response, separators=(",", ":")) + "\n")
         stream.flush()
+
+
+def _root(root: str | None) -> Path:
+    """Where to serve from: `--root`, else `OXN_ROOT`, else the project the cwd is inside.
+
+    The environment variable exists because an MCP client configures a *command*, and the
+    editors that let you set one often let you set the environment beside it and nothing
+    else. With none of the three, discovery is `Config.load`'s: the nearest `oxn.yaml` at or
+    above the working directory, bounded by the repository.
+    """
+    chosen = root or os.environ.get("OXN_ROOT")
+    from oxn.config import Config
+
+    resolved = Config.load(Path(chosen) if chosen else None).root
+    print(f"oxn: serving {resolved}", file=sys.stderr, flush=True)
+    return resolved
 
 
 def _answer(session: Session, line: str) -> dict[str, Any] | None:

@@ -108,8 +108,19 @@ never performs — the measurement, and what would reverse it, are in
 
 **`oxn` has to be on the PATH of the shell your editor starts the server with**, which an
 unactivated virtualenv is not. `oxn init` detects that case and says so; the fix is a `pipx`
-or `--user` install, or editing the `oxn` entry in `.mcp.json` to a path that resolves — a
-hand-edited entry is left alone on every later `init`.
+or `--user` install, or editing the `oxn` entry in `.mcp.json` to a path that resolves. Claude
+Code expands variables there, so this repository's own entry reads
+
+```json
+{ "mcpServers": { "oxn": { "command": "${CLAUDE_PROJECT_DIR:-.}/.venv/bin/oxn", "args": ["serve"] } } }
+```
+
+which names the virtualenv without naming a machine, and mirrors the `PostToolUse` hook
+beside it. A hand-edited entry is left alone on every later `init`.
+
+The server also answers about the *repository*, not about wherever your editor happened to
+start it: it moves to the project root on startup, and `--root` or `OXN_ROOT` overrides that
+when discovery would find the wrong tree.
 
 ## Self-repair
 
