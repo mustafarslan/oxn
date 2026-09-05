@@ -127,7 +127,16 @@ The hook checks layer contracts too, on the edited file's own imports:
 ```
 
 It sees edges *out of* the files it measured. Edges *into* them from files nobody edited,
-and import cycles, need the whole graph — run `oxn check --deep` in CI for those.
+and import cycles, need the whole graph — that is `oxn check --deep`, and it is the CI
+scope:
+
+```sh
+oxn check --deep          # exit 0 clean · 2 violations · 1 OXN itself failed to run
+```
+
+Exit 1 and exit 2 are deliberately different numbers: a gate that could not start must
+never be read as a gate that passed. The retry budget does not apply in CI — it is keyed
+on the agent `session_id` a hook sends and a pipeline does not — so CI always reports.
 
 ## The MCP server
 

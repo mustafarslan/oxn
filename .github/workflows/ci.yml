@@ -50,6 +50,28 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
 
+  gate:
+    # OXN gating OXN. `scripts/check.py` has run this locally since P2.5, but the declared
+    # pipeline did not -- so the one lane whose whole subject is "the gate works on a real
+    # repository" was the lane CI never ran.
+    #
+    # `--deep` is the CI scope on purpose: the `PostToolUse` hook answers ceilings and the
+    # layer contracts one file's own imports can settle, and only the whole graph can add
+    # edges *into* a file and import cycles. Exit 2 is violations; exit 1 is OXN failing to
+    # run, which must never be read as a pass.
+    #
+    # No retry budget here: `oxn.yaml` sets one for agent sessions, and it is keyed on a
+    # `session_id` that CI does not send, so this run always reports rather than halting.
+    name: gate (oxn on oxn)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m oxn check --deep src tests scripts
+
   corpus:
     # Phase exit criteria against real repositories: parse throughput, cache-hit ratio on
     # a no-op re-run, and the grammar error rate. Needs ~150k LOC of pinned sources, so it
