@@ -78,10 +78,19 @@ def build_dependency_graph(
     *,
     component_of: Callable[[str], str] = directory_component,
     include_type_only: bool = False,
+    known: set[str] | None = None,
 ) -> DependencyGraph:
-    """Parse, resolve and aggregate. ``root`` anchors every path in the result."""
+    """Parse, resolve and aggregate. ``root`` anchors every path in the result.
+
+    ``known`` separates *what is resolved against* from *what is parsed*, which is what
+    lets the hook check one file's imports. Resolution needs the whole tree's layout —
+    ``import oxn.check`` is placeable only if something knows `src/oxn/check.py` exists —
+    while parsing is what costs seconds. Passing the edited file in ``files`` and every
+    repo-relative path in ``known`` buys the edited file's real edges for one parse plus a
+    directory walk. Defaulting to the parsed set is the whole-tree call, unchanged.
+    """
     relative_paths = [_relative(path, root) for path in files]
-    context = ResolutionContext.build(root, set(relative_paths))
+    context = ResolutionContext.build(root, known if known is not None else set(relative_paths))
 
     graph = DependencyGraph()
     kinds = RUNTIME_KINDS | ({"type_only"} if include_type_only else set())

@@ -308,3 +308,54 @@ fixpoint loop and the stratification check, because the point is a surface a rea
 can take over; but this ADR records that **the first rule set exercises neither**, so the day a
 recursive rule arrives is the day those paths are first tested, and they need a test written for
 them rather than assumed working.
+
+## Amendment, 2026-09-05 — `imports` is not repository-scoped, and the hook can afford it
+
+Section 3a derives a rule's scope from the relations in its body, so that a rule cannot be
+mislabelled. The derivation was right; one of the inputs was wrong.
+
+`REPOSITORY_RELATIONS` held `{imports, cycle}`, and `rules_for_scope(deep=False)` therefore
+dropped all four contract rules on the hook path. The stated reason was that `imports`
+"only exists once the whole tree has been parsed". That is a fact about
+`build_dependency_graph`'s *call site*, not about the relation: resolution needs the tree's
+**layout** — which files exist, where the package roots are, what `tsconfig` aliases say —
+and the importing file's **text**. Only the second is per-file work. Measured on
+`typescript-nest`: the directory walk is 21 ms over 1,913 files, `ResolutionContext.build`
+5 ms, and parsing one file for its imports 10 ms.
+
+So the hook parses the edited file, resolves against the whole tree's layout, and evaluates
+every contract rule against that file's outgoing edges. `REPOSITORY_RELATIONS` is now
+`{cycle}` — the one relation genuinely unanswerable from a single file — and the scope
+predicate becomes "which relations did this run populate" rather than "is this run deep":
+
+```python
+CONDITIONAL_RELATIONS = frozenset({"imports", "cycle"})
+
+
+def rules_for_scope(settings, *, populated: frozenset[str]) -> list[Rule]:
+    missing = CONDITIONAL_RELATIONS - populated
+    return [rule for rule in all_rules(settings) if not (rule.relations & missing)]
+```
+
+Three consequences worth recording, two of them defects the change exposed in
+`graph_facts` — both invisible while every run parsed everything.
+
+**`layer` must be projected for both ends of an edge, not for the parsed files.** Every
+contract rule joins `layer(Src, _)` *and* `layer(Dst, _)`. `assign_layers(sorted(graph.files))`
+covers both only because a whole-tree run parses every target. Give it one file and the rule
+cannot fire: a silent false negative, in the direction that looks like conformance.
+
+**`_entrypoint_facts` must glob against both ends too.** A `deep_import` contract's
+`allowed_entrypoints` are matched against known paths. Match them against the parsed files
+and the hook finds no entry point, so every legal import into the package reports as a
+bypass. An empty allow-list is not a strict check; it is a false positive on correct code.
+
+**Finding identity is unchanged, and that is asserted rather than assumed** (section 5). The
+hook and `--deep` produce byte-identical keys for the same edge, without which
+`.oxn/baseline.json` would stop being a ratchet: an accepted layer violation would re-fire
+as new the next time anyone touched the file.
+
+The honest limit is that a file-scoped contract check sees the edges a file *makes*, never
+the edges made *at* it. That is not a weakening — the file that made an illegal import had
+its own edit gated — but it is a different claim from `--deep`, and `check` says so in a
+diagnostic rather than leaving a caller to infer it from silence.

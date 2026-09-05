@@ -61,7 +61,9 @@ This repository is gated by [OXN](https://github.com/mustafarslan/oxn). A `PostT
 hook runs `{HOOK_COMMAND}` after every edit; a non-zero exit means the edit broke an
 invariant, and the JSON names the entity, the rule and the number.
 
-* Ceilings and layer rules live in `{CONFIG_NAME}`. Read it before assuming a limit.
+* Ceilings and layer rules live in `{CONFIG_NAME}`. Read it before assuming a limit. Layer
+  contracts are checked on the edit that breaks them, not only in CI, so an import that
+  reaches across a boundary is rejected with the offending edge named.
 * A violation is not a suggestion. Fix the cause -- do not split a function into one-line
   helpers to get under a ceiling. That is reported as rule `shredding`, which totals a
   function together with the private, trivial helpers only it calls: dedicated helpers do
@@ -112,7 +114,19 @@ STARTER_CONFIG = f"""# OXN — architecture and quality invariants for this repo
 #   infrastructure:
 #     cognitive_complexity: 20
 
-# Paths that are reported but never block.
+# Code that is not yours to measure. OXN already skips the directories nobody writes by
+# hand -- node_modules, dist, build, vendor, third_party, target, .venv and friends -- but
+# generated *files* live beside hand-written ones and have to be named. Nothing here is
+# looked at at all, so a ceiling can never fire on it.
+# exclude:
+#   - "**/*_pb2.py"          # protobuf
+#   - "**/*_pb2_grpc.py"
+#   - "**/*.min.js"          # bundled or minified output
+#   - "**/*.generated.ts"    # codegen: graphql, openapi, prisma
+#   - "src/migrations/*"
+
+# Paths that are reported but never block. Distinct from `exclude`: a finding here is
+# measured and shown, it just cannot fail the build.
 # advisory:
 #   - "tests/fixtures/*"
 

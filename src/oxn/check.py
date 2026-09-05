@@ -16,11 +16,15 @@ never by line number, which is carried for humans and ignored by the ratchet.
 the *same* violation getting worse starts failing it again. Without that second half a
 baseline is a way to switch the gate off one entry at a time.
 
-Two scopes, because they have different budgets. The default is file-scoped — Tier-1
-ceilings on the paths given — and belongs in a `PostToolUse` hook at ~100 ms. `--deep` adds
-the repository-scoped architectural tier (cycles, layer contracts), which needs the whole
-import graph and belongs in CI. The `scope` field in the JSON says which ran, so a baseline
-is never compared against a different question from the one that produced it.
+Two scopes, because they have different budgets, and the line between them moved on
+2026-09-05. The default is file-scoped — Tier-1 ceilings on the paths given, plus the layer
+contracts those paths' own imports can settle — and belongs in a `PostToolUse` hook at
+~130 ms. `--deep` adds what one file cannot answer: edges *into* the measured files, and
+cycles. Contracts were `--deep`-only until that date on the assumption that any import
+graph meant parsing the whole tree; resolution in fact needs the tree's layout and one
+file's text, so the hook was silent about layer violations for no reason it was paying for.
+The `scope` field in the JSON says which ran, so a baseline is never compared against a
+different question from the one that produced it.
 """
 
 from __future__ import annotations
@@ -238,7 +242,7 @@ def _rule_findings(
     from oxn.rules.adr import adr_facts, load_decisions, unscoped_rule
     from oxn.rules.builtin import rules_for_scope
     from oxn.rules.engine import evaluate
-    from oxn.rules.facts import file_facts, graph_facts
+    from oxn.rules.facts import file_facts
 
     with _indexer(settings) as indexer:
         index = indexer.index(targets)
@@ -248,15 +252,8 @@ def _rule_findings(
         report.paths = wanted
         layer_of = assign_layers(wanted, settings.layers) if settings.layers else {}
         facts = file_facts(indexer.store, wanted, settings, layer_of)
-        rules = rules_for_scope(settings, deep=deep)
-        if deep and settings.contracts:
-            from oxn.graph.depgraph import build_dependency_graph
-
-            graph_facts(facts, build_dependency_graph(indexer.root, sources), settings)
-        elif deep:
-            report.diagnostics.append(
-                "no contracts declared in oxn.yaml; architectural check skipped"
-            )
+        populated = _edge_facts(facts, indexer, sources, settings, report)
+        rules = rules_for_scope(settings, populated=populated)
         # `--deep` is also what makes "this ADR governs nothing" a meaningful claim: it is
         # a statement about the repository, and `wanted` is the whole tree only here.
         adr_facts(facts, load_decisions(indexer.root), wanted, whole_project=deep)
@@ -264,6 +261,51 @@ def _rule_findings(
             rules.append(unscoped_rule())
 
     return [_as_finding(found) for found in evaluate(rules, facts)]
+
+
+def _edge_facts(
+    facts: Any, indexer: Any, sources: list[Path], settings: Config, report: CheckReport
+) -> frozenset[str]:
+    """Populate the import relations this run can honestly answer, and say which those are.
+
+    Whether this is the deep scope is read off `report.scope` rather than passed beside it.
+    They are the same fact -- `run_check` sets one from the other -- and a signature
+    carrying both is a signature in which they can disagree.
+
+    **The hook checks layer contracts too, as of 2026-09-05.** It could not before, and the
+    reason was a cost that turned out not to be there: building the graph was assumed to mean
+    parsing the whole tree, so contracts went to `--deep` and an agent could import across a
+    layer boundary while the hook said nothing, every edit. But resolution needs the tree's
+    *layout* — a directory walk, 27 ms over nest's 1,913 files — and only the edited file's
+    *text*. So one walk plus one parse buys that file's real edges, and three of the four
+    contract kinds are edge joins from the source.
+
+    What this cannot see is stated rather than glossed: only edges **out of** the files
+    measured. A file nobody edited importing this one illegally is invisible here and is
+    caught by `--deep`, which is also the only scope that can answer `cycle`.
+    """
+    deep = report.scope == "repository"
+    if not settings.contracts:
+        if deep:
+            report.diagnostics.append(
+                "no contracts declared in oxn.yaml; architectural check skipped"
+            )
+        return frozenset()
+
+    from oxn.graph.depgraph import build_dependency_graph
+    from oxn.rules.facts import graph_facts
+
+    # Whole-tree runs resolve against what they parse. The hook parses one file, so it has
+    # to be told the layout separately -- and pays for the walk only when a contract exists
+    # to spend it on.
+    known = None if deep else {indexer.relative(path) for path in indexer.sources()}
+    graph_facts(facts, build_dependency_graph(indexer.root, sources, known=known), settings)
+    if not deep:
+        report.diagnostics.append(
+            "file-scoped contract check: edges out of the files measured. "
+            "`oxn check --deep` adds edges into them, and cycles."
+        )
+    return frozenset({"imports", "cycle"}) if deep else frozenset({"imports"})
 
 
 def _as_finding(found: Any) -> Finding:

@@ -104,7 +104,20 @@ class Indexer:
         return _grammar_version()
 
     def relative(self, path: Path) -> str:
-        """Cache keys are repo-relative and POSIX, so a cache survives being moved."""
+        """Cache keys are repo-relative and POSIX, so a cache survives being moved.
+
+        `resolve()` is a `realpath` syscall, and this is called once per file: 43.6 ms of
+        the whole-tree path on nest's 1,913 files, twice what the directory walk itself
+        costs. It is only *needed* for a path that is relative, or that reaches the tree by
+        a route `relative_to` cannot subtract -- so try the pure-text answer first and pay
+        the syscall on the paths that need it. `os.walk` does not follow symlinks and
+        `self.root` is already resolved, so every path the walk yields takes the fast branch
+        and gets the same string it did before.
+        """
+        try:
+            return path.relative_to(self.root).as_posix()
+        except ValueError:
+            pass
         try:
             return path.resolve().relative_to(self.root).as_posix()
         except ValueError:

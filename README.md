@@ -120,8 +120,14 @@ Attempts are counted per session and per violation, and repairing one forgets it
 is no agent to escalate to. Note the honest limit: a `PostToolUse` hook runs *after* the tool
 and cannot end a turn, so the halt is an instruction rather than an enforcement.
 
-The hook is file-scoped and does not check layer contracts — those need the whole import
-graph. Run `oxn check --deep` in CI for those.
+The hook checks layer contracts too, on the edited file's own imports:
+
+```
+  src/oxn/graph/store.py:1 src/oxn/graph/store.py -> src/oxn/check.py: depends on a layer above it
+```
+
+It sees edges *out of* the files it measured. Edges *into* them from files nobody edited,
+and import cycles, need the whole graph — run `oxn check --deep` in CI for those.
 
 ## The MCP server
 

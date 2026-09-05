@@ -172,10 +172,21 @@ def _deep_import_rule(contract: object) -> Rule:
     )
 
 
-#: Relations that only exist once the whole tree has been parsed. A rule touching one is
-#: repository-scoped and never runs on the hook; ADR-0005 derives scope from the body rather
-#: than declaring it beside the rule, so a rule cannot be mislabelled.
-REPOSITORY_RELATIONS = frozenset({"imports", "cycle"})
+#: Relations that are not populated by every invocation. A rule touching one runs only when
+#: the caller says it built that relation; ADR-0005 derives scope from the body rather than
+#: declaring it beside the rule, so a rule cannot be mislabelled.
+#:
+#: `imports` moved out of "repository-scoped" on 2026-09-05. It was there because building
+#: the graph meant parsing the whole tree, and that is no longer true: resolution needs the
+#: tree's *layout* and only the edited file's *text*, so the hook can populate one file's
+#: outgoing edges for a directory walk plus one parse. `cycle` genuinely cannot be answered
+#: from one file and stays.
+CONDITIONAL_RELATIONS = frozenset({"imports", "cycle"})
+
+#: What only the whole tree can answer. Kept as a separate name because it is the honest
+#: statement of the limit: a file-scoped contract check sees the edges *out of* the files it
+#: measured, and can say nothing about an edge into them from a file nobody edited.
+REPOSITORY_RELATIONS = frozenset({"cycle"})
 
 
 def is_repository_scoped(rule: Rule) -> bool:
@@ -187,14 +198,12 @@ def all_rules(settings: Config) -> list[Rule]:
     return [*ceiling_rules(settings), *contract_rules(settings)]
 
 
-def rules_for_scope(settings: Config, *, deep: bool) -> list[Rule]:
-    """The rules this invocation may evaluate.
+def rules_for_scope(settings: Config, *, populated: frozenset[str] = frozenset()) -> list[Rule]:
+    """The rules this invocation may evaluate, given the relations it actually built.
 
-    Without `--deep` the import graph does not exist, so a repository-scoped rule would
-    join against an empty relation and report nothing -- silence that reads exactly like
-    conformance. Excluding them is the honest form of the same outcome.
+    A rule joining against a relation nobody populated reports nothing, and silence reads
+    exactly like conformance. Excluding such a rule is the honest form of the same outcome —
+    and `check` says so in a diagnostic rather than leaving the caller to infer it.
     """
-    rules = all_rules(settings)
-    if deep:
-        return rules
-    return [rule for rule in rules if not is_repository_scoped(rule)]
+    missing = CONDITIONAL_RELATIONS - populated
+    return [rule for rule in all_rules(settings) if not (rule.relations & missing)]

@@ -43,8 +43,14 @@ LABELS = ROOT / "benchmarks" / "retrieval-labels-oxn.json"
 #: worth noting and not worth celebrating -- ADR-0003 is gold for the surfaces, and it grew
 #: several hundred words of hook, agent and remediation vocabulary, so the pairs it already
 #: won got easier. It is the corpus moving towards the queries, not the ranker improving.
+#:
+#: MRR 0.596 -> 0.592 on the same day again, from ADR-0005's amendment. Note the sign: this
+#: one made the ranking *worse*. ADR-0005 grew a section about hooks and layer contracts,
+#: which is vocabulary ADR-0003 owns, so it now competes for pairs it is not gold for. Two
+#: edits to two documents, one number up and one down, neither telling you anything about
+#: BM25 -- which is the whole argument for reporting quality on the external corpus.
 RECORDED_P_AT_1 = 0.396
-RECORDED_MRR = 0.596
+RECORDED_MRR = 0.592
 
 
 @pytest.fixture(scope="module")

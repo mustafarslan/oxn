@@ -91,7 +91,13 @@ def graph_facts(facts: Facts, graph: DependencyGraph, settings: Config) -> None:
     """
     from oxn.graph.contracts import assign_layers
 
-    assignment = assign_layers(sorted(graph.files), settings.layers)
+    # Both ends of every edge, not just the files that were parsed. Every contract rule
+    # joins `layer(Src, _)` *and* `layer(Dst, _)`, so a target with no layer fact makes the
+    # rule silently unable to fire. Whole-tree runs never notice -- everything is parsed, so
+    # every target is already a key -- but the hook parses one file and would otherwise
+    # check its imports against a table that knows only itself.
+    placed = set(graph.files) | {target for targets in graph.files.values() for target in targets}
+    assignment = assign_layers(sorted(placed), settings.layers)
     for path, layer in assignment.items():
         if layer is not None:
             facts.add("layer", (path, layer))
@@ -101,7 +107,12 @@ def graph_facts(facts: Facts, graph: DependencyGraph, settings: Config) -> None:
             # The label a finding is keyed by, built here rather than in a head: Datalog has
             # no string functions, so anything derived from values is projected at fact time.
             facts.add("edge_label", (source, target, f"{source} -> {target}"))
-    _contract_facts(facts, settings, set(graph.files))
+    # `placed` again, and for a sharper reason: `_entrypoint_facts` glob-matches a
+    # `deep_import` contract's declared entry points against these paths. Pass only the
+    # parsed files and the hook — which parses one — finds no entry point, so every import
+    # into the package looks like it bypassed one. An empty allow-list is not a strict
+    # check, it is a false positive.
+    _contract_facts(facts, settings, placed)
 
 
 def _contract_facts(facts: Facts, settings: Config, targets: set[str]) -> None:
