@@ -268,9 +268,15 @@ pooling is for the statistics and never for the ranking.
 | strict — both of the above | 27 | 0.481 | **0.741** | 0.632 | 0.259 |
 | excluding the largest repository | 24 | 0.583 | **0.875** | 0.723 | 0.396 |
 
-**BM25 beats the citation-frequency prior in every slice**, including the strict one. That is the
-claim section 5(a) could not make, and it is asserted rather than reported:
+**BM25 beats the citation-frequency prior in every pooled slice**, including the strict one. That
+is the claim section 5(a) could not make, and it is asserted rather than reported:
 `tests/test_retrieval_external.py` fails if it stops holding.
+
+*Pooled* is the honest unit, and the qualifier is not a hedge. Per repository the two smallest
+corpora tie the prior — `tessellation` 1.000 against 1.000 on four pairs, `elsa-core` 0.800 against
+0.800 on five — which at that size is not a result in either direction. The pooled slices are what
+the assertion is made on, and the per-repository numbers are reported so the tie is visible rather
+than averaged away.
 
 **This does not overturn 5(a); it explains it.** The two corpora ask different questions. There the
 gold is *scope* — which decisions' globs the changed files fall under — and a commit subject cannot

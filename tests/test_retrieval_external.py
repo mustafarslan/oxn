@@ -114,6 +114,10 @@ def _rank(extractor, corpus: Corpus, pair: dict) -> dict[str, object]:
     return {
         "corpus": corpus.name,
         "gold": set(pair["gold"]),
+        #: The decisions that actually parsed from the pinned clone -- the set a label has
+        #: to be inside. Deliberately not `prior`, which is built *from* the labels and so
+        #: contains every gold id by construction.
+        "known": set(corpus.number.values()),
         "order": [corpus.number[hit.identifier] for hit in corpus.index.rank(query)],
         "prior": corpus.prior,
         "agent": pair["agent_authored"],
@@ -183,6 +187,15 @@ def test_the_strict_slice_is_large_enough_to_mean_anything(ranked) -> None:
 
 
 def test_every_label_points_at_a_decision_that_still_exists(ranked) -> None:
-    """A gold id naming a renumbered or deleted ADR would score as a miss forever."""
+    """A gold id naming a renumbered or deleted ADR would score as a miss forever.
+
+    Checked against the decisions that *parsed from the pinned clone*. An earlier version
+    compared against `prior`, which is built from the labels themselves and therefore
+    contains every gold id whatever the corpus says -- a test that could not fail, which is
+    the third one this project has caught by asking what would happen if it were wrong.
+    """
     for row in ranked:
-        assert row["gold"] <= set(row["prior"]) | {x for x in row["order"]}
+        assert row["gold"] <= row["known"], (
+            f"{row['corpus']}: labels {sorted(row['gold'] - row['known'])} name decisions "
+            "that do not exist at the pinned commit"
+        )
