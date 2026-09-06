@@ -269,7 +269,7 @@ def test_jsonc_shapes_that_appear_in_real_tsconfigs(name: str, raw: str) -> None
     """
     import json
 
-    from oxn.graph.resolve import _strip_jsonc
+    from oxn.graph.manifests import _strip_jsonc
 
     json.loads(_strip_jsonc(raw))  # must not raise
 
@@ -277,7 +277,7 @@ def test_jsonc_shapes_that_appear_in_real_tsconfigs(name: str, raw: str) -> None
 def test_a_url_inside_a_string_is_not_treated_as_a_comment() -> None:
     import json
 
-    from oxn.graph.resolve import _strip_jsonc
+    from oxn.graph.manifests import _strip_jsonc
 
     raw = '{"compilerOptions":{"paths":{"@x/*":["http://example.com/*"]}}}'
     parsed = json.loads(_strip_jsonc(raw))

@@ -16,10 +16,18 @@ metric silently, the second shows up in ``unresolved_imports``.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
+
+from oxn.graph.manifests import (
+    cargo_crates,
+    go_module,
+    java_packages,
+    normalize,
+    tsconfig_aliases,
+    workspace_packages,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Iterable, Iterator
@@ -61,6 +69,13 @@ class ResolutionContext:
     #: alias because it is the same idea: a bare specifier that names a directory in this
     #: tree rather than something in ``node_modules``.
     workspaces: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    #: This repository's own Go module path, from `go.mod`. Every import beginning with it
+    #: names a directory in this tree rather than something in the module cache.
+    go_module: str | None = None
+    #: Java package -> the directory that holds it, derived from the source layout.
+    java_packages: dict[str, str] = field(default_factory=dict)
+    #: Crate name as an import spells it -> its directory, for a Cargo workspace.
+    cargo_crates: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def build(cls, root: Path, files: Iterable[str]) -> ResolutionContext:
@@ -69,9 +84,30 @@ class ResolutionContext:
             root=root,
             known=known,
             python_roots=_python_roots(known),
-            ts_aliases=_tsconfig_aliases(root),
-            workspaces=_workspace_packages(root),
+            ts_aliases=tsconfig_aliases(root),
+            workspaces=workspace_packages(root),
+            go_module=go_module(root),
+            java_packages=java_packages(known),
+            cargo_crates=cargo_crates(root),
         )
+
+    def is_own_module(self, specifier: str) -> bool:
+        """Does this specifier name code inside this repository, whatever language it is?
+
+        The question `docs/metrics.md` section 4.1 is about: "third-party and correctly
+        absent" and "ours, and we failed to place it" must not look the same. Until
+        2026-09-06 every Go, Rust and Java import answered *no*, so 1,131 unplaced imports on
+        go-kit were filed as third-party dependencies and nothing was reported.
+        """
+        if self.go_module is not None and _under(specifier, self.go_module, "/"):
+            return True
+        # `extract_imports` normalises a Rust path to dots, so `crate::a::b` arrives as
+        # `crate.a.b`. Splitting on `::` here found `super` and nothing else -- 17 of
+        # ripgrep's imports instead of its real internal count.
+        head = specifier.split(".", 1)[0]
+        if head in {"crate", "super", "self"} or head in self.cargo_crates:
+            return True
+        return any(_under(specifier, package, ".") for package in self.java_packages)
 
     def is_workspace_specifier(self, specifier: str) -> bool:
         """Does this bare specifier name a package of this repository?
@@ -117,6 +153,8 @@ def resolve_import(
 
     if language == "python":
         targets = _resolve_python(source_path, raw, context)
+    elif language == "go":
+        targets = _resolve_go(raw, context)
     else:
         single = _resolve_ecmascript(source_path, raw, context)
         targets = (single,) if single is not None else ()
@@ -232,198 +270,6 @@ def _imported_submodules(
 # ---- TypeScript / JavaScript --------------------------------------------------------------
 
 
-def _tsconfig_aliases(root: Path) -> dict[str, tuple[str, ...]]:
-    """``paths`` aliases from ``tsconfig.json``, joined to ``baseUrl``.
-
-    Parsed leniently: a tsconfig may contain comments and trailing commas, and a malformed
-    one must degrade to "no aliases" rather than fail the run.
-    """
-    config = root / "tsconfig.json"
-    if not config.exists():
-        return {}
-    try:
-        raw = _strip_jsonc(config.read_text(encoding="utf-8", errors="replace"))
-        data = json.loads(raw)
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-    options = data.get("compilerOptions", {}) or {}
-    base = str(options.get("baseUrl", "") or "").strip("./")
-    aliases: dict[str, tuple[str, ...]] = {}
-    for pattern, targets in (options.get("paths", {}) or {}).items():
-        prefix = pattern.rstrip("*").rstrip("/")
-        resolved = tuple(
-            _normalize("/".join(part for part in (base, str(target).rstrip("*")) if part))
-            for target in targets
-        )
-        aliases[prefix] = resolved
-    return aliases
-
-
-def _workspace_packages(root: Path) -> dict[str, tuple[str, ...]]:
-    """Every package this repository declares as its own, name -> directory.
-
-    Read from the two declarations that actually exist in the wild: npm/yarn's
-    `package.json#workspaces` (a list, or `{"packages": [...]}` in yarn's older form) and
-    `pnpm-workspace.yaml#packages`. `lerna.json` is read only when neither is present,
-    because its `packages` field almost always duplicates one of them.
-
-    The *name* comes from each matched directory's own `package.json`, never from the
-    directory name: `packages/common` calls itself `@nestjs/common`, and it is the name that
-    appears in an import.
-
-    Out of scope, deliberately, and stated here rather than discovered later: pnpm's
-    `catalog:` and yarn's `workspace:` protocol specifiers, and `exports` maps. The first
-    two name versions rather than paths; the third points at built output (`./dist/*.js`)
-    that is not in the source tree OXN measures, so honouring it would resolve imports to
-    files this repository does not contain.
-    """
-    globs = _workspace_globs(root)
-    if not globs:
-        return {}
-    packages: dict[str, tuple[str, ...]] = {}
-    for pattern in globs:
-        for manifest in sorted(root.glob(f"{pattern.rstrip('/')}/package.json")):
-            name = _package_name(manifest)
-            directory = manifest.parent.relative_to(root).as_posix()
-            if name and name not in packages:
-                packages[name] = (directory,)
-    return packages
-
-
-def _workspace_globs(root: Path) -> list[str]:
-    """The declared workspace patterns, from whichever file declares them.
-
-    One reader per format rather than one function with three branch chains: npm/yarn, pnpm
-    and lerna are three unrelated file formats that happen to answer the same question, and
-    the version of this that inlined all three scored 23 against a ceiling of 12 -- caught
-    by OXN's own hook while being written.
-
-    Order is precedence. `lerna.json`'s `packages` almost always duplicates one of the
-    others, so it is consulted only when neither is present.
-    """
-    for reader in (_npm_globs, _pnpm_globs, _lerna_globs):
-        found = reader(root)
-        if found:
-            return found
-    return []
-
-
-def _npm_globs(root: Path) -> list[str]:
-    """`package.json#workspaces`: a list, or yarn's older `{"packages": [...]}`."""
-    declared = _json_file(root / "package.json").get("workspaces")
-    if isinstance(declared, dict):
-        declared = declared.get("packages")
-    return _string_list(declared)
-
-
-def _pnpm_globs(root: Path) -> list[str]:
-    """`pnpm-workspace.yaml#packages`."""
-    path = root / "pnpm-workspace.yaml"
-    if not path.is_file():
-        return []
-    import yaml  # lazily: only a pnpm repo pays the ~15 ms
-
-    try:
-        loaded = yaml.safe_load(path.read_text(encoding="utf-8", errors="replace")) or {}
-    except yaml.YAMLError:
-        return []
-    return _string_list(loaded.get("packages") if isinstance(loaded, dict) else None)
-
-
-def _lerna_globs(root: Path) -> list[str]:
-    """`lerna.json#packages`, the legacy spelling."""
-    return _string_list(_json_file(root / "lerna.json").get("packages"))
-
-
-def _string_list(value: object) -> list[str]:
-    """A list of strings, or nothing. Never a partial list of whatever happened to be one."""
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
-
-
-def _package_name(manifest: Path) -> str:
-    name = _json_file(manifest).get("name")
-    return name if isinstance(name, str) else ""
-
-
-def _json_file(path: Path) -> dict[str, object]:
-    """A JSON object, or an empty one. A malformed manifest must never fail the run."""
-    if not path.is_file():
-        return {}
-    try:
-        loaded = json.loads(_strip_jsonc(path.read_text(encoding="utf-8", errors="replace")))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return loaded if isinstance(loaded, dict) else {}
-
-
-def _strip_jsonc(text: str) -> str:
-    """Remove comments and trailing commas from JSON-with-comments.
-
-    A ``tsconfig.json`` is JSONC, not JSON: it legally contains ``//`` and ``/* */``
-    comments and trailing commas. Stripping those needs a real scan rather than a
-    line-level heuristic, because a comment marker can appear *inside a string*
-    (``"paths": {"@x/*": ["http://example.com/*"]}``) and a comment can follow a value on
-    the same line (``"baseUrl": "./src", // where sources live``). Getting either wrong
-    silently discards every path alias in the file.
-    """
-    return _Jsonc(text).strip()
-
-
-@dataclass
-class _Jsonc:
-    """A two-state scanner: inside a string literal, or outside it.
-
-    Which state it is in decides the meaning of every character that follows -- `//` is a
-    comment outside a string and four ordinary bytes of a URL inside one -- so the states
-    are two methods rather than a flag consulted at each of six branches.
-    """
-
-    text: str
-    out: list[str] = field(default_factory=list)
-    in_string: bool = False
-
-    def strip(self) -> str:
-        index = 0
-        while index < len(self.text):
-            index = self._inside(index) if self.in_string else self._outside(index)
-        return "".join(self.out)
-
-    def _inside(self, index: int) -> int:
-        """Copy verbatim until the closing quote. Nothing in here is syntax."""
-        char = self.text[index]
-        self.out.append(char)
-        if char == "\\" and index + 1 < len(self.text):
-            self.out.append(self.text[index + 1])  # an escape consumes the next character
-            return index + 2
-        if char == '"':
-            self.in_string = False
-        return index + 1
-
-    def _outside(self, index: int) -> int:
-        char = self.text[index]
-        if char == '"':
-            self.in_string = True
-            self.out.append(char)
-            return index + 1
-        if self.text.startswith("//", index):
-            newline = self.text.find("\n", index)
-            return len(self.text) if newline == -1 else newline
-        if self.text.startswith("/*", index):
-            close = self.text.find("*/", index + 2)
-            return len(self.text) if close == -1 else close + 2
-        if char == "," and self._is_trailing(index):
-            return index + 1
-        self.out.append(char)
-        return index + 1
-
-    def _is_trailing(self, index: int) -> bool:
-        """A trailing comma is legal in JSONC and fatal to `json.loads`."""
-        return self.text[index + 1 :].lstrip()[:1] in {"}", "]"}
-
-
 def _resolve_ecmascript(source_path: str, raw: RawImport, context: ResolutionContext) -> str | None:
     """A relative specifier resolves against the importing file; a bare one may be an alias.
 
@@ -432,7 +278,7 @@ def _resolve_ecmascript(source_path: str, raw: RawImport, context: ResolutionCon
     specifier = raw.specifier
     if specifier.startswith("."):
         base = PurePosixPath(source_path).parent
-        return _ecmascript_candidate(_normalize(str(base / specifier)), context)
+        return _ecmascript_candidate(normalize(str(base / specifier)), context)
     # `tsconfig` first, workspaces second, and the order is not arbitrary: `paths` is an
     # explicit statement by this repository about where a name resolves, while the
     # workspace layout is an inference from it. A monorepo that declares both and disagrees
@@ -503,20 +349,6 @@ def _alias_matches(specifier: str, prefix: str) -> bool:
     return specifier == prefix or specifier.startswith(f"{prefix}/")
 
 
-def _normalize(path: str) -> str:
-    """Collapse ``.`` and ``..`` without touching the filesystem."""
-    parts: list[str] = []
-    for part in PurePosixPath(path).parts:
-        if part == ".":
-            continue
-        if part == "..":
-            if parts:
-                parts.pop()
-            continue
-        parts.append(part)
-    return "/".join(parts)
-
-
 def _ecmascript_candidate(candidate: str, context: ResolutionContext) -> str | None:
     """A specifier may name the file exactly, its source form, or a directory's index."""
     if candidate in context.known:
@@ -543,3 +375,48 @@ def _emitted_source(candidate: str, context: ResolutionContext) -> str | None:
 
 def _first_known_path(context: ResolutionContext, paths: Iterator[str]) -> str | None:
     return next((path for path in paths if path in context.known), None)
+
+
+# ---- Go ---------------------------------------------------------------------------------
+
+
+def _under(specifier: str, prefix: str, separator: str) -> bool:
+    """Is ``specifier`` ``prefix`` itself, or something beneath it?
+
+    The check every language's "is this ours" question reduces to, with only the separator
+    differing. Written once because getting it wrong the obvious way -- ``startswith(prefix)``
+    -- makes ``github.com/go-kit/kitchen`` a submodule of ``github.com/go-kit/kit``.
+    """
+    return bool(prefix) and (specifier == prefix or specifier.startswith(prefix + separator))
+
+
+def _resolve_go(raw: RawImport, context: ResolutionContext) -> tuple[str, ...]:
+    """The files a Go import reaches, which is a *directory* rather than a file.
+
+    Go imports a package, and a package is every non-test `.go` file in one directory. There
+    is no per-file import and no `__init__.py` equivalent, so modelling the edge as one file
+    would pick an arbitrary member; the honest target set is all of them.
+
+    A vendored tree needs no special case: `vendor/github.com/other/dep` declares a
+    *different* module path, so it never matches this module's prefix and stays external,
+    which is what it is.
+    """
+    module = context.go_module
+    if module is None or not _under(raw.specifier, module, "/"):
+        return ()
+    relative = raw.specifier[len(module) :].strip("/")
+    return tuple(sorted(_go_package_files(context.known, relative)))
+
+
+def _go_package_files(known: set[str], directory: str) -> Iterator[str]:
+    """Every `.go` file directly in one directory. Not recursive: a subdirectory is a
+    different package, and Go says so by making you import it separately."""
+    for path in known:
+        if not path.endswith(".go") or path.endswith("_test.go"):
+            continue
+        parent = str(PurePosixPath(path).parent)
+        if (parent if parent != "." else "") == directory:
+            yield path
+
+
+# ---- Java -------------------------------------------------------------------------------

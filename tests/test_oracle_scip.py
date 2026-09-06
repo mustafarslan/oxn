@@ -176,20 +176,29 @@ def test_go_l2_covers_the_corpus(tmp_path) -> None:
 def test_go_l0_l1_accuracy_is_published_and_is_worse_than_python(tmp_path) -> None:
     """The per-language half of P5's exit criterion, and the reason it is worth publishing.
 
-    Go on go-kit: **88.3% precision when L1 is certain**, against Python's 99.8% on httpx.
-    Overall 59.3% at 100% recall. Nothing was excluded -- scip-go did not contradict its own
-    source anywhere, where scip-python does at 30.5% of sites.
+    Go on go-kit: **87.4% precision when L1 is certain** at 78.0% confident recall, 72.9%
+    overall at 100% recall, against Python's 99.8% on httpx. Nothing is excluded -- scip-go
+    does not contradict its own source anywhere, where scip-python does at 30.5% of sites.
 
-    That gap is a finding, not noise. **ADR-0002's gating policy -- only a certain answer may
-    block -- was calibrated on the one language that had been measured.** A Go project gated
-    on L1-certain call resolution is gated on a signal wrong about one time in nine, so Go
-    Tier-3 metrics are not yet gate-quality and the floor here is set where the language
-    actually is rather than where Python is.
+    **Confident recall was 55.5% and overall precision 59.3% until Go imports resolved.**
+    `resolve_call`'s second step -- "a declaration in a file this one imports" -- had never
+    once fired for Go, because `github.com/go-kit/kit/metrics` resolved to nothing and
+    go-kit's dependency graph held *zero* in-tree edges (`tests/test_go_resolution.py`). It
+    added 355 confident answers, 302 of them right.
 
-    The remaining error is receiver dispatch: `go-kit` declares four types in one file each
-    implementing `With`, and L1 has no receiver types to tell them apart. Fixing the *false
-    confidence* took this from 83.9% to 88.3% (see `test_resolve.py`); closing the rest needs
-    type information, which is what L2 is for.
+    **Confident precision fell 0.9 points in the process, and that is the honest trade.**
+    Correct confident answers went 773 -> 1,075; wrong ones 102 -> 155. All 155 are
+    `selector_expression` -- receiver dispatch -- and they split 102 same-file (the `With`
+    collisions this test has always described) and 53 new ones of the *other* shape:
+    `c.Value()` where `c` is a local of an imported type, answered with the imported
+    package's `Value`. Those 53 are what the import table exists to stop, and stopping them
+    needs `resolve_call` to see the qualifier -- the next commit, not this one.
+
+    That gap remains a finding, not noise. **ADR-0002's gating policy -- only a certain
+    answer may block -- was calibrated on the one language that had been measured.** A Go
+    project gated on L1-certain call resolution is gated on a signal wrong about one time in
+    eight, so Go Tier-3 metrics are not gate-quality and the floor here is set where the
+    language is rather than where Python is.
     """
     from oxn.resolve.measure import measure_corpus
     from oxn.scip.runner import Project, run_indexer
@@ -204,6 +213,8 @@ def test_go_l0_l1_accuracy_is_published_and_is_worse_than_python(tmp_path) -> No
         f"first disagreements: {accuracy.disagreements[:3]}"
     )
     assert accuracy.recall >= 0.95, f"recall {accuracy.recall:.1%}"
+    # The guard Rust did not have, and Go's real value is zero.
+    assert accuracy.excluded_share <= 0.05, f"{accuracy.excluded_share:.1%} excluded"
     # Python's number, asserted here as a *ceiling* on the Go claim: if Go ever reaches it,
     # this test should fail and the gating policy be revisited on the evidence.
     assert accuracy.confident_precision < 0.99, (

@@ -509,3 +509,60 @@ language's import syntax, everything left is about scopes and bindings in genera
 its own `_text`, as every tree-walking module here does — importing one from `scopes.py`
 would make the two modules import each other, and a cycle inside a layer is what
 `oxn check --deep` exists to reject.
+
+## Amendment, 2026-09-06 (eighth) — the gate was off for Go, Rust and Java
+
+Measuring the import table's *consumers* found something larger than the table. **Go, Rust
+and Java produced zero in-tree dependency edges.** Every import in those languages fell
+through `resolve_import`'s ECMAScript branch, resolved to nothing, and was then classified by
+`_is_internal_looking` — which asked only "is it relative?" and "is it a JS workspace
+package?" — as a third-party dependency. go-kit's 1,131 imports, ripgrep's 1,053 and
+petclinic's 471 were therefore all *correctly external*, with **nothing** reported as a
+missing edge.
+
+**The consequence is a gate that passes rather than a number that is wrong.** A layered
+contract over a Go repository has no edges to judge, so it passes unconditionally. Two
+packages importing each other across a declared boundary — a layer violation *and* a cycle —
+report `0 violations, passed`. The identical fixture in Python reports the violation, which
+is what makes this a language gap rather than a broken test; both are in
+`tests/test_go_resolution.py`. Martin's metrics, cycle detection and `ProjectSymbols.imports`
+were empty for three of five launch languages for the same reason.
+
+This is the same defect as the monorepo amendment's, three languages wider, and
+`docs/metrics.md` section 4.1 is the rule both break: a missing edge must be *visible*.
+
+**Go resolves.** `go.mod`'s `module` line gives the prefix; the remainder is a directory; the
+targets are every non-test `.go` file in it, because a Go import names a *package* and a
+package is a directory. **0 → 827 in-tree edges on go-kit, and nothing left unresolved.** A
+vendored tree needs no special case: `vendor/github.com/other/dep` declares a different
+module path and stays external, which is what it is. A nested `go.mod` declares a separate
+module and is deliberately not read.
+
+**Rust and Java are made visible and not resolved**, with the reason named rather than left
+as "later". Rust: `crate::`/`super::`/`self::` are always ours, and so is any first segment
+naming a Cargo workspace member — read from `[workspace] members` and each member's
+`[package] name`, **with hyphens swapped for underscores**, because a crate declared
+`grep-searcher` is imported as `grep_searcher` and keying on the declared name matches
+nothing an import ever writes. That took ripgrep's reported-missing from 17 to **611**: the
+first attempt split on `::`, and `extract_imports` normalises Rust paths to dots, so only a
+bare `super` matched. Java: an import is ours when its package prefix is one the tree's
+layout declares. Resolution additionally needs `mod` walking across `x.rs`, `x/mod.rs` and
+`#[path]` plus re-exports (Rust), and source-root discovery across Maven layouts and Gradle
+source sets (Java). Neither has a pinned measurement, and wiring them unverified is the
+mistake this ADR's monorepo amendment was written about.
+
+**What it did to the numbers.** Only Go moved, and it moved because `resolve_call`'s second
+step — "a declaration in a file this one imports" — had never fired for it: **confident recall
+55.5% → 78.0%, overall precision 59.3% → 72.9%, confident precision 88.3% → 87.4%.** Correct
+confident answers 773 → 1,075; wrong 102 → 155. All 155 are `selector_expression`, splitting
+102 same-file (the `With` collisions) and **53 of a new shape — `c.Value()` on a local of an
+imported type, answered with the imported package's `Value`**. Those 53 are exactly what the
+import table of the previous amendment exists to stop, and stopping them needs `resolve_call`
+to see the qualifier. Python, Rust, Java and TypeScript are identical to four decimal places.
+
+`resolve.py` crossed its 500-line ceiling, so every manifest reader moved to
+`graph/manifests.py` — `tsconfig.json`, `package.json`, `go.mod`, `Cargo.toml`, and Java's
+layout, which is the manifest Java does not have. `mypy` then caught what CI's 3.10 job would
+have: `tomllib` is 3.11, and OXN supports 3.10. The replacement is a section-aware TOML field
+reader, which is the part that actually matters — `crates/matcher/Cargo.toml` declares `name`
+twice, under `[package]` and under a test target two lines later.

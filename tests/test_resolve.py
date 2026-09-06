@@ -266,7 +266,7 @@ def test_symbol_tail(symbol: str, expected: str) -> None:
 )
 def test_jsonc_stripping(source: str, expected: str) -> None:
     """`tsconfig.json` is JSONC, and getting this wrong loses every alias in the file."""
-    from oxn.graph.resolve import _strip_jsonc
+    from oxn.graph.manifests import _strip_jsonc
 
     assert _strip_jsonc(source) == expected
 
@@ -274,7 +274,7 @@ def test_jsonc_stripping(source: str, expected: str) -> None:
 def test_a_stripped_tsconfig_still_parses_as_json() -> None:
     import json as _json
 
-    from oxn.graph.resolve import _strip_jsonc
+    from oxn.graph.manifests import _strip_jsonc
 
     source = (
         "{\n"

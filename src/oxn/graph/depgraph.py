@@ -169,10 +169,21 @@ def _is_internal_looking(raw: RawImport, scan: _Scan) -> bool:
     `docs/metrics.md` section 4.1 is explicit that a missing edge must be *visible*, and
     this was the one class of missing edge that looked exactly like correct behaviour.
 
+    **So was every import in Go, Rust and Java**, for the same reason and on a far larger
+    scale: a Go module path, a `crate::` path and a Java package all answered "not ours", so
+    go-kit's 1,131 imports, ripgrep's 1,053 and petclinic's 471 were filed as third-party
+    dependencies and produced **zero** in-tree edges with **zero** reported as missing. A
+    layered contract over a Go repository passed unconditionally, because it had no edges to
+    judge -- demonstrated in `tests/test_go_resolution.py`.
+
     Everything else is a package, and reporting every one of those would bury the handful
     that matter.
     """
-    return raw.is_relative or scan.context.is_workspace_specifier(raw.specifier)
+    return (
+        raw.is_relative
+        or scan.context.is_workspace_specifier(raw.specifier)
+        or scan.context.is_own_module(raw.specifier)
+    )
 
 
 def _aggregate(graph: DependencyGraph, component_of: Callable[[str], str]) -> None:
