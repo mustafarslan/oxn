@@ -273,13 +273,6 @@ class GraphStore:
                 [(symbol, entity_id, path) for symbol, entity_id in symbols.items()],
             )
 
-    def symbol_table(self) -> dict[str, str]:
-        """Every known ``symbol -> entity id``, for resolving cross-file edge targets."""
-        return {
-            row["symbol"]: row["entity_id"]
-            for row in self._conn.execute("SELECT symbol, entity_id FROM symbols")
-        }
-
     def put_edges(self, path: str, edges: list[Edge]) -> None:
         """Replace the non-containment edges belonging to one file."""
         with self._transaction() as conn:

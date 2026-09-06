@@ -16,8 +16,6 @@ resolutions on nest. These run everywhere and pin the rule itself.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from oxn.graph.builder import build_file
 from oxn.graph.indexer import Indexer
 from oxn.languages import get_parser
@@ -86,7 +84,7 @@ def test_two_files_that_both_define_local_0_do_not_resolve_into_each_other(tmp_p
             expected[name] = next(e.id for e in entities if e.name == "helper")
         indexer.store.resolve_edge_targets()
 
-        rows = indexer.store._conn.execute(
+        rows = indexer.store._conn.execute(  # noqa: SLF001 - a defect needs the rows
             "SELECT file_path, dst_ref, dst_id FROM edges WHERE dst_ref IS NOT NULL"
         ).fetchall()
 

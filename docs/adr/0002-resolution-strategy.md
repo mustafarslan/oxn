@@ -350,8 +350,12 @@ reference size, and it is not a slow indexer: `scip-java` runs Maven, so the wal
 dependency resolution and compilation and would be roughly the same for a tenth of the code.
 The consequence is a scheduling one rather than a correctness one — **Java L2 is a batch
 operation**, not something the hook path or an interactive `oxn index` waits on. The
-criterion is met by Python (4.4 s), Go (1 s) and Rust (40 s); TypeScript is wired, installed
-and still unmeasured, and is not claimed either way.
+criterion is met by Python (4.4 s), Go (1 s) and Rust (40 s); TypeScript is wired and
+unmeasured, and is not claimed either way.
+
+> **Corrected by the sixth amendment below.** "Installed" was wrong: `scip-typescript` was
+> not on this machine at all, which only running it revealed. TypeScript is measured there,
+> at 3 s.
 
 **`--build-tool` stays out of the registry, and the earlier reasoning for that was
 incomplete.** It said OXN does not guess a build system. The sharper reason is that
@@ -429,11 +433,23 @@ why.** It said why once, from one corpus, and that paragraph had to be retracted
 amendments ago; two rows on each side is a pattern to explain later with a measurement built
 for it, not a cause to assert now.
 
-**Two exit-criterion misses, both named rather than averaged.** TypeScript is the only
-corpus below the >=85% call-coverage bar, at 83.6% — 16.4% of nest's call sites have no SCIP
-occurrence at the callee at all, which is `scip-typescript`'s coverage rather than the
-join's. Java is the only one over the <60 s index budget, at 361 s, because its indexer runs
-Maven.
+**Two exit-criterion misses, both named rather than averaged.** Java is the only corpus over
+the <60 s index budget, at 361 s, because its indexer runs Maven. TypeScript is the only one
+below the >=85% call-coverage bar, at 83.6%.
+
+**That 16.4% is two causes, and the first draft of this amendment asserted it was one.** The
+join has two ways to decline a call site, and `call_coverage` counts both against itself:
+**10.5%** of nest's call sites have no SCIP occurrence at the callee — `scip-typescript`'s
+coverage — and **5.9%** have an occurrence and no *enclosing entity*, because a call at
+module level has no caller to hang an edge on. `bootstrap()` in a `main.ts` and `describe(…)`
+in a spec are calls that no function makes, and nest has hundreds of both.
+
+The second bucket is the criterion's denominator disagreeing with the join by design, not a
+coverage gap, and it is not TypeScript-specific: Python 3.6%, Go 0.8%, Rust 0.2%, Java 0%.
+Go's own 88.3% is the *other* shape — 10.9% missing occurrences, 0.8% missing callers —
+which is why one number could not have told these apart and five can. Writing "this is the
+indexer's coverage" without splitting them was, on the same day as two retractions, the
+third time a cause was asserted from a number that had not been decomposed.
 
 The 43 exclusions that survive on nest were read rather than attributed: 16 same-file `local`
 functions, which carry no name in the symbol to compare against; 7 `typeLiteral268:`

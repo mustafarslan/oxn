@@ -200,7 +200,10 @@ def test_an_unknown_name_resolves_to_nothing() -> None:
         # Rust. Every one of these came back wrong until 2026-09-06, and each was a
         # *silent exclusion* from the grader rather than a failure -- see `symbol_tail`.
         # A crate-level function has no `/` or `#` at all, so the whole symbol was the name:
-        ("rust-analyzer cargo ripgrep 15.2.0 set_windows_exe_options().", "set_windows_exe_options"),
+        (
+            "rust-analyzer cargo ripgrep 15.2.0 set_windows_exe_options().",
+            "set_windows_exe_options",
+        ),
         # a method carries the impl block that owns it, in brackets:
         (
             "rust-analyzer cargo grep-searcher 0.1.17 searcher/impl#[Searcher]search_reader().",

@@ -412,18 +412,21 @@ def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     know why, and deliberately: the last causal story told from these corpora was an artifact
     of a grader bug, and two rows on each side is a pattern, not a cause.
 
-    **The 83.6% call coverage misses P5's >=85% exit criterion**, on the only corpus that
-    does. Stated rather than rounded: 16.4% of nest's call sites have no SCIP occurrence at
-    the callee position at all, which is the indexer's coverage rather than the join's.
+    **The 83.6% call coverage misses P5's >=85% criterion**, on the only corpus that does,
+    and the 16.4% is two causes -- counted, because this docstring first asserted it was all
+    the indexer's and that was wrong. **10.5% have no SCIP occurrence** at the callee, which
+    is `scip-typescript`'s coverage; **5.9% have one and no enclosing entity**, because a
+    module-level call (`bootstrap()` in a `main.ts`) has no caller to hang an edge on. The
+    second is the criterion's denominator disagreeing with the join by design. ADR-0002's
+    sixth amendment carries the split across all five languages.
 
     **This row cost 529 fabricated L2 edges to publish, which is what it was worth.** The
-    first measurement excluded 441 call sites -- 16.9%, second only to scip-python's 30.5%.
-    Attributing that to TypeScript being hard is what the Rust retraction was about, so the
-    sites were printed instead: every one was a `local N` symbol, and `local N` is
-    document-scoped, and OXN's symbol table was keyed globally. See
-    `tests/test_scip_local_symbols.py`. After the fix, exclusions are 43 -- 1.94% -- because
-    those 441 were a double error that cancelled: a collision manufactured a truth, and the
-    spelling rule then discarded it.
+    first measurement excluded 441 sites (16.9%). Attributing that to TypeScript being hard
+    is what the Rust retraction was about, so the sites were printed instead: every one was a
+    `local N` symbol, `local N` is document-scoped, and OXN's symbol table was keyed globally
+    (`tests/test_scip_local_symbols.py`). Exclusions are 1.94% after the fix -- the 441 were
+    a double error that cancelled, a collision manufacturing a truth the spelling rule then
+    discarded.
 
     The 43 that remain were read, not assumed. 16 are same-file `local` functions, which have
     no name in the symbol to compare against; 7 are `typeLiteral268:commitOffsets`, methods

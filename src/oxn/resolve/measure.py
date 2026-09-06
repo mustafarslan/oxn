@@ -23,7 +23,6 @@ guesses freely has the reverse. Both numbers are needed to know which.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -150,8 +149,8 @@ def _grade_call(
     callee in-tree either, or the oracle's idea of what is written may not match the
     source. Only what survives all of that is scored.
     """
-    from oxn.scip.join import scoped
-    from oxn.scip.join import _last_name_position  # noqa: PLC2701 - one join rule, one place
+    # noqa: PLC2701 on the private import -- one join rule, in one place.
+    from oxn.scip.join import _last_name_position, scoped  # noqa: PLC2701
 
     spec = grading.profile.metrics.cognitive
     callee = node.child_by_field_name(spec.callee_field)
