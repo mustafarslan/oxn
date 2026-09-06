@@ -249,3 +249,27 @@ def test_tests_and_public_names_are_roots() -> None:
     assert "t" in roots
     assert "p" in roots
     assert "h" not in roots
+
+
+def test_no_tier_3_metric_is_gateable() -> None:
+    """The line that keeps ADR-0002's Go accuracy finding a reporting caveat rather than a
+    gating bug.
+
+    L0/L1 call resolution is 88.3% precise when *certain* on Go against 99.8% on Python, and
+    11.7% of go-kit's confident answers are confidently wrong -- receiver dispatch L1 cannot
+    see. Those numbers flow into CBO and RFC. They are harmless because CK metrics are
+    reported and never gated: `GATED_METRICS` is Tier-1 only, and `oxn.yaml` rejects
+    `ceilings: {cbo: 10}` by name rather than accepting it and gating on a guess.
+
+    That is a property, not a promise. Adding a Tier-3 metric to `GATED_METRICS` would let a
+    Go project block a build on a signal wrong about one time in nine, so this test fails
+    first and sends the reader to ADR-0002's amendment.
+    """
+    from oxn.config import GATED_METRICS
+
+    tier_3 = {"cbo", "rfc", "wmc", "dit", "noc", "lcom1", "lcom4", "lcom_star", "connectivity"}
+
+    assert not (tier_3 & set(GATED_METRICS)), (
+        "a Tier-3 metric became gateable; L0/L1 call resolution is only 88.3% precise when "
+        "certain on Go, so read ADR-0002's 2026-09-06 amendment before allowing this"
+    )

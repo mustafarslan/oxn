@@ -162,20 +162,36 @@ An L1-certain call target in Go is wrong about one time in nine, so **Go Tier-3 
 not gate-quality at L1**. Nothing about the policy above changes; what changes is the claim
 that it is satisfied everywhere.
 
-**Half of this is closed and half is open, and the open half is a live exposure rather than
-a caveat.** `_confident_callees` admits only `is_certain` answers and marks the whole class
-APPROX if any callee was uncertain, so the moment a name became `1/n` instead of `1.0` those
-metrics stopped being able to block — verified, not assumed. But 102 of go-kit's 875
-confident answers (**11.7%**) are still both *certain* and *wrong*, and those stamp EXACT and
-**can** block a Tier-3 ceiling today. They are the cross-file case: `by_file[imported][name]`
-finds one declaration of `Value` in an imported file and answers with full confidence, while
-Go dispatched on a receiver type L1 never saw.
+**How far this reaches, traced rather than assumed — and the first version of this
+paragraph overstated it.** It said the wrong answers "can block a Tier-3 ceiling today".
+They cannot, and the reason is worth writing down because it is a property that could
+silently stop being true.
 
-The shape of the fix is known and not yet built: a call written as a *selector*
-(`x.Value()`) is not a bare-name lookup, and resolving it by name alone is a guess in any
-language — `resolve_call` currently is not told which of the two it was handling. Until that
-lands, **a Go project must not put a Tier-3 metric under a blocking ceiling**, and this
-paragraph is the record that OXN knows it.
+*No Tier-3 metric is gateable at all.* `GATED_METRICS` is Tier-1 only — the six ceilings
+plus `shredding` — and `oxn.yaml` refuses anything else by name: `ceilings: {cbo: 10}` is a
+configuration error, not a gate. `build_call_graph` has no production caller, and the only
+code creating `CALLS` edges is `scip/join.py`, which is L2. So a wrong L1 answer reaches
+**reported** CK numbers (CBO, RFC) and stops there.
+
+Within that, the file-local half is genuinely closed: `_confident_callees` admits only
+`is_certain` answers and marks the whole class APPROX if any callee was uncertain, so the
+moment an ambiguous name became `1/n` instead of `1.0` those values stopped claiming
+exactness — verified on a fixture, not assumed. What remains is 102 of go-kit's 875
+confident answers (**11.7%**) that are certain and wrong: the cross-file case, where
+`by_file[imported][name]` finds one `Value` in an imported file and answers with full
+confidence while Go dispatched on a receiver type L1 never saw. Those overstate a *reported*
+CBO or RFC on Go code.
+
+The shape of the fix is known and unbuilt: a call written as a *selector* (`x.Value()`) is
+not a bare-name lookup, and resolving it by name alone is a guess — `resolve_call` is not
+told which of the two it is handling, and every profile already carries `attribute_kind` to
+tell them apart. Until it lands, the honest statement is that **Go Tier-3 numbers are
+reported and should not be believed to a tenth**, not that anything is being blocked wrongly.
+
+The protection here is structural rather than remembered, so it is asserted:
+`tests/test_tier3.py` fails if any Tier-3 metric is ever added to `GATED_METRICS`, and
+points back at this section. That is the line which, if crossed, turns the paragraph above
+into the exposure the first draft claimed it already was.
 
 Part of the Go gap was a defect and is fixed. A Go method is a *top-level* declaration
 carrying its receiver in the signature rather than in a parent scope, so `go-kit` declares
