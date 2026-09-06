@@ -9,8 +9,6 @@ Two things are worth reporting before any analysis exists:
 
 from __future__ import annotations
 
-import shutil
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from oxn.languages import LAUNCH_LANGUAGES
@@ -19,23 +17,15 @@ if TYPE_CHECKING:  # pragma: no cover
     from rich.console import Console
 
 
-@dataclass(frozen=True)
-class Indexer:
-    """A SCIP indexer OXN can use for the L2 resolution rung."""
-
-    language: str
-    command: str
-    install_hint: str
-
-
-#: All Apache-2.0, free, offline. OXN detects and instructs; it never installs these.
-SCIP_INDEXERS: tuple[Indexer, ...] = (
-    Indexer("python", "scip-python", "npm install -g @sourcegraph/scip-python"),
-    Indexer("typescript", "scip-typescript", "npm install -g @sourcegraph/scip-typescript"),
-    Indexer("go", "scip-go", "go install github.com/sourcegraph/scip-go/cmd/scip-go@latest"),
-    Indexer("java", "scip-java", "see https://sourcegraph.github.io/scip-java/"),
-    Indexer("rust", "rust-analyzer", "rustup component add rust-analyzer"),
-)
+#: The indexer registry lives in `oxn.scip.runner` and is imported, never restated.
+#:
+#: `doctor` kept its own copy until 2026-09-06, and a second list is a list that drifts: it
+#: advertised `scip-go`, `scip-java` and `rust-analyzer` under "install this to enable exact
+#: coupling metrics" while `oxn index` had entries for none of them, so following the advice
+#: bought nothing. The Go hint had also gone stale -- the project changed organisation, and
+#: `go install github.com/sourcegraph/scip-go/...` fails on the module path inside. A report
+#: about the environment is worth exactly as much as its agreement with the code that acts
+#: on it, so there is now one list and this file reads it.
 
 
 def check_grammars() -> dict[str, str | None]:
@@ -53,8 +43,10 @@ def check_grammars() -> dict[str, str | None]:
 
 
 def check_indexers() -> dict[str, str | None]:
-    """Map each indexer command to its resolved path, or ``None`` if not installed."""
-    return {ix.command: shutil.which(ix.command) for ix in SCIP_INDEXERS}
+    """Map each language to its indexer's resolved path, or ``None`` if not installed."""
+    from oxn.scip.runner import available_indexers
+
+    return available_indexers()
 
 
 def run_doctor(console: Console) -> None:
@@ -71,16 +63,22 @@ def run_doctor(console: Console) -> None:
             console.print(f"  [red]FAIL[/red]  {name}: {error}")
 
     console.print("\n[bold]SCIP indexers[/bold] (optional; enables exact coupling metrics)")
+    from oxn.scip.runner import INDEXERS, UNWIRED
+
     found = check_indexers()
-    for ix in SCIP_INDEXERS:
-        path = found[ix.command]
+    for language, indexer in INDEXERS.items():
+        path = found[language]
         if path:
-            console.print(f"  [green]ok[/green]    {ix.command} -> {path}")
+            console.print(f"  [green]ok[/green]    {language:11s} {indexer.command} -> {path}")
         else:
             console.print(
-                f"  [dim]--[/dim]    {ix.command} not found "
-                f"([dim]{ix.language}[/dim]; install: {ix.install_hint})"
+                f"  [dim]--[/dim]    {language:11s} {indexer.command} not found "
+                f"([dim]install: {indexer.install_hint}[/dim])"
             )
+    # A launch language with no indexer at all is a different answer from one whose indexer
+    # is merely uninstalled, and the difference matters: no command will fix the second.
+    for language, why in UNWIRED.items():
+        console.print(f"  [yellow]n/a[/yellow]   {language:11s} no L2 ([dim]{why}[/dim])")
     console.print(
         "\n[dim]Missing indexers are not an error. Without them OXN resolves names at "
         "L0/L1 and marks the affected metrics APPROX (ADR-0002).[/dim]"

@@ -94,3 +94,55 @@ step, never a hard install requirement. Two code paths per resolved metric means
 gate all ship *before* the resolution phase begins, so the project has a usable, dogfoodable tool
 independent of this investment. SCIP ingestion is per-language: shipping Python and TypeScript
 resolution while Go and Java are still at L1 is a valid intermediate state.
+
+## Amendment, 2026-09-06 — L2' is retired as scoped, and L2 is the work it was standing in for
+
+**L2' has no target in the launch set.** It was specified above as "a small multilspy-based
+client **for languages with no SCIP indexer**", and the L2 bullet three lines earlier names a
+free, Apache-2.0, offline indexer for every launch language: `scip-python`,
+`scip-typescript`, `scip-java`, `scip-go`, `rust-analyzer --scip`. Both sentences have been
+in this document since 2026-08-28 and they contradict each other. The set L2' exists to
+serve is empty.
+
+What was actually missing was **L2 itself**. `oxn.scip.runner.INDEXERS` held three entries —
+Python, TypeScript, JavaScript — so Go, Rust and Java had no L2 at all, and P5's exit
+criterion, "L0/L1 precision and recall measured against L2 and **published per language**",
+was met for one language out of six. Carrying L2' as the open item made that read like a
+gap in an optional fallback rather than a hole in the primary rung.
+
+So: **L2' is retired as specified.** Adding `multilspy` would put a heavy runtime dependency
+into the long-lived server — the class of dependency ADR-0001's amendment has just demoted
+the MCP Python SDK for being — to serve languages that already have a static-artifact
+indexer that is strictly better for OXN's shape. If a language OXN supports later turns out
+to have no SCIP indexer, this decision is revisited on that language's evidence; the rung
+stays described above as a design, and nothing is built for it speculatively.
+
+### What replaced it, and one operational quirk per indexer
+
+Go and Rust are wired. The argv is now **data on the `Indexer` record** rather than
+`if self.language == "python"` with everything else falling through to scip-typescript's
+spelling — a default that was correct for exactly the two shapes that existed and wrong for
+both new ones: `scip-go` has no `--cwd`, and `rust-analyzer` has no `index` subcommand.
+
+Java stays out, and is *named* as out. `scip-java` is real and free, but it drives the
+project's build tool rather than reading source, so it cannot be verified the way the others
+were — by running it and reading its `--help`. `oxn doctor` reports it as `n/a` with that
+reason, which is a different answer from "not installed" because no command the user runs
+will change it.
+
+Two findings from wiring these, both of the kind this ADR's own note about `--project-version`
+predicts you only get by running the tool:
+
+* **`scip-go`'s install hint had never worked.** The project moved from
+  `github.com/sourcegraph/scip-go` to `github.com/scip-code/scip-go`, and the old path does
+  not 404 — `go install` resolves it, downloads it, and *then* refuses because the `go.mod`
+  inside declares a different module path. OXN had been printing that command since P5.
+* **`scip-go` exits 0 and writes an index when there is no `go.mod`.** It warns on stderr and
+  produces a valid, nearly empty SCIP file. `run_indexer`'s success test is that the output
+  file exists, so a misconfigured root yields not an error but a silent, empty L2 — every
+  coverage number computed from it would be measuring nothing while looking fine.
+
+And the report that made all of this visible was itself wrong: `oxn doctor` kept a **second
+copy** of the indexer list, which had drifted into advertising Go, Java and Rust as
+installable when `oxn index` could invoke none of them. There is now one registry, in
+`oxn.scip.runner`, and `doctor` reads it.

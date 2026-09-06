@@ -33,19 +33,23 @@ LABELS = ROOT / "benchmarks" / "retrieval-labels-oxn.json"
 #: whatever moved them -- a ranker change, or an edit to any ADR body, since the corpus
 #: being ranked is the repository's own decisions.
 #:
-#: **Four re-pins on 2026-09-05, none of them a ranker change**, and the trajectory is the
-#: useful part: 0.377/0.579 -> 0.377/0.577 (ADR-0001 and ADR-0004 amended) -> 0.396/0.596
-#: (ADR-0003 amended) -> 0.396/0.592 -> 0.377/0.583 (ADR-0005 amended, twice).
+#: **These move whenever an ADR body is edited, and that is the whole point of pinning
+#: them here.** The corpus being ranked *is* this repository's decisions, so a number that
+#: lives in a script drifts silently while one that lives in an assertion carries its delta
+#: in the diff, exactly as `.oxn/baseline.json` does for the gate.
 #:
-#: Up, then down, then back to where it started. ADR-0003's amendment grew hundreds of words
-#: of hook, agent and remediation vocabulary, which made the pairs it is gold for easier;
-#: ADR-0005's grew a section about hooks and layer contracts, which is the same vocabulary
-#: on a decision that is *not* gold for those pairs, so it took them back. Nothing here is
-#: evidence about BM25. It is a corpus of five documents moving under a query set, and it is
-#: the whole argument for putting the quality claim on the external corpus (section 5b)
-#: while this file asserts only that the number is reproducible.
-RECORDED_P_AT_1 = 0.377
-RECORDED_MRR = 0.583
+#: Five re-pins across 2026-09-05 and 09-06, none of them a ranker change:
+#: 0.377/0.579 -> 0.377/0.577 (ADR-0001, ADR-0004 amended) -> 0.396/0.596 (ADR-0003) ->
+#: 0.396/0.592 -> 0.377/0.583 (ADR-0005) -> 0.396/0.603 (ADR-0002 retiring L2').
+#:
+#: Up, down, and back again. ADR-0003 and ADR-0005 traded the same hook-and-agent
+#: vocabulary; ADR-0002's amendment then added indexer and resolution language to the
+#: decision that is gold for the resolution commits. None of this is evidence about BM25 --
+#: it is five documents shifting under a fixed query set -- and it is the argument for
+#: putting the quality claim on the external corpus (ADR-0006 section 5b) while this file
+#: asserts only reproducibility.
+RECORDED_P_AT_1 = 0.396
+RECORDED_MRR = 0.603
 
 
 @pytest.fixture(scope="module")
