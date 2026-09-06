@@ -59,11 +59,13 @@ class Indexer:
 #: organisation. A user who followed that advice installed nothing and gained nothing.
 #:
 #: **The rule for being in here is that the argv was read off the tool's own `--help`**, never
-#: its documentation -- the rule that produced the `--project-version` note below. It is not
-#: "OXN has indexed a real repository with it": `rust-analyzer` is in and has produced no
-#: index on this machine, because it needs a Rust toolchain that is a separate install. What
-#: keeps `scip-java` out is that its invocation is a function of the project's build system,
-#: so there is no single argv to verify -- a different criterion, not a weaker one.
+#: its documentation -- the rule that produced the `--project-version` note below.
+#:
+#: Both of the caveats this note used to carry are gone, and leaving them would be the same
+#: drift the paragraph above is about. `rust-analyzer` has since indexed `ripgrep` in 40 s,
+#: and `scip-java` is in: its argv *is* a single verified `index --output <path>`, and the
+#: build-tool ambiguity is a refusal `scip-java` makes at run time on repositories that
+#: declare two builds, not a reason it could not be wired.
 INDEXERS: dict[str, Indexer] = {
     "python": Indexer(
         "python",
@@ -121,15 +123,27 @@ INDEXERS: dict[str, Indexer] = {
     "java": Indexer(
         "java",
         "scip-java",
-        # `cs install --contrib scip-java`; the plain `coursier install scip-java` fails
-        # because the app is not in the default channel.
-        "coursier install --contrib scip-java (needs a JDK and the project's build tool)",
-        # It runs the project's build. That is why `--build-tool` exists and why this entry
-        # was withheld until it could be run: a repository holding both a `pom.xml` and a
+        # Three things wrong with the obvious hint, all found by following it. The plain
+        # `coursier install scip-java` fails: the app is not in the default channel, so it
+        # needs `--contrib`. Coursier then installs to `~/Library/Application Support/
+        # Coursier/bin` (`~/.local/share/coursier/bin` on Linux), which it does not add to
+        # PATH -- so `shutil.which` reports the tool missing on a machine that has just
+        # installed it, and the hint has to say so or the user runs the same command twice.
+        "coursier install --contrib scip-java, then add coursier's bin directory to PATH "
+        "(~/Library/Application Support/Coursier/bin, or ~/.local/share/coursier/bin); "
+        "needs a JDK and the project's build tool",
+        # It runs the project's build, and that is the whole cost: 361 s on petclinic's
+        # 4,214 lines, which is Maven resolving and compiling rather than anything slow about
+        # indexing. Java L2 is a batch operation.
+        #
+        # No `--build-tool`, deliberately. A repository holding both a `pom.xml` and a
         # `build.gradle` -- `java-spring-petclinic` does -- makes `scip-java` refuse with
-        # "Multiple build tools detected" rather than pick one. OXN does not pick either:
-        # guessing a build system is how you run the wrong one for ten minutes. The error is
-        # scip-java's own, it names the flag, and `run_indexer` puts it in front of the user.
+        # "Multiple build tools detected" rather than pick one. Detecting the single-build
+        # case would add nothing, because `scip-java` already detects it; the only case the
+        # flag decides is the ambiguous one, and guessing there is how you run the wrong
+        # build for ten minutes. The error is scip-java's own, it names the flag, and
+        # `run_indexer` puts it in front of the user, who has `oxn index --index-file` for
+        # an index they built themselves.
         ("index", "--output", "{output}"),
     ),
 }

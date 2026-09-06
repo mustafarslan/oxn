@@ -294,3 +294,93 @@ def test_rust_l2_and_l0_l1_accuracy(tmp_path) -> None:
         f"{accuracy.excluded_share:.1%} of Rust call sites excluded as untrustworthy; "
         "suspect `symbol_tail` before believing the oracle disagrees this often"
     )
+
+
+# ---- and for Java, where the index is a build ----------------------------------------------
+
+JAVA_CORPUS = CORPUS.parent / "java-spring-petclinic"
+
+#: `coursier install --contrib scip-java` writes to `~/Library/Application Support/Coursier/
+#: bin` (or `~/.local/share/coursier/bin`), which **is not on PATH** unless the user puts it
+#: there. `shutil.which` was the whole check and reported the tool missing on a machine that
+#: had just installed it, so the environment override is not a convenience here.
+SCIP_JAVA = shutil.which("scip-java") or os.environ.get("OXN_SCIP_JAVA")
+
+requires_scip_java = pytest.mark.skipif(
+    not (SCIP_JAVA and shutil.which("mvn")),
+    reason="scip-java and Maven are both required; scip-java runs the project's build",
+)
+
+
+@requires_scip_java
+@pytest.mark.skipif(not JAVA_CORPUS.exists(), reason="corpora not fetched")
+@pytest.mark.slow
+def test_java_l2_and_l0_l1_accuracy(tmp_path) -> None:
+    """The fourth language, and the one whose *cost* is the finding rather than its accuracy.
+
+    On `java-spring-petclinic`: L2 coverage **99.6% of declarations and 100% of call sites**
+    -- the highest of the four -- and L0/L1 scores **100% precision when certain** at 87.9%
+    confident recall, 90.4% overall at 100% recall, with **zero** untrustworthy exclusions.
+
+    **Read that 100% as "small", not as "solved".** It is 285 confident answers over 324
+    graded call sites; Python, Go and Rust are graded on 1,453, 1,578 and 6,642. petclinic is
+    50 files and 4,214 lines of Java, and a corpus that size cannot separate a resolver that
+    is right from one that has not met a hard case yet. Every collision it does contain is
+    handled the way the design says: `findAll` is declared in several test classes, L1 sees
+    more than one candidate, and it answers with `1/n` rather than certainty -- which is why
+    all 31 wrong answers are among the 39 uncertain ones. That is the Go fix from `d74cbd9`
+    working, on a language it was not written for.
+
+    **`scip-java` took 361 s on 4,214 lines**, against P5's "<60 s on a 100k-LOC repo": six
+    times the budget on a repository 24 times smaller. It is not a slow indexer -- it *runs
+    Maven*, so that is dependency resolution and compilation, and it would cost about the
+    same for a tenth of the code. Java L2 is a batch operation. ADR-0002's fourth amendment
+    carries the consequences.
+
+    **This calls `scip-java` directly, deliberately.** petclinic declares two builds, so
+    `scip-java` demands `--build-tool` and OXN passes neither (see
+    `test_scip_registry.py::test_java_does_not_guess_a_build_tool`). Going through
+    `run_indexer` would mean teaching OXN to guess a build system to make a test pass. This
+    is the path a real user has here: `oxn index --index-file`, over an index built by hand.
+    """
+    import subprocess
+
+    from oxn.graph.indexer import Indexer
+    from oxn.resolve.measure import measure_corpus
+    from oxn.scip.ingest import ingest_index
+
+    corpus = JAVA_CORPUS.resolve()
+    index = tmp_path / "petclinic.scip"
+    built = subprocess.run(
+        [SCIP_JAVA, "index", "--build-tool=maven", "--output", str(index)],
+        cwd=str(corpus),
+        capture_output=True,
+        text=True,
+        timeout=1800,
+        check=False,
+    )
+    # Not `check=True`: this runs a six-minute Maven build, and a `CalledProcessError`
+    # carrying none of Maven's output is the most expensive way to learn a dependency
+    # failed to resolve.
+    assert built.returncode == 0, built.stderr[-800:]
+
+    with Indexer(root=corpus, cache_path=tmp_path / "graph.db") as indexer:
+        report = ingest_index(indexer, index)
+    assert report.definition_coverage >= 0.90, f"{report.definition_coverage:.1%}"
+    assert report.call_coverage >= 0.85, f"{report.call_coverage:.1%}"
+
+    accuracy = measure_corpus(corpus, index, language="java")
+    # Deliberately an order of magnitude below the other corpora's floors, because the corpus
+    # is: the assertion is that petclinic still parses and grades, not that 324 sites settle
+    # anything about Java.
+    assert accuracy.graded_call_sites > 250, "corpus too small to mean anything"
+    assert accuracy.confident_precision >= 0.95, (
+        f"confident precision {accuracy.confident_precision:.1%}; "
+        f"first disagreements: {accuracy.disagreements[:3]}"
+    )
+    # The guard Rust did not have. Zero here, and a Java symbol is the simplest of the four
+    # -- `pkg/Class#method().` -- so anything above the floor means the parser broke.
+    assert accuracy.excluded_share <= 0.05, (
+        f"{accuracy.excluded_share:.1%} of Java call sites excluded as untrustworthy; "
+        "suspect `symbol_tail` before believing the oracle disagrees this often"
+    )

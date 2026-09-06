@@ -57,9 +57,15 @@ def test_every_launch_language_now_has_an_indexer() -> None:
 
 def test_java_does_not_guess_a_build_tool() -> None:
     """`scip-java` refuses a repository holding both a `pom.xml` and a `build.gradle` --
-    `java-spring-petclinic` is one -- and asks for `--build-tool`. OXN passes neither: a
-    wrong guess runs the wrong build, slowly, and scip-java's own error names the flag and
-    reaches the user through `run_indexer`."""
+    `java-spring-petclinic` is one -- and asks for `--build-tool`. OXN passes neither.
+
+    Detecting the unambiguous case would buy nothing, because `scip-java` already detects it
+    and needs no flag: the *only* case the flag decides is the ambiguous one, and that is
+    exactly where a guess runs the wrong build for ten minutes. scip-java's own error names
+    the flag and reaches the user through `run_indexer`, and the way out is
+    `oxn index --index-file`, ingesting an index the user built with the flag themselves.
+    `test_oracle_scip.py::test_java_l2_and_l0_l1_accuracy` takes that path deliberately.
+    """
     argv = INDEXERS["java"].argv(Path("/tree"), Path("/o.scip"), Project("p", "1"))
 
     assert "--build-tool" not in " ".join(argv)

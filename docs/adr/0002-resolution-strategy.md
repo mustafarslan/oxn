@@ -130,6 +130,12 @@ were — by running it and reading its `--help`. `oxn doctor` reports it as `n/a
 reason, which is a different answer from "not installed" because no command the user runs
 will change it.
 
+> **Superseded the same day, by the fourth amendment below.** `scip-java` was wired and run:
+> its argv is a single verified `index --output <path>`, `UNWIRED` is empty, and petclinic is
+> measured. What is left of the objection is narrower and real — the invocation depends on
+> the build system only when a repository declares *two*, and there OXN refuses rather than
+> guesses.
+
 Two findings from wiring these, both of the kind this ADR's own note about `--project-version`
 predicts you only get by running the tool:
 
@@ -323,3 +329,42 @@ Ten genuine exclusions remain, all `use ... as ...`: the source writes
 `generate_version_pcre2`, `rust-analyzer` names the definition `generate_pcre2`. That is the
 import-alias gap already recorded as inverted tests for Go in `tests/test_resolve.py`, and
 Rust reaching it from the other direction is evidence it is one gap rather than three.
+
+## Amendment, 2026-09-06 (fourth) — Java measured, and what an index costs when it is a build
+
+`java-spring-petclinic`, indexed with `scip-java index --build-tool=maven`: L2 coverage
+**99.6% of declarations and 100% of call sites**, the highest of the four languages. L0/L1
+scores **100% precision when certain** at 87.9% confident recall, 90.4% overall at 100%
+recall, over 324 graded call sites with **zero** untrustworthy exclusions.
+
+**The 100% is a statement about the corpus, not about Java.** 285 confident answers over 324
+sites, from 50 files and 4,214 lines; Python, Go and Rust are graded on 1,453, 1,578 and
+6,642. A corpus this size cannot distinguish a resolver that is right from one that has not
+met a hard case. What it does contain behaves as designed: `findAll` is declared in several
+test classes, L1 sees several candidates and reports `1/n` instead of certainty, and all 31
+wrong answers fall among the 39 uncertain ones. The Go confidence fix generalises.
+
+**`scip-java` took 361 s, and P5's exit criterion is "index build <60 s on a 100k-LOC
+repo".** That is six times the budget on a repository twenty-four times smaller than its
+reference size, and it is not a slow indexer: `scip-java` runs Maven, so the wall clock is
+dependency resolution and compilation and would be roughly the same for a tenth of the code.
+The consequence is a scheduling one rather than a correctness one — **Java L2 is a batch
+operation**, not something the hook path or an interactive `oxn index` waits on. The
+criterion is met by Python (4.4 s), Go (1 s) and Rust (40 s); TypeScript is wired, installed
+and still unmeasured, and is not claimed either way.
+
+**`--build-tool` stays out of the registry, and the earlier reasoning for that was
+incomplete.** It said OXN does not guess a build system. The sharper reason is that
+detecting the unambiguous case would add nothing at all, because `scip-java` already detects
+it and needs no flag; the *only* case the flag decides is the ambiguous one — petclinic,
+holding both a `pom.xml` and a `build.gradle` — and that is exactly the case where a guess
+runs the wrong build for ten minutes. `scip-java`'s own error names the flag and reaches the
+user through `run_indexer`, and `oxn index --index-file` ingests an index the user built by
+hand. The oracle test does the same thing a user in that position does, and says so.
+
+**The install hint was wrong in a way only running it reveals.** `coursier install
+scip-java` fails — the app is not in the default channel and needs `--contrib` — and
+coursier then installs into `~/Library/Application Support/Coursier/bin` without putting it
+on PATH, so `shutil.which` reports the tool missing on a machine that has just installed it
+successfully. Both are now in the hint, because a hint that leaves the user where they
+started is worse than none: it costs them the install *and* the diagnosis.
