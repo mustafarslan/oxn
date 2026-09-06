@@ -261,3 +261,65 @@ Cost: nest's graph is unchanged and the hook path measures 123 ms against 126 ms
 9 workspace packages. Manifest reads are once per `ResolutionContext`, so they scale with
 package count rather than file count; a repository with hundreds of packages has not been
 measured.
+
+## Amendment, 2026-09-06 (third) — the grader was measuring the wrong population
+
+**The Rust numbers published in the amendment above are withdrawn.** They said 99.1%
+confident precision at 73.7% excluded, and they were produced by a defect in
+`resolve/measure.py::symbol_tail`, not by the resolver they claimed to describe.
+
+A SCIP symbol is five space-separated fields — `<scheme> <manager> <package> <version>
+<descriptors>` — and only the fifth is a descriptor path. `symbol_tail` split the whole
+symbol on `/` and `#` and took the last piece. That is correct for Python and Go by
+accident: both write the enclosing package as a descriptor containing a `/`, which cuts the
+prefix off. `rust-analyzer` writes `rust-analyzer cargo ripgrep 15.2.0
+set_windows_exe_options().` for a crate-level function — no `/` anywhere — so the "name"
+came back as the entire symbol, and it prefixes a method descriptor with the impl block that
+owns it (`[Searcher]search_reader()`), so the bracket group was read as part of the name.
+
+The grader excludes a call site whose oracle symbol does not spell what the source spells,
+which is the right rule and the reason httpx's 30.5% is excluded rather than scored. Applied
+through a broken parser it excluded **4,844 of ripgrep's 4,905 exclusions in error**: correct
+oracle answers, discarded. Rust was graded on 1,747 of 6,652 call sites, and the number
+published was that subset's.
+
+Corrected, with Python and Go identical to four decimal places:
+
+| language | confident precision | overall @ recall | excluded | graded |
+|---|---|---|---|---|
+| Python / httpx | 99.8% | 70.3% @ 100% | 30.5% | 1,453 |
+| Go / go-kit | 88.3% | 59.3% @ 100% | 0% | 1,578 |
+| Rust / ripgrep | **90.9%** | 51.2% @ 100% | 0.15% | 6,642 |
+
+**The conclusion drawn from the bad numbers is retracted with them.** It held that Go was
+the outlier because a Go method is a top-level declaration while Rust's live inside `impl`
+blocks. `resolve_call(path, name)` takes a bare name and never consults the impl, so that
+distinction buys nothing: `new` is declared in nine `impl` blocks in `line_buffer.rs` alone
+and collides exactly as four `With` methods do in one Go file. Rust and Go are the same
+shape. **Python's 99.8% is now the thing without an explanation**, and this amendment does
+not offer one — httpx's naming and the Python language are not separable from one corpus,
+and inventing a cause from one corpus is precisely what produced the paragraph being
+retracted here.
+
+The gating policy in this ADR is unchanged and unthreatened: only *certain* answers may
+block, `GATED_METRICS` is Tier-1 only, and Tier-1 does not use call resolution.
+`metrics.callgraph` and every Tier-3 metric downstream inherit these confidence numbers, are
+reported rather than gated, and `tests/test_tier3.py` fails if that ever changes.
+
+**What the grader now asserts about itself.** A grader that cannot parse a language does not
+fail — it narrows the population silently and reports a flattering number over what is left.
+The only visible symptom is the exclusion rate. `test_oracle_scip.py` bounded it for Python
+from the day that test was written and did not for Rust; every corpus now carries its own
+ceiling, per-language, because 30.5% is a real property of `scip-python` and nothing near it
+is one of `rust-analyzer`.
+
+`symbol_tail` also respects SCIP's backtick quoting now, which is not a detail: a descriptor
+is quoted *exactly when* it contains a character that would otherwise be structural, so
+splitting without tracking quotes cuts inside the one name that declared it must not be.
+ripgrep has `[StderrReader]`r#async`()` — a raw identifier holding a `#` — and the same rule
+covers a `]` inside a generic impl owner.
+
+Ten genuine exclusions remain, all `use ... as ...`: the source writes
+`generate_version_pcre2`, `rust-analyzer` names the definition `generate_pcre2`. That is the
+import-alias gap already recorded as inverted tests for Go in `tests/test_resolve.py`, and
+Rust reaching it from the other direction is evidence it is one gap rather than three.

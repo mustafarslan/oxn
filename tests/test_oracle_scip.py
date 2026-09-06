@@ -227,26 +227,44 @@ requires_rust_analyzer = pytest.mark.skipif(
 @pytest.mark.skipif(not RUST_CORPUS.exists(), reason="corpora not fetched")
 @pytest.mark.slow
 def test_rust_l2_and_l0_l1_accuracy(tmp_path) -> None:
-    """The third language in the table, and the one that tells you what the Go gap was.
+    """The third language in the table, and the one that showed the *grader* was wrong.
 
     On ripgrep: L2 coverage 99.2% of declarations and 99.2% of call sites, index built in
-    40 s against the 60 s budget. L0/L1 scores **99.1% precision when certain** (90.8%
-    overall at 100% recall) -- Python's number, not Go's.
+    40 s against the 60 s budget. L0/L1 scores **90.9% precision when certain** at 45.9%
+    confident recall; 51.2% overall at 100% recall, over 6,642 graded call sites.
 
-    That is the finding. Rust is not more resolvable than Go in general; its *methods live
-    inside `impl` blocks*, so they are not file-level declarations and never collide in the
-    bare-name table the way four `With` methods do in one Go file. The shape that matters is
-    whether a method is a top-level declaration, and Go is the only launch language where it
-    is. ADR-0002's gating policy holds for Python, TypeScript and Rust, and Go is the
-    exception rather than the rule -- which one language could not have told us and two
-    still could not.
+    **Those numbers replace the ones this test asserted when it was written, and the
+    difference is a defect in `symbol_tail`, not a change to the resolver.** It published
+    99.1% confident precision on 1,747 sites with 73.7% excluded, and attributed the
+    exclusions to generics and trait dispatch -- inferred, never inspected. In fact 4,844 of
+    the 4,905 were correct oracle answers the grader threw away because it could not parse a
+    `rust-analyzer` symbol: SCIP's five space-separated fields were never stripped, so a
+    crate-level function came back as its whole symbol, and the `[Impl]` prefix on a method
+    was read as part of the name. Rust was graded on the quarter of its call sites that
+    happened to survive, and that quarter was not representative.
 
-    **73.7% of call sites are excluded**, far above scip-python's 30.5%: rust-analyzer's
-    symbol for a site often does not spell what the source spells, most visibly around
-    generics and trait dispatch. The graded quarter is what remains after refusing to let
-    the oracle arbitrate names it disagrees with the source about, and 1,747 sites is still
-    a corpus.
+    **What is left after the fix is that Rust looks like Go, not like Python.** The claim
+    this test made -- that `impl` blocks keep Rust's methods out of the bare-name table where
+    Go's four `With` methods collide -- is **retracted**. `resolve_call(path, name)` takes a
+    bare name and never looks at the impl, so `new`, declared in nine `impl` blocks in
+    `line_buffer.rs` alone, collides exactly as Go's methods do; that one name is most of the
+    gap between 51.2% overall and 90.9% confident.
+
+    **The remaining confident errors are one shape.** Of 277 confident-wrong sites, 265 are
+    `field_expression` -- receiver dispatch, `reader.consume_all()` -- against 11
+    `scoped_identifier` and 1 `generic_function`. That is the same defect Go has, and closing
+    it needs receiver *types*, which is what L2 is for.
+
+    Why Python reaches 99.8% is **not** established by this. It may be a property of the
+    language or of httpx's naming; nothing here measures which, and the last causal story
+    told from this corpus turned out to be an artifact.
+
+    Exclusions are now 0.15%: ten `use ... as ...` aliases, where the source writes
+    `generate_version_pcre2` and SCIP names the definition `generate_pcre2`. Those are
+    correct exclusions, and they are the *same* import-alias gap the inverted tests in
+    `test_resolve.py` record for Go.
     """
+
     from oxn.graph.indexer import Indexer
     from oxn.resolve.measure import measure_corpus
     from oxn.scip.ingest import ingest_index
@@ -261,8 +279,18 @@ def test_rust_l2_and_l0_l1_accuracy(tmp_path) -> None:
     assert report.call_coverage >= 0.85, f"{report.call_coverage:.1%}"
 
     accuracy = measure_corpus(corpus, index, language="rust")
-    assert accuracy.graded_call_sites > 1000, "corpus too small to mean anything"
-    assert accuracy.confident_precision >= 0.95, (
+    assert accuracy.graded_call_sites > 5000, "corpus too small to mean anything"
+    assert accuracy.confident_precision >= 0.85, (
         f"confident precision {accuracy.confident_precision:.1%}; "
         f"first disagreements: {accuracy.disagreements[:3]}"
+    )
+    # **The assertion that was missing, and the only one that could have caught it.** A
+    # grader that cannot parse a language's symbols does not fail: it silently narrows the
+    # population and reports a flattering number over whatever survived. The exclusion rate
+    # is the one place that shows. Python has had this guard since it was written; Rust did
+    # not, and ran at 73.7% for a commit. Per-language, because 30.5% is a real property of
+    # `scip-python` and anything near it is not one of `rust-analyzer`.
+    assert accuracy.excluded_share <= 0.05, (
+        f"{accuracy.excluded_share:.1%} of Rust call sites excluded as untrustworthy; "
+        "suspect `symbol_tail` before believing the oracle disagrees this often"
     )

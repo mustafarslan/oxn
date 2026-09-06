@@ -200,17 +200,65 @@ def _score(grading: _Grading, guess: ResolvedName, truth: str, node: Node, name:
         )
 
 
+#: A SCIP symbol is five space-separated fields -- ``<scheme> <manager> <package> <version>
+#: <descriptors>`` -- and only the fifth is a descriptor path. Splitting on ``/`` and ``#``
+#: over the *whole* symbol worked by accident for Python and Go, whose package descriptor
+#: always contains a ``/`` that happens to cut the prefix off. `rust-analyzer` writes
+#: ``rust-analyzer cargo ripgrep 15.2.0 set_windows_exe_options().`` for a crate-level
+#: function -- no ``/`` anywhere -- and the whole line came back as the "name".
+_SYMBOL_FIELDS = 5
+
+#: Descriptors are separated by ``/`` and ``#``; `rust-analyzer` additionally prefixes a
+#: method with the impl block that owns it -- ``[Searcher]search_reader()``, and twice over
+#: for a trait impl -- so ``]`` ends a descriptor too. The name is whatever follows the last
+#: of these.
+_DESCRIPTOR_BREAKS = "/#]"
+
+
+def _descriptor_parts(descriptors: str) -> list[str]:
+    """Split a descriptor path, respecting SCIP's backtick quoting.
+
+    A descriptor is backtick-quoted **exactly when it contains a character that would
+    otherwise be structural**, so splitting without tracking quotes cuts inside the one name
+    that took the trouble to say it must not be cut. ripgrep has both shapes:
+    ``[StderrReader]`r#async`()`` is a raw identifier holding a ``#``, and a trait impl for
+    ``[u8; 4]`` would hold a ``]``.
+    """
+    parts: list[str] = []
+    current: list[str] = []
+    quoted = False
+    for char in descriptors:
+        if char == "`":
+            quoted = not quoted
+        if char in _DESCRIPTOR_BREAKS and not quoted:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    parts.append("".join(current))
+    return parts
+
+
 def symbol_tail(symbol: str) -> str:
     r"""The final descriptor name of a SCIP symbol.
 
     ``\`httpx._client\`/Client#get().`` yields ``get``; ``\`httpx._urls\`/URLPattern#``
-    yields ``URLPattern``. Descriptors nest with ``/`` and ``#``, and carry trailing
-    punctuation encoding what kind of thing they name.
+    yields ``URLPattern``.
+
+    **This is a grader, so getting it wrong does not fail -- it silently narrows.** A tail
+    that does not match the source text excludes the call site as untrustworthy, and until
+    2026-09-06 this function mis-parsed every Rust symbol: 4,844 of ripgrep's 4,905
+    exclusions were correct oracle answers thrown away, leaving Rust graded on 1,747 of
+    6,652 call sites and a published 99.1% measured on a subset selected by a bug. The
+    exclusion *rate* is now asserted per corpus in `test_oracle_scip.py`, because the rate is
+    the only thing that was visibly wrong at the time and nothing was watching it.
     """
-    parts = [part for part in re.split(r"[/#]", symbol.strip()) if part.strip(".:`() ")]
+    fields = symbol.strip().split(" ", _SYMBOL_FIELDS - 1)
+    descriptors = fields[-1] if len(fields) == _SYMBOL_FIELDS else symbol.strip()
+    parts = [part for part in _descriptor_parts(descriptors) if part.strip(".:`() [")]
     if not parts:
         return ""
-    return parts[-1].split("(")[0].rstrip(".:").strip("`")
+    return parts[-1].split("(")[0].rstrip(".:").strip("`[")
 
 
 def _callee_name(callee: Node) -> str:

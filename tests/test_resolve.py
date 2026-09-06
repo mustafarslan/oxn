@@ -197,6 +197,38 @@ def test_an_unknown_name_resolves_to_nothing() -> None:
         ("scip-python python p 1 `pkg.base`/helper().", "helper"),
         ("scip-python python p 1 `pkg`/__init__:", "__init__"),
         ("local 12", "local 12"),
+        # Rust. Every one of these came back wrong until 2026-09-06, and each was a
+        # *silent exclusion* from the grader rather than a failure -- see `symbol_tail`.
+        # A crate-level function has no `/` or `#` at all, so the whole symbol was the name:
+        ("rust-analyzer cargo ripgrep 15.2.0 set_windows_exe_options().", "set_windows_exe_options"),
+        # a method carries the impl block that owns it, in brackets:
+        (
+            "rust-analyzer cargo grep-searcher 0.1.17 searcher/impl#[Searcher]search_reader().",
+            "search_reader",
+        ),
+        # the owner is backtick-quoted when it is generic, and contains spaces and commas:
+        (
+            "rust-analyzer cargo grep-searcher 0.1.17 line_buffer/impl#"
+            "[`LineBufferReader<'b, R>`]consume_all().",
+            "consume_all",
+        ),
+        # and a trait impl carries two groups, trait and type:
+        (
+            "rust-analyzer cargo alloc 0.0.0 boxed/convert/impl#"
+            "[`Box<dyn Error + 'a>`][`From<String>`]from().",
+            "from",
+        ),
+        # Backtick quoting, which is the thing that makes a hand-written split wrong. SCIP
+        # quotes a descriptor *exactly when* it contains a character that would otherwise be
+        # structural, so a naive split cuts inside the one name that said it must not be.
+        # ripgrep has this one for real -- a raw identifier holding a `#`:
+        (
+            "rust-analyzer cargo grep-cli 0.1.12 process/impl#[StderrReader]`r#async`().",
+            "r#async",
+        ),
+        # and the same rule covers a `]` inside an impl owner, which ripgrep does not have
+        # but any `impl From<[u8; 4]>` would:
+        ("rust-analyzer cargo x 0.1 convert/impl#[X][`From<[u8; 4]>`]from().", "from"),
     ],
 )
 def test_symbol_tail(symbol: str, expected: str) -> None:
