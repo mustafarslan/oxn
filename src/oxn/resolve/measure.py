@@ -150,6 +150,7 @@ def _grade_call(
     callee in-tree either, or the oracle's idea of what is written may not match the
     source. Only what survives all of that is scored.
     """
+    from oxn.scip.join import scoped
     from oxn.scip.join import _last_name_position  # noqa: PLC2701 - one join rule, one place
 
     spec = grading.profile.metrics.cognitive
@@ -160,7 +161,7 @@ def _grade_call(
     occurrence = by_position.get(_last_name_position(callee))
     if occurrence is None:
         return
-    truth = grading.scip_to_entity.get(occurrence.symbol)
+    truth = grading.scip_to_entity.get(scoped(occurrence.symbol, grading.path))
     if truth is None:
         return  # SCIP could not place it in-tree either; nothing to grade against
 

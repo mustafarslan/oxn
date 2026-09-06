@@ -32,13 +32,37 @@ if TYPE_CHECKING:  # pragma: no cover
     from oxn.scip.index import ScipDocument, ScipOccurrence
 
 
+def scoped(symbol: str, path: str) -> str:
+    """Qualify a SCIP ``local`` symbol with the document that owns it.
+
+    **A `local N` symbol is document-scoped by the SCIP specification**, and the numbering
+    restarts in every file: nest's index has 628 documents that each define `local 0`. OXN
+    keyed both its symbol table and its edge references on the bare symbol, so `local 0`
+    resolved to whichever file was ingested last -- `symbols.symbol` is a PRIMARY KEY, and
+    `resolve_edge_targets` joins on it with no file condition.
+
+    That is not a near miss. On `typescript-nest` it manufactured **529 `calls` edges that
+    point into a file the caller never mentions** -- 17% of every L2 edge resolved on that
+    repository -- with `packages/common` calling `packages/platform-express`. L2 is the rung
+    the other two are graded against, so a fabricated edge here is a fabricated fact
+    everywhere downstream: `metrics.callgraph`, CBO, RFC, dead code.
+
+    Qualifying makes the key say what the spec says. A same-file reference still resolves; a
+    cross-file one cannot, which is correct, because a local has no cross-file meaning.
+    """
+    return f"{symbol} {path}" if symbol.startswith("local ") else symbol
+
+
 @dataclass
 class JoinResult:
     """Edges recovered for one file, plus the coverage that produced them."""
 
     edges: list[Edge]
-    #: symbol -> entity id, for the definitions that matched an entity.
+    #: symbol -> entity id, for the definitions that matched an entity. A `local` key is
+    #: qualified with `path`; see `scoped`.
     definitions: dict[str, str]
+    #: The document these came from, needed to scope its local symbols.
+    path: str = ""
     call_sites: int = 0
     joined_call_sites: int = 0
     definition_sites: int = 0
@@ -69,7 +93,7 @@ def join_document(
         if "def_range" in entity.attrs
     }
 
-    result = JoinResult(edges=[], definitions={})
+    result = JoinResult(edges=[], definitions={}, path=document.relative_path)
     _map_definitions(by_position, by_def_range, profile, tree_root, result)
     _map_calls(by_position, by_def_range, profile, tree_root, result)
     _map_relationships(document, result)
@@ -99,7 +123,7 @@ def _map_definitions(
         result.definition_sites += 1
         occurrence = by_position.get(name_node.start_point)
         if occurrence is not None and occurrence.is_definition:
-            result.definitions[occurrence.symbol] = entity.id
+            result.definitions[scoped(occurrence.symbol, result.path)] = entity.id
             result.joined_definition_sites += 1
 
 
@@ -145,7 +169,7 @@ def _map_calls(
             Edge(
                 src_id=caller.id,
                 kind=EdgeKind.CALLS,
-                dst_ref=occurrence.symbol,
+                dst_ref=scoped(occurrence.symbol, result.path),
                 provenance=Provenance.SCIP,
                 resolution=Resolution.L2,
                 attrs={"line": node.start_point[0] + 1},
@@ -156,7 +180,7 @@ def _map_calls(
 def _map_relationships(document: ScipDocument, result: JoinResult) -> None:
     """``is_implementation`` gives inheritance and overrides without any syntax work."""
     for symbol in document.symbols:
-        source_id = result.definitions.get(symbol.symbol)
+        source_id = result.definitions.get(scoped(symbol.symbol, result.path))
         if source_id is None:
             continue
         for relationship in symbol.relationships:
@@ -167,7 +191,7 @@ def _map_relationships(document: ScipDocument, result: JoinResult) -> None:
                 Edge(
                     src_id=source_id,
                     kind=kind,
-                    dst_ref=relationship.symbol,
+                    dst_ref=scoped(relationship.symbol, result.path),
                     provenance=Provenance.SCIP,
                     resolution=Resolution.L2,
                 )

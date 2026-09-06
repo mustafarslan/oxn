@@ -368,3 +368,40 @@ coursier then installs into `~/Library/Application Support/Coursier/bin` without
 on PATH, so `shutil.which` reports the tool missing on a machine that has just installed it
 successfully. Both are now in the hint, because a hint that leaves the user where they
 started is worse than none: it costs them the install *and* the diagnosis.
+
+## Amendment, 2026-09-06 (fifth) — L2 edges pointed at the wrong file, and the rung is the oracle
+
+**A SCIP `local` symbol is document-scoped, and OXN keyed it globally.** The numbering in
+`local 0`, `local 1`, … restarts in every document; `typescript-nest`'s index has **628
+documents that each define `local 0`**. `symbols.symbol` is a PRIMARY KEY and
+`resolve_edge_targets` joins on `s.symbol = edges.dst_ref` with no file condition, so the
+last file ingested owned `local 0` and every other file's reference to *its own* `local 0`
+resolved into that file.
+
+On nest that manufactured **529 `calls` edges pointing into a file the caller never
+mentions** — `packages/common` calling `packages/platform-express` — out of 3,138 resolved
+L2 edges. **17% of every L2 edge on that repository was fabricated.**
+
+This is a different class of defect from the grader bug retracted two amendments above, and
+worse. That one made a *number about* OXN wrong. This one made OXN's own **L2 store** wrong,
+and L2 is the rung the other two are graded against: a fabricated edge here is a fabricated
+fact in `metrics.callgraph`, CBO, RFC and dead-code detection alike. It is also why it went
+unseen — nothing downstream of L2 has an independent oracle to disagree with it.
+
+The fix is one helper in `scip/join.py`, where SCIP semantics meet OXN entities, rather than
+at the store boundary: `scoped(symbol, path)` qualifies a `local` symbol with its document
+and leaves every global symbol byte-identical. Definitions, call references and relationship
+references all pass through it, so both sides of the join agree. The store, the schema and
+`resolve_edge_targets` are untouched, and `measure_corpus` — which had the same collision in
+its own `scip_to_entity` map — is fixed by the same change. A same-file local still resolves;
+a cross-file one cannot, which is correct, because a local has no cross-file meaning.
+
+Measured after, on all five corpora: **zero** cross-file local resolutions, nest's resolved
+edges 3,138 → 2,611, and **every accuracy number identical to four decimal places** — the
+graded call sites were all non-local, so the grader was protected from this by accident,
+exactly as it was protected from `symbol_tail` by accident. Two accidents in one day is the
+argument for the assertions rather than for the care.
+
+Python's 637 exclusions were re-checked against the same suspicion and **none of them is a
+local symbol**: the 30.5% figure really is `scip-python`'s re-export bug, and that claim
+stands unchanged.
