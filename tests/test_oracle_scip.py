@@ -176,8 +176,8 @@ def test_go_l2_covers_the_corpus(tmp_path) -> None:
 def test_go_l0_l1_accuracy_is_published_and_is_worse_than_python(tmp_path) -> None:
     """The per-language half of P5's exit criterion, and the reason it is worth publishing.
 
-    Go on go-kit: **87.4% precision when L1 is certain** at 78.0% confident recall, 72.9%
-    overall at 100% recall, against Python's 99.8% on httpx. Nothing is excluded -- scip-go
+    Go on go-kit: **93.0% precision when L1 is certain** at 74.6% confident recall, 75.5%
+    overall at 100% recall, against Python's 100% on httpx. Nothing is excluded -- scip-go
     does not contradict its own source anywhere, where scip-python does at 30.5% of sites.
 
     **Confident recall was 55.5% and overall precision 59.3% until Go imports resolved.**
@@ -208,7 +208,7 @@ def test_go_l0_l1_accuracy_is_published_and_is_worse_than_python(tmp_path) -> No
     accuracy = measure_corpus(corpus, index, language="go")
 
     assert accuracy.graded_call_sites > 1000, "corpus too small to mean anything"
-    assert accuracy.confident_precision >= 0.85, (
+    assert accuracy.confident_precision >= 0.90, (
         f"confident precision {accuracy.confident_precision:.1%}; "
         f"first disagreements: {accuracy.disagreements[:3]}"
     )
@@ -241,8 +241,8 @@ def test_rust_l2_and_l0_l1_accuracy(tmp_path) -> None:
     """The third language in the table, and the one that showed the *grader* was wrong.
 
     On ripgrep: L2 coverage 99.2% of declarations and 99.2% of call sites, index built in
-    40 s against the 60 s budget. L0/L1 scores **90.9% precision when certain** at 45.9%
-    confident recall; 51.2% overall at 100% recall, over 6,642 graded call sites.
+    40 s against the 60 s budget. L0/L1 scores **99.6% precision when certain** at 42.0%
+    confident recall; 52.8% overall at 100% recall, over 6,642 graded call sites.
 
     **Those numbers replace the ones this test asserted when it was written, and the
     difference is a defect in `symbol_tail`, not a change to the resolver.** It published
@@ -261,10 +261,12 @@ def test_rust_l2_and_l0_l1_accuracy(tmp_path) -> None:
     `line_buffer.rs` alone, collides exactly as Go's methods do; that one name is most of the
     gap between 51.2% overall and 90.9% confident.
 
-    **The remaining confident errors are one shape.** Of 277 confident-wrong sites, 265 are
-    `field_expression` -- receiver dispatch, `reader.consume_all()` -- against 11
-    `scoped_identifier` and 1 `generic_function`. That is the same defect Go has, and closing
-    it needs receiver *types*, which is what L2 is for.
+    **The confident errors were one shape, and it is now closed.** Of 277 confident-wrong
+    sites, 265 were `field_expression` -- receiver dispatch, `reader.consume_all()` -- and
+    every one of them came from the calling file's own top-level declarations answering a
+    call on a receiver, which scored **0 for 265**. `resolve_call` no longer takes that step
+    for a qualified call, and confident precision went 90.9% -> 99.6% for 4 points of
+    confident recall. The 11 `scoped_identifier` and 1 `generic_function` remain.
 
     Why Python reaches 99.8% is **not** established by this. It may be a property of the
     language or of httpx's naming; nothing here measures which, and the last causal story
@@ -291,7 +293,7 @@ def test_rust_l2_and_l0_l1_accuracy(tmp_path) -> None:
 
     accuracy = measure_corpus(corpus, index, language="rust")
     assert accuracy.graded_call_sites > 5000, "corpus too small to mean anything"
-    assert accuracy.confident_precision >= 0.85, (
+    assert accuracy.confident_precision >= 0.95, (
         f"confident precision {accuracy.confident_precision:.1%}; "
         f"first disagreements: {accuracy.disagreements[:3]}"
     )

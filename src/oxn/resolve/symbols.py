@@ -46,6 +46,8 @@ class ResolvedName:
 class ProjectSymbols:
     """Every declaration in the analysed tree, indexed for lookup."""
 
+    #: file -> the imported local names that provably name nothing in this tree.
+    external_aliases: dict[str, frozenset[str]] = field(default_factory=dict)
     #: file -> declared name -> **every** entity in that file declaring it.
     #:
     #: A list, not one entity, because "one declaration per name per file" is a Python and
@@ -72,7 +74,9 @@ class ProjectSymbols:
             name: found[0] for name, found in self.by_file.get(path, {}).items() if len(found) == 1
         }
 
-    def resolve_call(self, path: str, name: str) -> ResolvedName | None:
+    def resolve_call(
+        self, path: str, name: str, qualifier: str | None = None
+    ) -> ResolvedName | None:
         """Best guess at what a call to ``name`` from ``path`` reaches.
 
         Preference order, each strictly better evidence than the next:
@@ -81,48 +85,45 @@ class ProjectSymbols:
         2. a declaration in a file this one imports;
         3. a unique declaration anywhere in the project;
         4. one of several same-named declarations, reported with confidence < 1.
+
+        ``qualifier`` is the name a call was written *through* -- the `c` of `c.With()`, the
+        `metrics` of `metrics.NewCounter()`, the `self` of `self.helper()` -- and ``None``
+        for a bare `helper()`. Two rules follow from it, both measured rather than assumed:
+
+        **A qualified call never takes step 1.** The calling file's own *top-level*
+        declarations say nothing about what a receiver's type is or what another package
+        contains, and answering from them was wrong essentially every time: on the pinned
+        corpora, step 1 answering a qualified call scored 0/265 in Rust, 0/51 for Go's
+        package-qualified calls, 0/2 in Python, and 91/142 for Go receivers -- against
+        99.3%-100% for every later step. It is the single mechanism behind all 318
+        confidently-wrong qualified answers.
+
+        **A call through an import that reached no file in this tree resolves to nothing.**
+        If `np` names `numpy` and `numpy` is not in the tree, `np.array()` is not an entity
+        here, and any in-tree `array` is a coincidence. The grader cannot score these at all
+        -- the oracle places them out of tree, so they are never graded -- but they reach
+        `metrics.callgraph`, CBO and RFC. ADR-0002's ninth amendment has the numbers.
         """
-        local = self.by_file.get(path, {}).get(name) or []
-        if local:
-            # Ambiguity inside one file is still ambiguity. Reporting `1/n` here rather than
-            # a bare first answer is what stops `metrics.callgraph` -- which admits only
-            # confidence-1.0 edges below L2 -- from taking a coin flip as ground truth.
-            return ResolvedName(
-                name,
-                local[0].id,
-                local[0].qualified_name,
-                path,
-                Resolution.L0,
-                confidence=1 / len(local),
-            )
+        if qualifier is not None and qualifier in self.external_aliases.get(path, ()):
+            return None
+        if qualifier is None:
+            # Ambiguity inside one file is still ambiguity, hence `1/n` rather than a bare
+            # first answer: `metrics.callgraph` admits only confidence-1.0 edges below L2,
+            # so anything less honest enters the call graph as ground truth.
+            local = _answer(name, self.by_file.get(path, {}).get(name) or [], path, Resolution.L0)
+            if local is not None:
+                return local
 
         for imported in sorted(self.imports.get(path, ())):
             candidates = self.by_file.get(imported, {}).get(name) or []
-            if candidates:
-                return ResolvedName(
-                    name,
-                    candidates[0].id,
-                    candidates[0].qualified_name,
-                    imported,
-                    Resolution.L1,
-                    confidence=1 / len(candidates),
-                )
+            found = _answer(name, candidates, imported, Resolution.L1)
+            if found is not None:
+                return found
 
-        candidates = self.by_name.get(name, [])
-        if len(candidates) == 1:
-            only = candidates[0]
-            return ResolvedName(name, only.id, only.qualified_name, only.file_path, Resolution.L1)
-        if candidates:
-            first = candidates[0]
-            return ResolvedName(
-                name,
-                first.id,
-                first.qualified_name,
-                first.file_path,
-                Resolution.L1,
-                confidence=1 / len(candidates),
-            )
-        return None
+        anywhere = self.by_name.get(name, [])
+        if not anywhere:
+            return None
+        return _answer(name, anywhere, anywhere[0].file_path, Resolution.L1)
 
 
 def build_project_symbols(
@@ -136,9 +137,51 @@ def build_project_symbols(
         symbols.by_file[path] = _declared_in(entities, symbols)
     for path, tree in scopes_by_file.items():
         symbols.aliases[path] = dict(tree.import_aliases)
+        symbols.external_aliases[path] = _external_aliases(tree, graph, path)
     if graph is not None:
         symbols.imports = {path: set(targets) for path, targets in graph.files.items()}
     return symbols
+
+
+def _answer(
+    name: str, candidates: list[Entity], file_path: str, resolution: Resolution
+) -> ResolvedName | None:
+    """One candidate list, reported with the confidence it has earned: ``1 / n``.
+
+    Written once because it was written four times, and the fourth had drifted -- the
+    project-wide unique case built a `ResolvedName` without the `confidence` keyword and got
+    the default. Same value, but the rule was no longer in one place to change.
+    """
+    if not candidates:
+        return None
+    first = candidates[0]
+    return ResolvedName(
+        name,
+        first.id,
+        first.qualified_name,
+        file_path,
+        resolution,
+        confidence=1 / len(candidates),
+    )
+
+
+def _external_aliases(tree: ScopeTree, graph: DependencyGraph | None, path: str) -> frozenset[str]:
+    """Local names whose import was placed and reached nothing inside this tree.
+
+    Only a *placed* specifier counts. An absent entry means resolution never ran on that
+    specifier, which is not the same claim -- and it is the common case in Rust and Java,
+    where `use std::fmt` records the alias `fmt -> std` while the import specifier is
+    `std.fmt`. The two do not join, no entry is found, and the rule correctly declines to
+    fire rather than declaring half a language external.
+    """
+    if graph is None:
+        return frozenset()
+    placed = graph.specifier_targets.get(path, {})
+    return frozenset(
+        name
+        for name, source in tree.import_aliases.items()
+        if source in placed and not placed[source]
+    )
 
 
 def _declared_in(entities: list[Entity], symbols: ProjectSymbols) -> dict[str, list[Entity]]:

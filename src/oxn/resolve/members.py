@@ -40,6 +40,10 @@ class MethodAccess:
     writes: set[str] = field(default_factory=set)
     #: Sibling methods called on the receiver -- the edges that separate LCOM4 from LCOM3.
     calls: set[str] = field(default_factory=set)
+    #: The name these accesses came through (`self`, `this`, `c`). Kept because every entry
+    #: in `calls` is by construction a *receiver* call, and `resolve_call` must be told so:
+    #: the calling file's own top-level declarations are not evidence about a receiver.
+    receiver: str = ""
     start_byte: int = 0
     end_byte: int = 0
 
@@ -136,6 +140,7 @@ def _method_access(context: _Members, method_node: Node, method_name: str) -> Me
     )
     receiver = _receiver_of(method_node, context.profile, context.scopes)
     if receiver is not None:
+        access.receiver = receiver
         _collect_accesses(context, method_node, receiver, access)
     return access
 

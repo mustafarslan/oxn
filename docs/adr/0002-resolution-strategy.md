@@ -566,3 +566,85 @@ layout, which is the manifest Java does not have. `mypy` then caught what CI's 3
 have: `tomllib` is 3.11, and OXN supports 3.10. The replacement is a section-aware TOML field
 reader, which is the part that actually matters — `crates/matcher/Cargo.toml` declares `name`
 twice, under `[package]` and under a test target two lines later.
+
+## Amendment, 2026-09-06 (ninth) — `resolve_call` learns what a call was written through
+
+`ProjectSymbols.aliases` was written and never read from the day it existed. It is read now,
+and the two rules that read it were both derived from splits rather than assumed.
+
+**The first split: confident precision by qualifier kind.** A call is *bare* (`helper()`),
+*import-qualified* (`metrics.NewCounter()`) or *receiver-qualified* (`c.With()`).
+
+| language | bare | import-qualified | receiver |
+|---|---|---|---|
+| Python | 100% | 100% | 99.3% |
+| TypeScript | 100% | 100% | 99.7% |
+| Java | 100% | — | 100% |
+| Go | 100% | 88.5% | 75.8% |
+| Rust | 99.3% | — | 80.8% |
+
+That table kills the obvious policy. "Never be certain about a receiver call" would have
+cost TypeScript four fifths of its confident answers and Java seven eighths, to fix nothing:
+their receiver calls are already right.
+
+**The second split found the mechanism.** Splitting the same confident answers by *which
+resolution step* produced them: step 1 is the calling file's own top-level declarations.
+
+| language | step 1 | later steps |
+|---|---|---|
+| Rust receiver | **0 / 265** | 1,114 / 1,114 |
+| Go import-qualified | **0 / 51** | 415 / 418 |
+| Python receiver | **0 / 2** | 283 / 283 |
+| Go receiver | 91 / 142 | 225 / 275 |
+| TypeScript, Java | never fires | 99.7% / 100% |
+
+**Every confidently-wrong qualified answer on every corpus came from step 1.** So the rule is
+not about receivers versus packages at all: *a qualified call is never answered by the
+calling file's own top-level declarations*. They say nothing about a receiver's type, and
+nothing about another package's contents.
+
+    language      confident precision      confident recall
+    Rust          90.9% -> 99.6%           45.9% -> 42.0%
+    Go            87.4% -> 93.0%           78.0% -> 74.6%
+    Python        99.8% -> 100%            65.6% -> 65.5%
+    Java, TS      unchanged                unchanged
+
+Recall stays at 100% everywhere: nothing stops being answered, some answers stop being
+*certain*, and only certain answers may gate.
+
+**This also answers a question two amendments ago left open** — why Python and TypeScript sat
+near 100% while Go and Rust sat near 90 — and answers it from a measurement rather than a
+shape. A Python, TypeScript or Java method lives inside a class, so it is not a *top-level*
+declaration and never entered the table step 1 reads; Go methods are top-level, and Rust's
+`impl` methods reach it through the same path. Those languages were not better resolved, they
+were *not exposed to the defect*. The earlier retraction was of a story told without this
+split; this is the split.
+
+**The second rule reads the table's contents rather than its keys.** A call through an import
+that reached no file in this tree resolves to nothing: if `np` names `numpy` and `numpy` is
+not here, `np.array()` is not an entity here, and any in-tree `array` is a coincidence. The
+grader is blind to this class — the oracle places these callees out of tree, so they are
+never graded — but they reach `metrics.callgraph`, CBO and RFC, where L1 answered **233
+confidently on go-kit and 16 on httpx**. Both are 0 now, verified by re-running the probe
+rather than by assuming.
+
+Only a *placed* specifier counts. An absent entry is not evidence of externality, and it is
+the common case in Rust and Java, where `use std::fmt` records `fmt -> std` while the import
+specifier is `std.fmt`: the two never join, and the rule correctly declines to fire rather
+than declaring most of two languages external.
+
+**And it stops at a call in the chain.** `verify(repo).findByLastName()` is Mockito: `verify`
+is an external static import, but the mock it returns has an in-tree type and the method
+really is ours. Asking the import table about `verify` declared that call external and cost
+exactly two graded answers on petclinic — found by checking what the 229 firing sites were
+rather than accepting a recall of 99.4%. A chain headed by a call is qualified by a *value*,
+not by a module; the locality rule still applies to it, the module rule does not.
+
+The product changed with the grader, deliberately. `metrics/coupling.py` passes the receiver
+it already collected, because every name in `MethodAccess.calls` is by construction a call
+through the receiver — measuring a fix the product does not have is the failure this ADR has
+recorded twice today.
+
+Still not read: *which* module an import-qualified call names. Restricting `metrics.Foo()` to
+the files `metrics` resolves to would gain at most 3 answers on go-kit — later steps already
+score 99.3% there — so it is not built, and this is what that decision was based on.

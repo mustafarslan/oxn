@@ -54,6 +54,11 @@ class DependencyGraph:
     unresolved: list[UnresolvedImport] = field(default_factory=list)
     #: file -> component, so a violation can name the file that caused it.
     membership: dict[str, str] = field(default_factory=dict)
+    #: file -> specifier -> the in-tree files it reached. An **empty** tuple is a placed
+    #: specifier that reached nothing -- a third-party package -- and an absent key is one
+    #: never resolved at all. The difference is the whole value of this table: only the
+    #: first proves a call through that name cannot land in this tree.
+    specifier_targets: dict[str, dict[str, tuple[str, ...]]] = field(default_factory=dict)
     #: Every import seen, including external ones, for reporting.
     import_count: int = 0
     external_count: int = 0
@@ -143,6 +148,7 @@ def _add_imports(graph: DependencyGraph, scan: _Scan) -> None:
     for raw in extract_imports(scan.tree_root, scan.profile):
         graph.import_count += 1
         resolved = resolve_import(scan.relative, raw, scan.context, scan.profile.name)
+        graph.specifier_targets.setdefault(scan.relative, {})[raw.specifier] = resolved.targets
         if not resolved.resolved:
             _record_external(graph, scan.relative, raw, scan)
             continue

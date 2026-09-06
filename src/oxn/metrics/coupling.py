@@ -171,6 +171,11 @@ def _confident_callees(model: ClassModel, evidence: Evidence) -> tuple[set[str],
 
     Only *certain* answers are admitted (ADR-0002): a guess among several candidates would
     make RFC and CBO look exact while being arithmetic over hunches.
+
+    Every name in `access.calls` is a call *through the receiver* -- that is what
+    `members.py` collected -- so the receiver is passed on. Without it `resolve_call` would
+    answer `self.handle()` with whatever top-level `handle` the calling file happens to
+    declare, at full confidence, and RFC and CBO would count it.
     """
     if not evidence.can_resolve:
         return set(), False
@@ -179,7 +184,9 @@ def _confident_callees(model: ClassModel, evidence: Evidence) -> tuple[set[str],
     uncertain = False
     for access in model.methods.values():
         for callee in access.calls:
-            found = evidence.symbols.resolve_call(evidence.path, callee)  # type: ignore[union-attr]
+            found = evidence.symbols.resolve_call(  # type: ignore[union-attr]
+                evidence.path, callee, access.receiver or None
+            )
             if found is not None and found.is_certain:
                 confident.add(found.qualified_name)
             else:

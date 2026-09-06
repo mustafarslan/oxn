@@ -175,7 +175,9 @@ def _grade_call(
         return
 
     grading.accuracy.graded_call_sites += 1
-    guess = grading.symbols.resolve_call(grading.path, name)
+    guess = grading.symbols.resolve_call(
+        grading.path, name, callee_qualifier(node, callee, grading.profile)
+    )
     if guess is None:
         return
 
@@ -259,6 +261,58 @@ def symbol_tail(symbol: str) -> str:
     if not parts:
         return ""
     return parts[-1].split("(")[0].rstrip(".:").strip("`[")
+
+
+def callee_qualifier(node: Node, callee: Node, profile: LanguageProfile) -> str | None:
+    """The name a call was written *through*, or ``None`` for a bare call.
+
+    Two shapes, both read off the grammars rather than assumed. In Python, TypeScript, Go
+    and Rust the callee node *is* the qualified expression -- `attribute`,
+    `member_expression`, `selector_expression`, `field_expression` -- and the qualifier is
+    its object field. Java is the exception: `method_invocation` keeps `object` and `name`
+    as siblings, so the callee is a bare identifier and the qualifier hangs off the *call*.
+
+    Rust's `std::fmt::format()` is deliberately not qualified here. Its callee is a
+    `scoped_identifier`, not the receiver kind, and Rust is the one language where a path
+    call and a receiver call are distinguishable by shape alone -- so it needs no table to
+    tell them apart and gets the plain lookup.
+    """
+    spec = profile.metrics.scopes
+    through = (
+        callee.child_by_field_name(spec.attribute_object_field)
+        if callee.type == spec.attribute_kind
+        else None
+    ) or node.child_by_field_name(spec.attribute_object_field)
+    if through is None:
+        return None
+    return _head_name(through, profile.metrics.cognitive.call_kinds) or _text(through)
+
+
+def _head_name(node: Node, call_kinds: frozenset[str]) -> str:
+    """The **leftmost** name of a pure name chain -- the `a` of `a.b.c` -- or ``""``.
+
+    The head is what the import table is keyed on: `import a` binds `a`, and `a.b.c()` is a
+    call into `a` however long the chain. (`_callee_name` walks the other way, to the name
+    being called; asking the table about that tail would answer "not an import" for every
+    chained call.)
+
+    **A call in the chain stops it.** `verify(repo).findByLastName()` is written through a
+    *value* -- Mockito's `verify` is an external static import, but the mock it returns has
+    an in-tree type, and the method really is ours. Treating `verify` as the qualifier
+    declared that call external and cost exactly two graded answers on petclinic, which is
+    how this clause came to exist.
+    """
+    current = node
+    while True:
+        if current.type in call_kinds:
+            return ""
+        if not current.named_child_count:
+            return _text(current)
+        current = current.named_children[0]
+
+
+def _text(node: Node) -> str:
+    return node.text.decode("utf-8", "replace") if node.text else ""
 
 
 def _callee_name(callee: Node) -> str:
