@@ -58,8 +58,12 @@ class Indexer:
 #: invoke, under an install hint for Go that had not worked since the project changed
 #: organisation. A user who followed that advice installed nothing and gained nothing.
 #:
-#: Every template here was read off the tool's own `--help`, never its documentation, which
-#: is the same rule that produced the `--project-version` note below.
+#: **The rule for being in here is that the argv was read off the tool's own `--help`**, never
+#: its documentation -- the rule that produced the `--project-version` note below. It is not
+#: "OXN has indexed a real repository with it": `rust-analyzer` is in and has produced no
+#: index on this machine, because it needs a Rust toolchain that is a separate install. What
+#: keeps `scip-java` out is that its invocation is a function of the project's build system,
+#: so there is no single argv to verify -- a different criterion, not a weaker one.
 INDEXERS: dict[str, Indexer] = {
     "python": Indexer(
         "python",

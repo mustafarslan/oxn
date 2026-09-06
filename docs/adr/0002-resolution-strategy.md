@@ -159,8 +159,23 @@ property.
 | Go | go-kit | 100% / 88.3% | **88.3%** | 59.3% @ 100% |
 
 An L1-certain call target in Go is wrong about one time in nine, so **Go Tier-3 metrics are
-not gate-quality at L1** and must not be treated as though they were. Nothing about the
-policy above changes; what changes is the claim that it is satisfied everywhere.
+not gate-quality at L1**. Nothing about the policy above changes; what changes is the claim
+that it is satisfied everywhere.
+
+**Half of this is closed and half is open, and the open half is a live exposure rather than
+a caveat.** `_confident_callees` admits only `is_certain` answers and marks the whole class
+APPROX if any callee was uncertain, so the moment a name became `1/n` instead of `1.0` those
+metrics stopped being able to block — verified, not assumed. But 102 of go-kit's 875
+confident answers (**11.7%**) are still both *certain* and *wrong*, and those stamp EXACT and
+**can** block a Tier-3 ceiling today. They are the cross-file case: `by_file[imported][name]`
+finds one declaration of `Value` in an imported file and answers with full confidence, while
+Go dispatched on a receiver type L1 never saw.
+
+The shape of the fix is known and not yet built: a call written as a *selector*
+(`x.Value()`) is not a bare-name lookup, and resolving it by name alone is a guess in any
+language — `resolve_call` currently is not told which of the two it was handling. Until that
+lands, **a Go project must not put a Tier-3 metric under a blocking ceiling**, and this
+paragraph is the record that OXN knows it.
 
 Part of the Go gap was a defect and is fixed. A Go method is a *top-level* declaration
 carrying its receiver in the signature rather than in a parent scope, so `go-kit` declares
