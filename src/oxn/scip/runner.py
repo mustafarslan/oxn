@@ -111,13 +111,26 @@ INDEXERS: dict[str, Indexer] = {
         # The binary alone is not enough, and this was learned by running it: with
         # `rust-analyzer` installed but no `cargo` on PATH, `scip` panics inside
         # `FetchMetadata::exec` and writes no index. It loads the workspace through cargo
-        # rather than reading source, so the Rust *toolchain* is the real prerequisite --
-        # the same shape as scip-java's build-tool dependency, and worth naming here rather
-        # than leaving a user to read a Rust backtrace.
+        # rather than reading source, so the Rust *toolchain* is the real prerequisite.
+        # With cargo present it indexes `ripgrep` in 40 s.
         "rustup component add rust-analyzer (needs a Rust toolchain: cargo must be on PATH)",
         # Not `index`: the SCIP emitter is a subcommand of the language server itself, and
         # it takes the tree as a positional.
         ("scip", "{root}", "--output", "{output}"),
+    ),
+    "java": Indexer(
+        "java",
+        "scip-java",
+        # `cs install --contrib scip-java`; the plain `coursier install scip-java` fails
+        # because the app is not in the default channel.
+        "coursier install --contrib scip-java (needs a JDK and the project's build tool)",
+        # It runs the project's build. That is why `--build-tool` exists and why this entry
+        # was withheld until it could be run: a repository holding both a `pom.xml` and a
+        # `build.gradle` -- `java-spring-petclinic` does -- makes `scip-java` refuse with
+        # "Multiple build tools detected" rather than pick one. OXN does not pick either:
+        # guessing a build system is how you run the wrong one for ten minutes. The error is
+        # scip-java's own, it names the flag, and `run_indexer` puts it in front of the user.
+        ("index", "--output", "{output}"),
     ),
 }
 
@@ -125,15 +138,10 @@ INDEXERS: dict[str, Indexer] = {
 #: language that is simply missing from `INDEXERS` looks like an oversight, and `oxn doctor`
 #: has to be able to say "L2 is not available here, and this is what it would take".
 #:
-#: `scip-java` is real, free and Apache-2.0 like the rest, but it drives the project's build
-#: tool -- Gradle, Maven or sbt -- rather than reading source, so it cannot be verified the
-#: way the others were: by running it and reading its `--help`. It stays out until it can be.
-UNWIRED: dict[str, str] = {
-    "java": (
-        "scip-java exists and is free, but it builds the project through Gradle/Maven/sbt "
-        "and OXN has not verified its invocation against a real build. See ADR-0002."
-    ),
-}
+#: Empty as of 2026-09-06: every launch language has an indexer OXN can invoke. Kept because
+#: the *distinction* is what `doctor` needs -- "not installed" and "not supported" are
+#: different answers, and only one of them is fixed by running a command.
+UNWIRED: dict[str, str] = {}
 
 
 def available_indexers() -> dict[str, str | None]:

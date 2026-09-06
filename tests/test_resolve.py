@@ -320,3 +320,50 @@ def test_declarations_in_omits_the_ambiguous_names() -> None:
 
     assert "With" not in declared
     assert "use" in declared
+
+
+# ---- import aliases, and the three languages that record none ----------------------------
+
+IMPORTS = {
+    "python": "import os\nimport numpy as np\nfrom x import y\n",
+    "typescript": 'import fs from "fs";\nimport * as p from "path";\n',
+    "go": 'package m\nimport (\n\t"fmt"\n\tex "e.com/t"\n)\n',
+    "rust": "use std::fmt;\nuse a::b as c;\n",
+    "java": "import java.util.List;\n",
+}
+
+
+@pytest.mark.parametrize("language", ["python", "typescript"])
+def test_import_aliases_are_recorded(language: str) -> None:
+    """L0 knows what a local name was imported as, for the languages where it works."""
+    tree, _ = scopes(language, IMPORTS[language])
+
+    assert tree.import_aliases, f"{language} recorded no import aliases"
+
+
+@pytest.mark.parametrize("language", ["go", "rust", "java"])
+def test_import_aliases_are_not_recorded_for_these_languages_yet(language: str) -> None:
+    """A gap, asserted so it is visible rather than discovered again.
+
+    Python and TypeScript populate `import_aliases`; Go, Rust and Java record nothing --
+    Go's profile even declares `alias_kinds={"import_spec"}`, so the spec is written and the
+    builder does not act on it. Nothing consumes the table today (`ProjectSymbols.aliases`
+    is written and never read), which is why this has cost nothing so far.
+
+    It stops being free the moment L1 tries to tell a *package-qualified* call
+    (`metrics.NewCounter()`) from a *receiver-dispatched* one (`c.With()`). Both are
+    `selector_expression` in Go, and the only thing that separates them is whether the
+    object is an imported package name -- which is exactly this table. That distinction is
+    the remaining half of Go's 88.3% confident precision (ADR-0002), so this test is the
+    prerequisite, recorded where the next person will trip over it.
+
+    **Inverted on purpose**: fixing any of these three fails this test, which is the signal
+    to delete the case and revisit the accuracy numbers rather than to quietly widen it.
+    """
+    tree, _ = scopes(language, IMPORTS[language])
+
+    assert not tree.import_aliases, (
+        f"{language} now records import aliases -- remove it from this test and re-measure "
+        "the L0/L1 accuracy table in ADR-0002; a package-qualified call can now be told "
+        "apart from a receiver-dispatched one"
+    )

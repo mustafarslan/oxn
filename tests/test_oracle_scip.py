@@ -210,3 +210,59 @@ def test_go_l0_l1_accuracy_is_published_and_is_worse_than_python(tmp_path) -> No
         "Go confident precision has reached Python's level; re-examine ADR-0002's gating "
         "policy, which currently treats L1 certainty as language-independent"
     )
+
+
+# ---- and for Rust ---------------------------------------------------------------------------
+
+RUST_CORPUS = CORPUS.parent / "rust-ripgrep"
+
+requires_rust_analyzer = pytest.mark.skipif(
+    not (shutil.which("rust-analyzer") and shutil.which("cargo")),
+    reason="rust-analyzer and a Rust toolchain are both required; `scip` loads the "
+    "workspace through cargo and panics without it",
+)
+
+
+@requires_rust_analyzer
+@pytest.mark.skipif(not RUST_CORPUS.exists(), reason="corpora not fetched")
+@pytest.mark.slow
+def test_rust_l2_and_l0_l1_accuracy(tmp_path) -> None:
+    """The third language in the table, and the one that tells you what the Go gap was.
+
+    On ripgrep: L2 coverage 99.2% of declarations and 99.2% of call sites, index built in
+    40 s against the 60 s budget. L0/L1 scores **99.1% precision when certain** (90.8%
+    overall at 100% recall) -- Python's number, not Go's.
+
+    That is the finding. Rust is not more resolvable than Go in general; its *methods live
+    inside `impl` blocks*, so they are not file-level declarations and never collide in the
+    bare-name table the way four `With` methods do in one Go file. The shape that matters is
+    whether a method is a top-level declaration, and Go is the only launch language where it
+    is. ADR-0002's gating policy holds for Python, TypeScript and Rust, and Go is the
+    exception rather than the rule -- which one language could not have told us and two
+    still could not.
+
+    **73.7% of call sites are excluded**, far above scip-python's 30.5%: rust-analyzer's
+    symbol for a site often does not spell what the source spells, most visibly around
+    generics and trait dispatch. The graded quarter is what remains after refusing to let
+    the oracle arbitrate names it disagrees with the source about, and 1,747 sites is still
+    a corpus.
+    """
+    from oxn.graph.indexer import Indexer
+    from oxn.resolve.measure import measure_corpus
+    from oxn.scip.ingest import ingest_index
+    from oxn.scip.runner import run_indexer
+
+    corpus = RUST_CORPUS.resolve()
+    index = run_indexer("rust", corpus, tmp_path / "ripgrep.scip", timeout=600)
+
+    with Indexer(root=corpus, cache_path=tmp_path / "graph.db") as indexer:
+        report = ingest_index(indexer, index)
+    assert report.definition_coverage >= 0.90, f"{report.definition_coverage:.1%}"
+    assert report.call_coverage >= 0.85, f"{report.call_coverage:.1%}"
+
+    accuracy = measure_corpus(corpus, index, language="rust")
+    assert accuracy.graded_call_sites > 1000, "corpus too small to mean anything"
+    assert accuracy.confident_precision >= 0.95, (
+        f"confident precision {accuracy.confident_precision:.1%}; "
+        f"first disagreements: {accuracy.disagreements[:3]}"
+    )

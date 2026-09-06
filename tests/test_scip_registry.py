@@ -42,13 +42,27 @@ def test_every_launch_language_is_accounted_for() -> None:
     assert set(LAUNCH_LANGUAGES) == set(INDEXERS) | set(UNWIRED)
 
 
-def test_java_is_declared_unavailable_rather_than_quietly_absent() -> None:
-    """ "Not installed" and "OXN cannot use this" are different answers to a user, because no
-    command fixes the second. `scip-java` drives Gradle/Maven/sbt rather than reading source,
-    so its invocation has not been verified the way the others were."""
-    assert "java" in UNWIRED
-    assert "java" not in INDEXERS
-    assert "build" in UNWIRED["java"].lower()
+def test_every_launch_language_now_has_an_indexer() -> None:
+    """Java was the last one out, on the grounds that `scip-java` drives the project's build
+    tool rather than reading source and so could not be verified by running it. It has now
+    been run: `scip-java index --output <path>`, argv read off its own `help index` like
+    every other entry.
+
+    `UNWIRED` stays as a mechanism even while empty, because "not installed" and "not
+    supported" are different answers to a user and only one is fixed by a command.
+    """
+    assert set(INDEXERS) >= set(LAUNCH_LANGUAGES)
+    assert UNWIRED == {}
+
+
+def test_java_does_not_guess_a_build_tool() -> None:
+    """`scip-java` refuses a repository holding both a `pom.xml` and a `build.gradle` --
+    `java-spring-petclinic` is one -- and asks for `--build-tool`. OXN passes neither: a
+    wrong guess runs the wrong build, slowly, and scip-java's own error names the flag and
+    reaches the user through `run_indexer`."""
+    argv = INDEXERS["java"].argv(Path("/tree"), Path("/o.scip"), Project("p", "1"))
+
+    assert "--build-tool" not in " ".join(argv)
 
 
 def test_the_go_install_hint_names_the_module_path_that_resolves() -> None:
@@ -76,6 +90,8 @@ def test_the_go_install_hint_names_the_module_path_that_resolves() -> None:
         # Not an `index` subcommand: SCIP emission is a mode of the language server, and the
         # tree is a positional.
         ("rust", "rust-analyzer scip /tree --output /o.scip"),
+        # Runs the project's build; the tree is the working directory, not an argument.
+        ("java", "scip-java index --output /o.scip"),
     ],
 )
 def test_each_indexer_gets_the_argv_its_own_help_documents(language: str, expected: str) -> None:
