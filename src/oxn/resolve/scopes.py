@@ -15,6 +15,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from oxn.resolve.importers import IMPORT_READERS
+
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Iterator
 
@@ -353,6 +355,10 @@ def _imported_names(node: Node, profile: LanguageProfile) -> Iterator[tuple[str,
     aliased import unresolvable.
     """
     spec = profile.metrics.imports
+    reader = IMPORT_READERS.get(spec.style)
+    if reader is not None:
+        yield from reader(node)
+        return
     if spec.style != "python":
         yield from _ecmascript_imported_names(node, profile)
         return
@@ -453,5 +459,12 @@ def _collect_class_members(scope: Scope, tree: ScopeTree, *, class_name: str | N
     del class_name
 
 
-def _text(node: Node) -> str:
+def _text(node: Node | None) -> str:
+    """The source text of a node, and ``""`` for a field that is not present.
+
+    Widened to accept ``None`` when the Go/Rust/Java import readers arrived: every one of
+    them reads optional grammar fields (`alias`, `scope`, `path`), and a `None` check at
+    each call site is noise around the one thing they all mean by it -- absent."""
+    if node is None:
+        return ""
     return node.text.decode("utf-8", "replace") if node.text else ""

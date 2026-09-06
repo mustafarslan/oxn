@@ -459,3 +459,53 @@ kind that would need its own retraction.
 
 `scip-typescript` was not installed on this machine when the roadmap began claiming it as
 available, which is the third install hint in two days to be wrong until someone ran it.
+
+## Amendment, 2026-09-06 (seventh) — the import table, in the three languages that had none
+
+Go, Rust and Java recorded no import aliases, asserted as an inverted test since the L1 work
+so the gap would be visible rather than rediscovered. The cause was one line:
+`_imported_names` dispatched on `style != "python"` straight into the ECMAScript reader,
+which finds no ECMAScript import clause inside a `use_declaration` and yields nothing at all.
+Go's scope spec even declared `alias_kinds={"import_spec"}` — the intent was written down and
+nothing acted on it.
+
+All five launch languages now populate the table. On the pinned corpora: **go-kit 1,131
+entries over 223 files, ripgrep 934 over 96, petclinic 469 over 45.**
+
+**"Alias" is a Python and TypeScript name for it.** Java has no import aliases whatsoever,
+and its table is still exactly what a resolver needs: `import java.util.List` binds `List`
+and says it came from `java.util`. What the table holds is *the local name a file may write,
+and where it came from* — 469 of petclinic's 469 entries have a local name that is not the
+tail of its source, and so do 889 of ripgrep's 934.
+
+**Go's unaliased name is a convention, not a rule**, and the docstring says so where someone
+will read it. The real name comes from the target's `package` clause, which OXN does not
+read; the last path segment is what it almost always is. Two documented spellings *are*
+rules and are honoured: Go's semantic import versioning, where a trailing `/v2` is a module
+major version and never the package name (`github.com/casbin/casbin/v2` is `casbin`, and
+go-kit imports six paths of that shape), and gopkg.in's dotted equivalent
+(`gopkg.in/yaml.v2` is `yaml`). Where the convention still breaks — `opentracing-go`,
+`nats.go`, both in go-kit — the segment is not a valid Go identifier, so the entry is
+**inert** rather than wrong: no call qualifier can equal it. A target whose clause disagrees
+while still being a valid identifier is mis-bound, and syntax cannot tell.
+
+Four imports deliberately bind nothing, kept as inverted tests in the pattern that worked for
+the whole-language gap: Go's `_` (side effects only) and `.` (members enter file scope with
+no qualifier at all — a real binding, and a *different* table), Rust's `use s::t::*`, and
+Java's `java.util.*`. Recording a plausible-looking name for any of them would be worse than
+recording none.
+
+**Every accuracy number is identical to four decimal places**, which is the point rather than
+a disappointment: `ProjectSymbols.aliases` is still written and never read. This amendment
+records a fact about L0. What it buys is the *next* commit — telling a package-qualified call
+(`metrics.NewCounter()`) from a receiver-dispatched one (`c.With()`), which in Go are both
+`selector_expression` and are separated only by whether the object is an imported package
+name. That is the remaining half of Go's 88.3%, and Rust's ten `use … as …` exclusions are
+its acceptance test.
+
+`scopes.py` crossed its 500-line ceiling on this change, so the three readers moved to
+`resolve/importers.py`. The seam is real: everything there is a statement about one
+language's import syntax, everything left is about scopes and bindings in general. It carries
+its own `_text`, as every tree-walking module here does — importing one from `scopes.py`
+would make the two modules import each other, and a cycle inside a layer is what
+`oxn check --deep` exists to reject.

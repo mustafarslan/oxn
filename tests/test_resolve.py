@@ -357,7 +357,7 @@ def test_declarations_in_omits_the_ambiguous_names() -> None:
     assert "use" in declared
 
 
-# ---- import aliases, and the three languages that record none ----------------------------
+# ---- import aliases, in every language that has them ---------------------------------------
 
 IMPORTS = {
     "python": "import os\nimport numpy as np\nfrom x import y\n",
@@ -368,37 +368,103 @@ IMPORTS = {
 }
 
 
-@pytest.mark.parametrize("language", ["python", "typescript"])
+@pytest.mark.parametrize("language", ["python", "typescript", "go", "rust", "java"])
 def test_import_aliases_are_recorded(language: str) -> None:
-    """L0 knows what a local name was imported as, for the languages where it works."""
+    """L0 knows what a local name was imported as, in all five launch languages.
+
+    Go, Rust and Java recorded nothing until 2026-09-06, and the cause was one line:
+    `_imported_names` dispatched on `style != "python"` straight into the ECMAScript reader,
+    which finds no ECMAScript import clause inside a `use_declaration` and yields nothing.
+    The gap lived here as an inverted test until it was closed.
+    """
     tree, _ = scopes(language, IMPORTS[language])
 
     assert tree.import_aliases, f"{language} recorded no import aliases"
 
 
-@pytest.mark.parametrize("language", ["go", "rust", "java"])
-def test_import_aliases_are_not_recorded_for_these_languages_yet(language: str) -> None:
-    """A gap, asserted so it is visible rather than discovered again.
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        # The alias, which is the whole point.
+        ('package m\nimport ex "e.com/t"\n', {"ex": "e.com/t"}),
+        # Unaliased: the local name comes from the path, by Go's convention.
+        ('package m\nimport "fmt"\n', {"fmt": "fmt"}),
+        ('package m\nimport "single/one"\n', {"one": "single/one"}),
+        # Semantic import versioning: `/v2` is a *module* major version and never the
+        # package name, so `casbin` is right and `v2` would be wrong. go-kit imports six
+        # paths of this shape, which is how it was noticed.
+        (
+            'package m\nimport "github.com/casbin/casbin/v2"\n',
+            {"casbin": "github.com/casbin/casbin/v2"},
+        ),
+        # gopkg.in spells the same convention with a dot.
+        ('package m\nimport "gopkg.in/yaml.v2"\n', {"yaml": "gopkg.in/yaml.v2"}),
+        # Grouped and single-line declarations are different tree shapes.
+        ('package m\nimport (\n\t"fmt"\n\t"os"\n)\n', {"fmt": "fmt", "os": "os"}),
+    ],
+)
+def test_go_import_shapes(source: str, expected: dict[str, str]) -> None:
+    tree, _ = scopes("go", source)
 
-    Python and TypeScript populate `import_aliases`; Go, Rust and Java record nothing --
-    Go's profile even declares `alias_kinds={"import_spec"}`, so the spec is written and the
-    builder does not act on it. Nothing consumes the table today (`ProjectSymbols.aliases`
-    is written and never read), which is why this has cost nothing so far.
+    assert tree.import_aliases == expected
 
-    It stops being free the moment L1 tries to tell a *package-qualified* call
-    (`metrics.NewCounter()`) from a *receiver-dispatched* one (`c.With()`). Both are
-    `selector_expression` in Go, and the only thing that separates them is whether the
-    object is an imported package name -- which is exactly this table. That distinction is
-    the remaining half of Go's 88.3% confident precision (ADR-0002), so this test is the
-    prerequisite, recorded where the next person will trip over it.
 
-    **Inverted on purpose**: fixing any of these three fails this test, which is the signal
-    to delete the case and revisit the accuracy numbers rather than to quietly widen it.
-    """
-    tree, _ = scopes(language, IMPORTS[language])
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("use std::fmt;\n", {"fmt": "std"}),
+        ("use a::b as c;\n", {"c": "a"}),
+        ("use x::y::{p, q as r};\n", {"p": "x::y", "r": "x::y"}),
+        # Lists nest, so the reader recurses rather than looking one level down.
+        ("use deep::{a::{b, c as d}};\n", {"b": "deep::a", "d": "deep::a"}),
+        # `self` is its own node kind in the grammar rather than an identifier, and it
+        # re-binds the module itself. Treating it as an identifier drops this silently.
+        ("use m::{self, n};\n", {"m": "m", "n": "m"}),
+        ("use crate::x::y;\n", {"y": "crate::x"}),
+        ("extern crate serde as sd;\n", {"sd": "serde"}),
+    ],
+)
+def test_rust_use_shapes(source: str, expected: dict[str, str]) -> None:
+    tree, _ = scopes("rust", source)
 
-    assert not tree.import_aliases, (
-        f"{language} now records import aliases -- remove it from this test and re-measure "
-        "the L0/L1 accuracy table in ADR-0002; a package-qualified call can now be told "
-        "apart from a receiver-dispatched one"
-    )
+    assert tree.import_aliases == expected
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("import java.util.List;\n", {"List": "java.util"}),
+        # A static import binds the member, and `java.lang.Math` is where it came from.
+        ("import static java.lang.Math.max;\n", {"max": "java.lang.Math"}),
+    ],
+)
+def test_java_import_shapes(source: str, expected: dict[str, str]) -> None:
+    """Java has no import aliases at all, which is why this table is not really about
+    aliases: it maps a simple name to where it came from, and that is what a resolver wants
+    from any of the five."""
+    tree, _ = scopes("java", source)
+
+    assert tree.import_aliases == expected
+
+
+@pytest.mark.parametrize(
+    ("language", "source"),
+    [
+        # Imported for its side effects; it binds no name.
+        ("go", 'package m\nimport _ "b.com/blank"\n'),
+        # A dot import puts the package's members into file scope with *no qualifier*, so
+        # this table has nothing to hold. That is a real binding and a different table, and
+        # conflating them would claim a qualifier no one can write.
+        ("go", 'package m\nimport . "d.com/dot"\n'),
+        # A glob names nothing syntax can enumerate.
+        ("rust", "use s::t::*;\n"),
+        ("java", "import java.util.*;\n"),
+    ],
+)
+def test_the_imports_that_bind_no_qualified_name(language: str, source: str) -> None:
+    """**Inverted on purpose**, the way the whole-language gap used to be. These four are not
+    unfinished work: each is an import whose local name syntax cannot supply, and recording a
+    plausible-looking one would be worse than recording none."""
+    tree, _ = scopes(language, source)
+
+    assert not tree.import_aliases
