@@ -214,3 +214,50 @@ loads the workspace through cargo rather than reading source. That is the same s
 `scip-java`'s dependence on Gradle/Maven/sbt. Both are therefore *toolchain* requirements
 rather than tool installs, and the install hint says so; `run_indexer` refuses the empty
 result rather than reporting an index of nothing.
+
+## Amendment, 2026-09-06 (second) — monorepo resolution, and how small the gap turned out to be
+
+The module docstring in `graph/resolve.py` has listed "``package.json`` ``exports`` maps,
+workspace globs, symlinked monorepo packages" among the things "reported as **external and
+unresolved** rather than guessed at" since P4, and the roadmap carried "monorepo support" as
+open on that basis. Measuring it first changed what the work was.
+
+**On `typescript-nest` — a real npm-workspaces monorepo and the pinned corpus — all 1,651
+cross-package imports already resolved.** Nest declares every `@nestjs/*` package in
+`tsconfig.json` `paths`, and OXN has read `paths` since P4. Its graph is 6,271 imports,
+5,062 edges, 3 unresolved, and that was true before any of this work. An intermediate
+measurement of mine said otherwise and was wrong: it counted *bare specifiers* and never
+asked whether they resolved.
+
+What was genuinely missing is the monorepo that declares `workspaces` and no aliases, where
+`@scope/pkg` is reachable only through a `node_modules` symlink OXN does not follow and
+should not have to. `ResolutionContext` now carries `workspaces: name -> directory`, read
+from `package.json#workspaces` (npm, and yarn's older `{"packages": [...]}`),
+`pnpm-workspace.yaml#packages`, or `lerna.json#packages` in that order of precedence. The
+name comes from each matched directory's own manifest, never from the directory: `packages/
+common` calls itself `@nestjs/common`, and it is the name that appears in an import.
+
+`tsconfig` wins where both exist. `paths` is the repository stating where a name resolves;
+the workspace layout is an inference from its directory structure, and a repository that
+declares both and disagrees meant the one it wrote down.
+
+**The second half is classification, and it is the part that was actively misleading.**
+`_is_internal_looking` was `raw.is_relative`, so an unresolvable `@scope/pkg/moved` counted
+as a third-party dependency — indistinguishable from `express`, and absent from
+`unresolved`. `docs/metrics.md` §4.1 requires a missing edge to be visible; this was the one
+class of missing edge that looked exactly like correct behaviour. A bare specifier naming
+one of our own packages is now reported when it fails to resolve.
+
+**Out of scope, stated rather than discovered later.** pnpm's `catalog:` and yarn's
+`workspace:` protocol specifiers name versions rather than paths. `exports` maps point at
+built output (`"./internal": "./internal.js"`) that is not in the source tree OXN measures,
+so honouring them would resolve imports to files the repository does not contain — the
+directory-plus-probe path finds the source instead, which is what nest's 1,651 already
+demonstrate. Python multi-package and Go multi-module layouts are untouched: no pinned
+corpus exercises either, and wiring them unverified is the mistake this amendment's
+predecessor was written about.
+
+Cost: nest's graph is unchanged and the hook path measures 123 ms against 126 ms before, on
+9 workspace packages. Manifest reads are once per `ResolutionContext`, so they scale with
+package count rather than file count; a repository with hundreds of packages has not been
+measured.

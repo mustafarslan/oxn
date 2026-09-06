@@ -57,6 +57,10 @@ class ResolutionContext:
     python_roots: tuple[str, ...] = ()
     #: ``tsconfig`` alias prefix -> candidate directories.
     ts_aliases: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    #: Workspace package name -> its directory, for a JS/TS monorepo. Same shape as an
+    #: alias because it is the same idea: a bare specifier that names a directory in this
+    #: tree rather than something in ``node_modules``.
+    workspaces: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @classmethod
     def build(cls, root: Path, files: Iterable[str]) -> ResolutionContext:
@@ -66,7 +70,17 @@ class ResolutionContext:
             known=known,
             python_roots=_python_roots(known),
             ts_aliases=_tsconfig_aliases(root),
+            workspaces=_workspace_packages(root),
         )
+
+    def is_workspace_specifier(self, specifier: str) -> bool:
+        """Does this bare specifier name a package of this repository?
+
+        The difference between "third-party, correctly absent" and "ours, and we failed to
+        place it" -- which `depgraph` needs in order to report the second and stay quiet
+        about the first.
+        """
+        return any(_alias_matches(specifier, name) for name in self.workspaces)
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,6 +260,105 @@ def _tsconfig_aliases(root: Path) -> dict[str, tuple[str, ...]]:
     return aliases
 
 
+def _workspace_packages(root: Path) -> dict[str, tuple[str, ...]]:
+    """Every package this repository declares as its own, name -> directory.
+
+    Read from the two declarations that actually exist in the wild: npm/yarn's
+    `package.json#workspaces` (a list, or `{"packages": [...]}` in yarn's older form) and
+    `pnpm-workspace.yaml#packages`. `lerna.json` is read only when neither is present,
+    because its `packages` field almost always duplicates one of them.
+
+    The *name* comes from each matched directory's own `package.json`, never from the
+    directory name: `packages/common` calls itself `@nestjs/common`, and it is the name that
+    appears in an import.
+
+    Out of scope, deliberately, and stated here rather than discovered later: pnpm's
+    `catalog:` and yarn's `workspace:` protocol specifiers, and `exports` maps. The first
+    two name versions rather than paths; the third points at built output (`./dist/*.js`)
+    that is not in the source tree OXN measures, so honouring it would resolve imports to
+    files this repository does not contain.
+    """
+    globs = _workspace_globs(root)
+    if not globs:
+        return {}
+    packages: dict[str, tuple[str, ...]] = {}
+    for pattern in globs:
+        for manifest in sorted(root.glob(f"{pattern.rstrip('/')}/package.json")):
+            name = _package_name(manifest)
+            directory = manifest.parent.relative_to(root).as_posix()
+            if name and name not in packages:
+                packages[name] = (directory,)
+    return packages
+
+
+def _workspace_globs(root: Path) -> list[str]:
+    """The declared workspace patterns, from whichever file declares them.
+
+    One reader per format rather than one function with three branch chains: npm/yarn, pnpm
+    and lerna are three unrelated file formats that happen to answer the same question, and
+    the version of this that inlined all three scored 23 against a ceiling of 12 -- caught
+    by OXN's own hook while being written.
+
+    Order is precedence. `lerna.json`'s `packages` almost always duplicates one of the
+    others, so it is consulted only when neither is present.
+    """
+    for reader in (_npm_globs, _pnpm_globs, _lerna_globs):
+        found = reader(root)
+        if found:
+            return found
+    return []
+
+
+def _npm_globs(root: Path) -> list[str]:
+    """`package.json#workspaces`: a list, or yarn's older `{"packages": [...]}`."""
+    declared = _json_file(root / "package.json").get("workspaces")
+    if isinstance(declared, dict):
+        declared = declared.get("packages")
+    return _string_list(declared)
+
+
+def _pnpm_globs(root: Path) -> list[str]:
+    """`pnpm-workspace.yaml#packages`."""
+    path = root / "pnpm-workspace.yaml"
+    if not path.is_file():
+        return []
+    import yaml  # lazily: only a pnpm repo pays the ~15 ms
+
+    try:
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8", errors="replace")) or {}
+    except yaml.YAMLError:
+        return []
+    return _string_list(loaded.get("packages") if isinstance(loaded, dict) else None)
+
+
+def _lerna_globs(root: Path) -> list[str]:
+    """`lerna.json#packages`, the legacy spelling."""
+    return _string_list(_json_file(root / "lerna.json").get("packages"))
+
+
+def _string_list(value: object) -> list[str]:
+    """A list of strings, or nothing. Never a partial list of whatever happened to be one."""
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _package_name(manifest: Path) -> str:
+    name = _json_file(manifest).get("name")
+    return name if isinstance(name, str) else ""
+
+
+def _json_file(path: Path) -> dict[str, object]:
+    """A JSON object, or an empty one. A malformed manifest must never fail the run."""
+    if not path.is_file():
+        return {}
+    try:
+        loaded = json.loads(_strip_jsonc(path.read_text(encoding="utf-8", errors="replace")))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
 def _strip_jsonc(text: str) -> str:
     """Remove comments and trailing commas from JSON-with-comments.
 
@@ -320,7 +433,37 @@ def _resolve_ecmascript(source_path: str, raw: RawImport, context: ResolutionCon
     if specifier.startswith("."):
         base = PurePosixPath(source_path).parent
         return _ecmascript_candidate(_normalize(str(base / specifier)), context)
-    return _resolve_ts_alias(specifier, context)
+    # `tsconfig` first, workspaces second, and the order is not arbitrary: `paths` is an
+    # explicit statement by this repository about where a name resolves, while the
+    # workspace layout is an inference from it. A monorepo that declares both and disagrees
+    # meant the tsconfig.
+    return _resolve_ts_alias(specifier, context) or _resolve_workspace(specifier, context)
+
+
+def _resolve_workspace(specifier: str, context: ResolutionContext) -> str | None:
+    """Resolve a bare specifier that names one of this repository's own packages.
+
+    **This is the part of monorepo support that `tsconfig` `paths` does not already cover**,
+    and measuring first is what showed how narrow that part is. On `typescript-nest` -- a
+    real npm-workspaces monorepo -- all 1,651 cross-package imports were *already*
+    resolving, because nest declares every `@nestjs/*` package in `paths` and OXN has read
+    `paths` since P4. What is left is the monorepo that declares `workspaces` and no
+    aliases, where `@scope/pkg` is reachable only through a `node_modules` symlink that OXN
+    does not follow and should not have to.
+
+    Longest name wins, so `@scope/ui-icons` is not resolved by a package called
+    `@scope/ui`. The remainder after the package name is a subpath into it, probed exactly
+    as a relative import is -- which is what makes `@scope/pkg/thing.js` find `thing.ts`.
+    """
+    for name in sorted(context.workspaces, key=len, reverse=True):
+        if not _alias_matches(specifier, name):
+            continue
+        found = _first_existing(
+            context.workspaces[name], specifier[len(name) :].lstrip("/"), context
+        )
+        if found is not None:
+            return found
+    return None
 
 
 def _resolve_ts_alias(specifier: str, context: ResolutionContext) -> str | None:

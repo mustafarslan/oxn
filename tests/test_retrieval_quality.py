@@ -41,10 +41,10 @@ LABELS = ROOT / "benchmarks" / "retrieval-labels-oxn.json"
 #: Five re-pins across 2026-09-05 and 09-06, none of them a ranker change:
 #: 0.377/0.579 -> 0.377/0.577 (ADR-0001, ADR-0004 amended) -> 0.396/0.596 (ADR-0003) ->
 #: 0.396/0.592 -> 0.377/0.583 (ADR-0005) -> 0.396/0.603 -> 0.434/0.628 -> 0.491/0.663 ->
-#: 0.528/0.689 (ADR-0002, four times across one day of resolution work).
+#: 0.528/0.689 -> 0.547/0.708 (ADR-0002, five times across one day of resolution work).
 #:
-#: Eight re-pins in two days is itself the finding. ADR-0002 is gold for the resolution
-#: commits and it has roughly doubled in length, so P@1 has climbed from 0.377 to 0.528
+#: Nine re-pins in two days is itself the finding. ADR-0002 is gold for the resolution
+#: commits and it has roughly tripled in length, so P@1 has climbed from 0.377 to 0.547
 #: without one line of the ranker changing. A corpus of five documents cannot be a quality
 #: measurement while it is also the thing under edit -- which is what ADR-0006 section 5a
 #: concluded from the other direction, and why the floor lives on the external corpus.
@@ -55,8 +55,8 @@ LABELS = ROOT / "benchmarks" / "retrieval-labels-oxn.json"
 #: it is five documents shifting under a fixed query set -- and it is the argument for
 #: putting the quality claim on the external corpus (ADR-0006 section 5b) while this file
 #: asserts only reproducibility.
-RECORDED_P_AT_1 = 0.528
-RECORDED_MRR = 0.689
+RECORDED_P_AT_1 = 0.547
+RECORDED_MRR = 0.708
 
 
 @pytest.fixture(scope="module")

@@ -144,7 +144,7 @@ def _add_imports(graph: DependencyGraph, scan: _Scan) -> None:
         graph.import_count += 1
         resolved = resolve_import(scan.relative, raw, scan.context, scan.profile.name)
         if not resolved.resolved:
-            _record_external(graph, scan.relative, raw)
+            _record_external(graph, scan.relative, raw, scan)
             continue
         if raw.kind not in scan.kinds:
             continue
@@ -153,20 +153,26 @@ def _add_imports(graph: DependencyGraph, scan: _Scan) -> None:
                 graph.files[scan.relative].add(target)
 
 
-def _record_external(graph: DependencyGraph, relative: str, raw: RawImport) -> None:
+def _record_external(graph: DependencyGraph, relative: str, raw: RawImport, scan: _Scan) -> None:
     """Unresolved is usually third-party; only the internal-looking ones are reported."""
     graph.external_count += 1
-    if _is_internal_looking(raw):
+    if _is_internal_looking(raw, scan):
         graph.unresolved.append(UnresolvedImport(relative, raw.specifier, raw.kind, raw.line))
 
 
-def _is_internal_looking(raw: RawImport) -> bool:
-    """Only relative imports are *expected* to resolve.
+def _is_internal_looking(raw: RawImport, scan: _Scan) -> bool:
+    """Is this an import that *should* have resolved inside the tree?
 
-    A bare specifier is usually a third-party package, and reporting every one of those as
-    unresolved would bury the handful that matter.
+    A relative specifier always is. So is a bare specifier naming one of this repository's
+    own workspace packages -- and that second case was silently absent: `@scope/pkg/moved`
+    in a monorepo counted as a third-party dependency, indistinguishable from `express`.
+    `docs/metrics.md` section 4.1 is explicit that a missing edge must be *visible*, and
+    this was the one class of missing edge that looked exactly like correct behaviour.
+
+    Everything else is a package, and reporting every one of those would bury the handful
+    that matter.
     """
-    return raw.is_relative
+    return raw.is_relative or scan.context.is_workspace_specifier(raw.specifier)
 
 
 def _aggregate(graph: DependencyGraph, component_of: Callable[[str], str]) -> None:
