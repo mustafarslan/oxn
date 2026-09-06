@@ -384,3 +384,81 @@ def test_java_l2_and_l0_l1_accuracy(tmp_path) -> None:
         f"{accuracy.excluded_share:.1%} of Java call sites excluded as untrustworthy; "
         "suspect `symbol_tail` before believing the oracle disagrees this often"
     )
+
+
+# ---- and TypeScript, the row that found the `local` defect ---------------------------------
+
+TS_CORPUS = CORPUS.parent / "typescript-nest"
+
+requires_scip_typescript = pytest.mark.skipif(
+    not shutil.which("scip-typescript"),
+    reason="scip-typescript not installed; npm install -g @sourcegraph/scip-typescript",
+)
+
+
+@requires_scip_typescript
+@pytest.mark.skipif(not TS_CORPUS.exists(), reason="corpora not fetched")
+@pytest.mark.slow
+def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
+    """The fifth language, and the corpus whose exclusion count was hiding a real defect.
+
+    On `typescript-nest`: L2 coverage **99.9% of declarations and 83.6% of call sites**,
+    index built in 3 s. L0/L1 scores **99.7% precision when certain** at 53.4% confident
+    recall, 66.7% overall at 100% recall, over 2,172 graded call sites.
+
+    **99.7% is Python's number, on a corpus larger than Python's.** That is the second high
+    row, and it is the one that makes "only Python is high" no longer the shape of the table:
+    Python and TypeScript sit near 100%, Go and Rust near 90%. This test does not claim to
+    know why, and deliberately: the last causal story told from these corpora was an artifact
+    of a grader bug, and two rows on each side is a pattern, not a cause.
+
+    **The 83.6% call coverage misses P5's >=85% exit criterion**, on the only corpus that
+    does. Stated rather than rounded: 16.4% of nest's call sites have no SCIP occurrence at
+    the callee position at all, which is the indexer's coverage rather than the join's.
+
+    **This row cost 529 fabricated L2 edges to publish, which is what it was worth.** The
+    first measurement excluded 441 call sites -- 16.9%, second only to scip-python's 30.5%.
+    Attributing that to TypeScript being hard is what the Rust retraction was about, so the
+    sites were printed instead: every one was a `local N` symbol, and `local N` is
+    document-scoped, and OXN's symbol table was keyed globally. See
+    `tests/test_scip_local_symbols.py`. After the fix, exclusions are 43 -- 1.94% -- because
+    those 441 were a double error that cancelled: a collision manufactured a truth, and the
+    spelling rule then discarded it.
+
+    The 43 that remain were read, not assumed. 16 are same-file `local` functions, which have
+    no name in the symbol to compare against; 7 are `typeLiteral268:commitOffsets`, methods
+    on an anonymous type literal; 1 is a `<get>id` accessor. All three are descriptor
+    decoration rather than disagreement, and none is worth a speculative strip at 0.36%.
+    """
+    from oxn.graph.indexer import Indexer
+    from oxn.resolve.measure import measure_corpus
+    from oxn.scip.ingest import ingest_index
+    from oxn.scip.runner import run_indexer
+
+    corpus = TS_CORPUS.resolve()
+    index = run_indexer("typescript", corpus, tmp_path / "nest.scip", timeout=600)
+
+    with Indexer(root=corpus, cache_path=tmp_path / "graph.db") as indexer:
+        report = ingest_index(indexer, index)
+        # The corpus assertion for `test_scip_local_symbols.py`: nest is the repository that
+        # has 628 documents defining `local 0`, so it is the one that proves the fix on real
+        # output rather than on two hand-made documents.
+        fabricated = indexer.store._conn.execute(  # noqa: SLF001 - a defect needs the rows
+            "SELECT COUNT(*) FROM edges e JOIN symbols s ON s.symbol = e.dst_ref"
+            " WHERE e.dst_ref LIKE 'local %' AND e.dst_id IS NOT NULL"
+            " AND s.file_path != e.file_path"
+        ).fetchone()[0]
+    assert fabricated == 0, f"{fabricated} L2 edges resolved a local symbol into another file"
+    assert report.definition_coverage >= 0.90, f"{report.definition_coverage:.1%}"
+    assert report.call_coverage >= 0.80, f"{report.call_coverage:.1%} (below P5's 85%)"
+
+    accuracy = measure_corpus(corpus, index, language="typescript")
+    assert accuracy.graded_call_sites > 1000, "corpus too small to mean anything"
+    assert accuracy.confident_precision >= 0.95, (
+        f"confident precision {accuracy.confident_precision:.1%}; "
+        f"first disagreements: {accuracy.disagreements[:3]}"
+    )
+    assert accuracy.excluded_share <= 0.05, (
+        f"{accuracy.excluded_share:.1%} of TypeScript call sites excluded; this number was "
+        "16.9% and the cause was a defect in OXN, not in the oracle -- read the sites"
+    )

@@ -405,3 +405,41 @@ argument for the assertions rather than for the care.
 Python's 637 exclusions were re-checked against the same suspicion and **none of them is a
 local symbol**: the 30.5% figure really is `scip-python`'s re-export bug, and that claim
 stands unchanged.
+
+## Amendment, 2026-09-06 (sixth) — TypeScript, and the table completed
+
+`typescript-nest` via `scip-typescript index --output <path> --cwd <root>`: L2 coverage
+**99.9% of declarations and 83.6% of call sites**, index built in **3 s**. L0/L1 scores
+**99.7% precision when certain** at 53.4% confident recall, 66.7% overall at 100% recall,
+over 2,172 graded call sites.
+
+All five launch languages are now measured:
+
+| language | corpus | L2 def / call | index | confident | overall @ recall | excluded | graded |
+|---|---|---|---|---|---|---|---|
+| Python | httpx | 99% / 96% | 4.4 s | 99.8% | 70.3% @ 100% | 30.5% | 1,453 |
+| Go | go-kit | 100% / 88.3% | 1 s | 88.3% | 59.3% @ 100% | 0% | 1,578 |
+| Rust | ripgrep | 99.2% / 99.2% | 40 s | 90.9% | 51.2% @ 100% | 0.15% | 6,642 |
+| Java | petclinic | 99.6% / 100% | 361 s | 100% | 90.4% @ 100% | 0% | 324 |
+| TypeScript | nest | 99.9% / 83.6% | 3 s | 99.7% | 66.7% @ 100% | 1.94% | 2,172 |
+
+**The shape is two high and two middling**, with Java's 324 sites too few to place. Python
+and TypeScript sit near 100% when certain; Go and Rust near 90%. **This ADR does not say
+why.** It said why once, from one corpus, and that paragraph had to be retracted three
+amendments ago; two rows on each side is a pattern to explain later with a measurement built
+for it, not a cause to assert now.
+
+**Two exit-criterion misses, both named rather than averaged.** TypeScript is the only
+corpus below the >=85% call-coverage bar, at 83.6% — 16.4% of nest's call sites have no SCIP
+occurrence at the callee at all, which is `scip-typescript`'s coverage rather than the
+join's. Java is the only one over the <60 s index budget, at 361 s, because its indexer runs
+Maven.
+
+The 43 exclusions that survive on nest were read rather than attributed: 16 same-file `local`
+functions, which carry no name in the symbol to compare against; 7 `typeLiteral268:`
+descriptors for methods on anonymous type literals; 1 `<get>` accessor. All descriptor
+decoration rather than disagreement, and at 0.36% none justifies a speculative strip of the
+kind that would need its own retraction.
+
+`scip-typescript` was not installed on this machine when the roadmap began claiming it as
+available, which is the third install hint in two days to be wrong until someone ran it.

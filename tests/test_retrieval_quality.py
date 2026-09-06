@@ -38,15 +38,16 @@ LABELS = ROOT / "benchmarks" / "retrieval-labels-oxn.json"
 #: lives in a script drifts silently while one that lives in an assertion carries its delta
 #: in the diff, exactly as `.oxn/baseline.json` does for the gate.
 #:
-#: Twelve re-pins across 2026-09-05 and 09-06, none of them a ranker change:
+#: Thirteen re-pins across 2026-09-05 and 09-06, none of them a ranker change:
 #: 0.377/0.579 -> 0.377/0.577 (ADR-0001, ADR-0004 amended) -> 0.396/0.596 (ADR-0003) ->
 #: 0.396/0.592 -> 0.377/0.583 (ADR-0005) -> 0.396/0.603 -> 0.434/0.628 -> 0.491/0.663 ->
 #: 0.528/0.689 -> 0.547/0.708 (ADR-0002, five times across one day of resolution work)
 #: -> 0.547/0.713 (ADR-0002 again, the amendment retracting the Rust numbers)
 #: -> 0.585/0.736 (ADR-0002 a third time, the amendment measuring Java)
-#: -> 0.604/0.742 (ADR-0002 a fourth time, the local-symbol defect).
+#: -> 0.604/0.742 (ADR-0002 a fourth time, the local-symbol defect)
+#: -> 0.604/0.747 (ADR-0002 a fifth time, TypeScript measured).
 #:
-#: Twelve re-pins in two days is itself the finding. ADR-0002 is gold for the resolution
+#: Thirteen re-pins in two days is itself the finding. ADR-0002 is gold for the resolution
 #: commits and it has roughly tripled in length, so P@1 has climbed from 0.377 to 0.604
 #: without one line of the ranker changing. A corpus of five documents cannot be a quality
 #: measurement while it is also the thing under edit -- which is what ADR-0006 section 5a
@@ -59,7 +60,7 @@ LABELS = ROOT / "benchmarks" / "retrieval-labels-oxn.json"
 #: putting the quality claim on the external corpus (ADR-0006 section 5b) while this file
 #: asserts only reproducibility.
 RECORDED_P_AT_1 = 0.604
-RECORDED_MRR = 0.742
+RECORDED_MRR = 0.747
 
 
 @pytest.fixture(scope="module")
