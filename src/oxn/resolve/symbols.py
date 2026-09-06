@@ -46,8 +46,15 @@ class ResolvedName:
 class ProjectSymbols:
     """Every declaration in the analysed tree, indexed for lookup."""
 
-    #: file -> declared name -> entity
-    by_file: dict[str, dict[str, Entity]] = field(default_factory=dict)
+    #: file -> declared name -> **every** entity in that file declaring it.
+    #:
+    #: A list, not one entity, because "one declaration per name per file" is a Python and
+    #: TypeScript assumption that Go breaks flatly: a method is a *top-level* declaration
+    #: carrying its receiver, so `Counter.With`, `Gauge.With`, `Timing.With` and
+    #: `Histogram.With` are four file-level `With`s in one file. Collapsing them with
+    #: `setdefault` kept the first and answered every call with it at **confidence 1.0** --
+    #: correct one time in four, and confident every time.
+    by_file: dict[str, dict[str, list[Entity]]] = field(default_factory=dict)
     #: bare name -> every entity declaring it, across the project
     by_name: dict[str, list[Entity]] = field(default_factory=lambda: defaultdict(list))
     #: file -> local alias -> import specifier
@@ -56,7 +63,14 @@ class ProjectSymbols:
     imports: dict[str, set[str]] = field(default_factory=dict)
 
     def declarations_in(self, path: str) -> dict[str, Entity]:
-        return self.by_file.get(path, {})
+        """The unambiguous file-level declarations, one per name.
+
+        A name declared more than once in the file has no single answer and is omitted
+        rather than resolved to whichever came first.
+        """
+        return {
+            name: found[0] for name, found in self.by_file.get(path, {}).items() if len(found) == 1
+        }
 
     def resolve_call(self, path: str, name: str) -> ResolvedName | None:
         """Best guess at what a call to ``name`` from ``path`` reaches.
@@ -68,14 +82,31 @@ class ProjectSymbols:
         3. a unique declaration anywhere in the project;
         4. one of several same-named declarations, reported with confidence < 1.
         """
-        local = self.by_file.get(path, {}).get(name)
-        if local is not None:
-            return ResolvedName(name, local.id, local.qualified_name, path, Resolution.L0)
+        local = self.by_file.get(path, {}).get(name) or []
+        if local:
+            # Ambiguity inside one file is still ambiguity. Reporting `1/n` here rather than
+            # a bare first answer is what stops `metrics.callgraph` -- which admits only
+            # confidence-1.0 edges below L2 -- from taking a coin flip as ground truth.
+            return ResolvedName(
+                name,
+                local[0].id,
+                local[0].qualified_name,
+                path,
+                Resolution.L0,
+                confidence=1 / len(local),
+            )
 
         for imported in sorted(self.imports.get(path, ())):
-            found = self.by_file.get(imported, {}).get(name)
-            if found is not None:
-                return ResolvedName(name, found.id, found.qualified_name, imported, Resolution.L1)
+            candidates = self.by_file.get(imported, {}).get(name) or []
+            if candidates:
+                return ResolvedName(
+                    name,
+                    candidates[0].id,
+                    candidates[0].qualified_name,
+                    imported,
+                    Resolution.L1,
+                    confidence=1 / len(candidates),
+                )
 
         candidates = self.by_name.get(name, [])
         if len(candidates) == 1:
@@ -110,20 +141,25 @@ def build_project_symbols(
     return symbols
 
 
-def _declared_in(entities: list[Entity], symbols: ProjectSymbols) -> dict[str, Entity]:
+def _declared_in(entities: list[Entity], symbols: ProjectSymbols) -> dict[str, list[Entity]]:
     """One file's bare-name declarations, indexing every entity by name as it goes.
 
     Only *file-level* declarations answer to a bare name: a method belongs to its class, so
     `handle` in one class must not resolve a call to `handle` written in another. Every
     entity still enters `by_name`, which is what makes the project-wide fallback possible
     when a file-local lookup finds nothing.
+
+    **Every** declaration of a name is kept, not the first. In Go a method is file-level and
+    carries its receiver in the signature rather than in a parent scope, so one file
+    routinely declares the same bare name several times -- and `setdefault` turned that into
+    a single confident answer that was wrong as often as the receiver count.
     """
-    declared: dict[str, Entity] = {}
+    declared: dict[str, list[Entity]] = {}
     for entity in entities:
         if entity.name is None or entity.kind.value == "module":
             continue
         if entity.parent_id is None or _is_top_level(entity, entities):
-            declared.setdefault(entity.name, entity)
+            declared.setdefault(entity.name, []).append(entity)
         symbols.by_name[entity.name].append(entity)
     return declared
 

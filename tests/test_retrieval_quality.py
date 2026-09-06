@@ -40,7 +40,8 @@ LABELS = ROOT / "benchmarks" / "retrieval-labels-oxn.json"
 #:
 #: Five re-pins across 2026-09-05 and 09-06, none of them a ranker change:
 #: 0.377/0.579 -> 0.377/0.577 (ADR-0001, ADR-0004 amended) -> 0.396/0.596 (ADR-0003) ->
-#: 0.396/0.592 -> 0.377/0.583 (ADR-0005) -> 0.396/0.603 (ADR-0002 retiring L2').
+#: 0.396/0.592 -> 0.377/0.583 (ADR-0005) -> 0.396/0.603 -> 0.434/0.628 (ADR-0002, twice:
+#: retiring L2', then publishing the per-language accuracy table).
 #:
 #: Up, down, and back again. ADR-0003 and ADR-0005 traded the same hook-and-agent
 #: vocabulary; ADR-0002's amendment then added indexer and resolution language to the
@@ -48,8 +49,8 @@ LABELS = ROOT / "benchmarks" / "retrieval-labels-oxn.json"
 #: it is five documents shifting under a fixed query set -- and it is the argument for
 #: putting the quality claim on the external corpus (ADR-0006 section 5b) while this file
 #: asserts only reproducibility.
-RECORDED_P_AT_1 = 0.396
-RECORDED_MRR = 0.603
+RECORDED_P_AT_1 = 0.434
+RECORDED_MRR = 0.628
 
 
 @pytest.fixture(scope="module")

@@ -126,3 +126,87 @@ def test_l0_l1_accuracy_against_scip_ground_truth(tmp_path) -> None:
     assert accuracy.precision >= 0.60, f"overall precision {accuracy.precision:.1%}"
     # The oracle's own error rate is worth watching: a jump means scip-python changed.
     assert accuracy.excluded_share <= 0.45, f"{accuracy.excluded_share:.1%} excluded"
+
+
+# ---- the same table, for Go ----------------------------------------------------------------
+
+GO_CORPUS = CORPUS.parent / "go-kit"
+
+requires_scip_go = pytest.mark.skipif(
+    not (shutil.which("scip-go") or os.environ.get("OXN_SCIP_GO")),
+    reason="scip-go not installed; go install github.com/scip-code/scip-go/cmd/scip-go@latest",
+)
+
+
+@requires_scip_go
+@pytest.mark.skipif(not GO_CORPUS.exists(), reason="corpora not fetched")
+@pytest.mark.slow
+def test_go_l2_covers_the_corpus(tmp_path) -> None:
+    """P5's coverage criterion, for the second language to have an L2 at all.
+
+    Measured on go-kit (243 documents): 100% of declarations matched a symbol and 88.3% of
+    call sites resolved, ingest in 0.4 s.
+
+    **Indexing is one second; the prerequisite is not.** `scip-go` runs `go/packages`, so
+    the module must already be buildable -- on go-kit, whose closure includes the AWS SDK
+    and gRPC, the first `go build ./...` took **9 minutes**, at 4% CPU, because it is a
+    download rather than a compile. P5's "<60 s" budget is about indexing and is met with
+    room to spare; the fetch is a one-time cost that belongs to the toolchain, not to OXN,
+    and is worth stating so nobody reads 1 s as the cold number.
+    """
+    from oxn.graph.indexer import Indexer
+    from oxn.scip.ingest import ingest_index
+    from oxn.scip.runner import Project, run_indexer
+
+    corpus = GO_CORPUS.resolve()
+    index = run_indexer("go", corpus, tmp_path / "go-kit.scip", Project("go-kit", "0.0.0"))
+
+    with Indexer(root=corpus, cache_path=tmp_path / "graph.db") as indexer:
+        report = ingest_index(indexer, index)
+
+    assert report.matched_documents > 200
+    assert report.definition_coverage >= 0.90, f"{report.definition_coverage:.1%}"
+    assert report.call_coverage >= 0.85, f"{report.call_coverage:.1%}"
+    assert report.seconds < 60
+
+
+@requires_scip_go
+@pytest.mark.skipif(not GO_CORPUS.exists(), reason="corpora not fetched")
+@pytest.mark.slow
+def test_go_l0_l1_accuracy_is_published_and_is_worse_than_python(tmp_path) -> None:
+    """The per-language half of P5's exit criterion, and the reason it is worth publishing.
+
+    Go on go-kit: **88.3% precision when L1 is certain**, against Python's 99.8% on httpx.
+    Overall 59.3% at 100% recall. Nothing was excluded -- scip-go did not contradict its own
+    source anywhere, where scip-python does at 30.5% of sites.
+
+    That gap is a finding, not noise. **ADR-0002's gating policy -- only a certain answer may
+    block -- was calibrated on the one language that had been measured.** A Go project gated
+    on L1-certain call resolution is gated on a signal wrong about one time in nine, so Go
+    Tier-3 metrics are not yet gate-quality and the floor here is set where the language
+    actually is rather than where Python is.
+
+    The remaining error is receiver dispatch: `go-kit` declares four types in one file each
+    implementing `With`, and L1 has no receiver types to tell them apart. Fixing the *false
+    confidence* took this from 83.9% to 88.3% (see `test_resolve.py`); closing the rest needs
+    type information, which is what L2 is for.
+    """
+    from oxn.resolve.measure import measure_corpus
+    from oxn.scip.runner import Project, run_indexer
+
+    corpus = GO_CORPUS.resolve()
+    index = run_indexer("go", corpus, tmp_path / "go-kit.scip", Project("go-kit", "0.0.0"))
+    accuracy = measure_corpus(corpus, index, language="go")
+
+    assert accuracy.graded_call_sites > 1000, "corpus too small to mean anything"
+    assert accuracy.confident_precision >= 0.85, (
+        f"confident precision {accuracy.confident_precision:.1%}; "
+        f"first disagreements: {accuracy.disagreements[:3]}"
+    )
+    assert accuracy.recall >= 0.95, f"recall {accuracy.recall:.1%}"
+    # Python's number, asserted here as a *ceiling* on the Go claim: if Go ever reaches it,
+    # this test should fail and the gating policy be revisited on the evidence.
+    assert accuracy.confident_precision < 0.99, (
+        "Go confident precision has reached Python's level; re-examine ADR-0002's gating "
+        "policy, which currently treats L1 certainty as language-independent"
+    )

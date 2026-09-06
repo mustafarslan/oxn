@@ -146,3 +146,40 @@ And the report that made all of this visible was itself wrong: `oxn doctor` kept
 copy** of the indexer list, which had drifted into advertising Go, Java and Rust as
 installable when `oxn index` could invoke none of them. There is now one registry, in
 `oxn.scip.runner`, and `doctor` reads it.
+
+### The gating policy is language-dependent, and was calibrated on one language
+
+`can_block_ceiling` rests on the split above: an L1 answer given *with certainty* may block,
+a guess may not. Measuring a second language shows that certainty is not a language-independent
+property.
+
+| language | corpus | L2 definition / call coverage | L0/L1 precision when certain | overall precision @ recall |
+|---|---|---|---|---|
+| Python | httpx | 99% / 96% | **99.8%** | 70.3% @ 100% |
+| Go | go-kit | 100% / 88.3% | **88.3%** | 59.3% @ 100% |
+
+An L1-certain call target in Go is wrong about one time in nine, so **Go Tier-3 metrics are
+not gate-quality at L1** and must not be treated as though they were. Nothing about the
+policy above changes; what changes is the claim that it is satisfied everywhere.
+
+Part of the Go gap was a defect and is fixed. A Go method is a *top-level* declaration
+carrying its receiver in the signature rather than in a parent scope, so `go-kit` declares
+`With` four times in one file — for `Counter`, `Gauge`, `Timing` and `Histogram`. The
+per-file symbol table was `name -> entity`, populated with `setdefault`: it kept the first
+and answered every call with it at **confidence 1.0**. `metrics.callgraph` admits exactly
+the edges whose confidence is 1.0 below L2, so a one-in-four guess entered the call graph as
+ground truth, and every Tier-3 metric downstream inherited it. Keeping every declaration and
+reporting `1/n` moved Go from 83.9% to 88.3% and left Python at 99.8%.
+
+The remainder is real and needs receiver *types* — which is exactly what L2 exists to
+supply, and why the answer to a weak L1 in a language is that language's SCIP index rather
+than a better heuristic.
+
+### Rust and Java need a build, not just a binary
+
+`rust-analyzer scip` is wired and its argv verified, but the binary alone does not work: with
+no `cargo` on PATH it panics inside `FetchMetadata::exec` and writes nothing, because it
+loads the workspace through cargo rather than reading source. That is the same shape as
+`scip-java`'s dependence on Gradle/Maven/sbt. Both are therefore *toolchain* requirements
+rather than tool installs, and the install hint says so; `run_indexer` refuses the empty
+result rather than reporting an index of nothing.

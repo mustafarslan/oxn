@@ -104,7 +104,13 @@ INDEXERS: dict[str, Indexer] = {
     "rust": Indexer(
         "rust",
         "rust-analyzer",
-        "rustup component add rust-analyzer, or brew install rust-analyzer",
+        # The binary alone is not enough, and this was learned by running it: with
+        # `rust-analyzer` installed but no `cargo` on PATH, `scip` panics inside
+        # `FetchMetadata::exec` and writes no index. It loads the workspace through cargo
+        # rather than reading source, so the Rust *toolchain* is the real prerequisite --
+        # the same shape as scip-java's build-tool dependency, and worth naming here rather
+        # than leaving a user to read a Rust backtrace.
+        "rustup component add rust-analyzer (needs a Rust toolchain: cargo must be on PATH)",
         # Not `index`: the SCIP emitter is a subcommand of the language server itself, and
         # it takes the tree as a positional.
         ("scip", "{root}", "--output", "{output}"),

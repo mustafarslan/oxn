@@ -252,3 +252,71 @@ def test_a_stripped_tsconfig_still_parses_as_json() -> None:
     )
     parsed = _json.loads(_strip_jsonc(source))
     assert parsed["compilerOptions"]["paths"]["@app/*"] == ["app/*"]
+
+
+# ---- ambiguity inside one file -----------------------------------------------------------
+
+GO_RECEIVERS = """package metrics
+
+type Counter struct{}
+type Gauge struct{}
+
+func (c *Counter) With(labels ...string) *Counter { return c }
+func (g *Gauge) With(labels ...string) *Gauge { return g }
+
+func use(c *Counter) { c.With("a") }
+"""
+
+
+def project_symbols(language: str, source: str, path: str):
+    """A one-file project symbol table, built the way `measure_corpus` builds one."""
+    from oxn.graph.builder import build_file
+    from oxn.resolve.symbols import build_project_symbols
+
+    profile = get_profile(language)
+    data = source.encode()
+    root = get_parser(language).parse(data).root_node
+    parsed = build_file(path, data, profile, root)
+    entities = list(parsed.entities)
+    return build_project_symbols({path: entities}, {path: build_scopes(root, profile)})
+
+
+def test_a_name_declared_twice_in_one_file_is_not_a_confident_answer() -> None:
+    """Go breaks the assumption L1 was written under.
+
+    A method there is a *top-level* declaration carrying its receiver in the signature
+    rather than in a parent scope, so `Counter.With` and `Gauge.With` are two file-level
+    `With`s. The table kept the first with `setdefault` and answered every call with it at
+    confidence 1.0 -- and `metrics.callgraph` admits exactly the edges whose confidence is
+    1.0 below L2, so a coin flip entered the call graph as ground truth. On `go-kit` this
+    was 46 answers, and it took confident precision from 88.3% down to 83.9%.
+    """
+    symbols = project_symbols("go", GO_RECEIVERS, "metrics/metrics.go")
+
+    answer = symbols.resolve_call("metrics/metrics.go", "With")
+
+    assert answer is not None, "the name is still resolvable -- just not certainly"
+    assert answer.confidence == 0.5, "two receivers, so one answer in two"
+    assert not answer.is_certain
+
+
+def test_an_unambiguous_file_local_name_is_still_certain() -> None:
+    """The fix must not cost certainty where there was never any ambiguity, or every
+    single-declaration call in Python and TypeScript stops entering the call graph."""
+    symbols = project_symbols("go", GO_RECEIVERS, "metrics/metrics.go")
+
+    answer = symbols.resolve_call("metrics/metrics.go", "use")
+
+    assert answer is not None
+    assert answer.is_certain
+
+
+def test_declarations_in_omits_the_ambiguous_names() -> None:
+    """`declarations_in` promises one entity per name. Where the file declares several, the
+    honest answer is absence rather than whichever was parsed first."""
+    symbols = project_symbols("go", GO_RECEIVERS, "metrics/metrics.go")
+
+    declared = symbols.declarations_in("metrics/metrics.go")
+
+    assert "With" not in declared
+    assert "use" in declared
