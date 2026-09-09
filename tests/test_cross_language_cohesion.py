@@ -46,11 +46,18 @@ EXPECTED_COMPONENTS = 2
 EXPECTED_LCOM1 = 4
 EXPECTED_LCOM_STAR = 0.5
 
-ALL = ("python", "java", "typescript", "go", "rust")
+ALL = ("python", "java", "typescript", "javascript", "go", "rust")
 #: The three whose fixtures carry a constructor, so LCOM* shares a denominator.
-WITH_CONSTRUCTOR = ("python", "java", "typescript")
+WITH_CONSTRUCTOR = ("python", "java", "typescript", "javascript")
 
-_SUFFIX = {"python": "py", "java": "java", "typescript": "ts", "go": "go", "rust": "rs"}
+_SUFFIX = {
+    "python": "py",
+    "java": "java",
+    "typescript": "ts",
+    "javascript": "js",
+    "go": "go",
+    "rust": "rs",
+}
 
 
 def _model(language: str, stem: str = "service"):
@@ -226,6 +233,7 @@ def test_an_anonymous_callable_is_labelled_one(language: str, source: str) -> No
         ("java", "service"),
         ("java", "bare_fields"),
         ("typescript", "service"),
+        ("javascript", "service"),
         ("go", "service"),
         ("rust", "service"),
         ("rust", "statics"),

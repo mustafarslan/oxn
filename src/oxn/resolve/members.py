@@ -51,6 +51,11 @@ class MethodAccess:
     #: in `calls` is by construction a *receiver* call, and `resolve_call` must be told so:
     #: the calling file's own top-level declarations are not evidence about a receiver.
     receiver: str = ""
+    #: Names read through the receiver that this file could not account for. Kept rather
+    #: than discarded so a later join can claim them: a Go method in a sibling file reads a
+    #: field its own tree never sees declared, and dropping the name made the two halves of
+    #: one type look like two types that share nothing.
+    unclaimed: set[str] = field(default_factory=set)
     start_byte: int = 0
     end_byte: int = 0
 
@@ -143,7 +148,7 @@ def _one_class(
         if _is_property(method_node, profile):
             model.properties.add(method_name)
 
-    _settle_fields(model, method_names)
+    settle_fields(model)
     return model
 
 
@@ -233,19 +238,28 @@ def _method_access(context: _Members, method_node: Node, method_name: str) -> Me
     return access
 
 
-def _settle_fields(model: ClassModel, method_names: set[str]) -> None:
+def settle_fields(model: ClassModel) -> None:
     """A field is anything written through the receiver, plus anything the body declares.
 
-    Reads of names in neither are inherited or dynamic. They are counted -- an unresolved
-    access is exactly the uncertainty the exactness stamp exists to report -- and then
-    dropped, so cohesion is computed over members this class actually has.
+    Reads of names in neither are inherited, dynamic, or declared in a part of the class this
+    tree cannot see. They are counted -- an unresolved access is exactly the uncertainty the
+    exactness stamp exists to report -- and set aside rather than deleted, so cohesion is
+    computed over members this class actually has while a later join can still claim them.
+
+    Idempotent, and it has to be: `report._merge_split_classes` runs it again once a type's
+    files have been folded together, which is what turns a sibling file's `c.n` from an
+    unclaimed name into a read of a field the type does declare.
     """
+    method_names = set(model.methods)
     for access in model.methods.values():
         model.fields |= access.writes
+    model.unresolved_accesses = 0
+    known = model.fields | method_names | model.properties
     for access in model.methods.values():
-        unknown = access.reads - model.fields - method_names - model.properties
-        model.unresolved_accesses += len(unknown)
-        access.reads -= unknown
+        access.reads |= access.unclaimed & known
+        access.unclaimed = (access.unclaimed | access.reads) - known
+        access.reads -= access.unclaimed
+        model.unresolved_accesses += len(access.unclaimed)
 
 
 def _iter_classes(root: Node, profile: LanguageProfile) -> Iterator[tuple[Node, str]]:

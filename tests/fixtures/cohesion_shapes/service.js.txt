@@ -1,0 +1,14 @@
+class Service {
+  constructor(db, cache) {
+    this.db = db;
+    this.cache = cache;
+  }
+
+  save(k) { this.db.write(k); }
+
+  load(k) { return this.db.read(k); }
+
+  put(k) { this.cache.set(k); }
+
+  evict(k) { this.cache.drop(k); }
+}

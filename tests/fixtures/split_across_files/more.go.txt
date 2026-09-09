@@ -1,0 +1,5 @@
+package m
+
+func (c *Counter) Reset() { c.n = 0 }
+func (c *Counter) Tag() string { return c.tag }
+func (c *Counter) Retag(t string) { c.tag = t }

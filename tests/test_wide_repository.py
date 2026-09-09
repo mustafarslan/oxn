@@ -56,10 +56,10 @@ def _model(fixture: str):
 
 def _graph_store():
     """The real thing, measured through the same path `oxn classes` uses."""
-    from oxn.report import _class_models_for
+    from oxn.resolve.project import class_models_for
 
     path = Path(__file__).resolve().parent.parent / "src" / "oxn" / "graph" / "store.py"
-    parsed = _class_models_for("src/oxn/graph/store.py", path)
+    parsed = class_models_for("src/oxn/graph/store.py", path)
     assert parsed is not None, "store.py failed to parse"
     return parsed[1]["GraphStore"]
 
@@ -125,12 +125,12 @@ def test_lcom4_never_exceeds_lcom3_anywhere_in_oxn() -> None:
     reader decides constructors should be dropped from LCOM4 alone.
     """
     from oxn.metrics.cohesion import cohesion
-    from oxn.report import _class_models_for
+    from oxn.resolve.project import class_models_for
 
     root = Path(__file__).resolve().parent.parent / "src" / "oxn"
     checked = 0
     for path in sorted(root.rglob("*.py")):
-        parsed = _class_models_for(str(path), path)
+        parsed = class_models_for(str(path), path)
         if parsed is None:
             continue
         for name, model in parsed[1].items():

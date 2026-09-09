@@ -1,0 +1,7 @@
+use crate::Buf;
+
+impl Buf {
+    pub fn push(&mut self, b: u8) { self.data.push(b); }
+    pub fn first(&self) -> Option<&u8> { self.data.first() }
+    pub fn is_empty(&self) -> bool { self.data.is_empty() }
+}

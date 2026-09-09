@@ -1,0 +1,9 @@
+package m
+
+type Counter struct {
+	n   int
+	tag string
+}
+
+func (c *Counter) Inc() { c.n++ }
+func (c *Counter) Get() int { return c.n }
