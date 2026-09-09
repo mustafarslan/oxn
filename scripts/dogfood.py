@@ -219,7 +219,7 @@ class Session:
     host: str = ""
 
 
-def repair(targets: list[Target], session: Session) -> list[Attempt]:
+def repair(targets: list[Target], session: Session, where: Bed = SELF) -> list[Attempt]:
     """Attempt to repair each target, verifying every candidate before judging it."""
     actor, judge = _clients(session)
     if not session.dry_run:
@@ -229,7 +229,7 @@ def repair(targets: list[Target], session: Session) -> list[Attempt]:
     attempts: list[Attempt] = []
     for target in targets:
         say(f"\n{BOLD}{target.leaf}{RESET} {DIM}{target.path} scores {target.score:.0f}{RESET}")
-        attempts.extend(_repair_one(target, session, actor, judge))
+        attempts.extend(_repair_one(target, session, actor, judge, where))
 
     if session.dry_run:
         # The fake client emits fixed junk, so these rows would be indistinguishable from
@@ -256,7 +256,9 @@ def _clients(session: Session) -> tuple[Any, Any]:
     )
 
 
-def _repair_one(target: Target, session: Session, actor: Any, judge: Any) -> list[Attempt]:
+def _repair_one(
+    target: Target, session: Session, actor: Any, judge: Any, where: Bed = SELF
+) -> list[Attempt]:
     """Every attempt at one target, stopping at acceptance or at the retry budget.
 
     The sandbox is destroyed however this exits: a run that leaves 100 MB of throwaway
@@ -269,7 +271,7 @@ def _repair_one(target: Target, session: Session, actor: Any, judge: Any) -> lis
         return []
 
     before = measure(None, target)
-    sandbox = Sandbox(target.leaf)
+    sandbox = Sandbox(target.leaf, root=where.root)
     attempts: list[Attempt] = []
     try:
         say(f"{DIM}  creating sandbox...{RESET}")
@@ -586,6 +588,7 @@ def main(argv: list[str] | None = None) -> int:
             judge_model=args.judge_model,
             host=args.host,
         ),
+        where,
     )
     return 0 if any(a.accepted for a in attempts) or args.dry_run else 1
 

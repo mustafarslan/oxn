@@ -64,17 +64,25 @@ def _skip(directory: str, names: list[str]) -> set[str]:
 
 
 class Sandbox:
-    """A throwaway copy of the repository. The working tree is never touched."""
+    """A throwaway copy of a repository. The working tree is never touched.
 
-    def __init__(self, name: str) -> None:
+    `root` is which repository. It defaulted to this one and was not a parameter at all,
+    which was invisible while `select_targets` also hardcoded `src/oxn` and would have become
+    a silent wrong answer the moment a second bed ran: targets measured in one tree, the
+    repair verified in another. Unreachable today -- every bed but `self` is refused -- and
+    "it can only fail to fire" is not a property worth relying on in a measurement.
+    """
+
+    def __init__(self, name: str, root: Path = ROOT) -> None:
         self.path = SCRATCH / name
+        self.root = root
         self.python = self.path / ".venv" / "bin" / "python"
 
     def create(self) -> None:
         if self.path.exists():
             shutil.rmtree(self.path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(ROOT, self.path, ignore=_skip)
+        shutil.copytree(self.root, self.path, ignore=_skip)
         subprocess.run(["uv", "venv", "-q", str(self.path / ".venv")], check=True)
         subprocess.run(
             ["uv", "pip", "install", "--python", str(self.python), "-q", "-e", f"{self.path}[dev]"],

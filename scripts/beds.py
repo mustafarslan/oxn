@@ -42,6 +42,12 @@ class Bed:
     sources: tuple[str, ...]
     #: Commands that must still pass after a repair. Empty means the bed cannot be run --
     #: see the module docstring; a bed that cannot verify cannot report.
+    #:
+    #: `scripts/gauntlet.py` does **not** read this yet: it builds a `uv` venv, installs
+    #: `-e .[dev]`, and runs this project's own pytest, ruff and mypy. Those happen to be
+    #: `self`'s commands, so the two agree today by coincidence rather than by wiring.
+    #: Filling this in for a second bed is therefore half the job -- the gauntlet has to
+    #: learn the bed's toolchain too -- and that is the honest content of `blocked_on`.
     verify: tuple[tuple[str, ...], ...] = ()
     why: str = ""
     #: Populated for a declared bed that has no verification yet, and printed when refused.

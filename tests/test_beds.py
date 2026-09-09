@@ -93,3 +93,19 @@ def test_the_manifest_pins_every_bed_that_needs_fetching(harness) -> None:
     }
     declared = {name for name, found in harness.BEDS.items() if found.corpus}
     assert declared == pinned, f"declared {sorted(declared)} vs pinned {sorted(pinned)}"
+
+
+def test_the_sandbox_copies_the_bed_and_not_always_this_repository(harness, tmp_path) -> None:
+    """The defect a second bed would have hit silently: measure one tree, verify another.
+
+    `Sandbox` copied `ROOT` unconditionally while `select_targets` also hardcoded `src/oxn`,
+    so the two agreed and nothing showed. Point the harness at a different bed and the
+    repair would have been graded against OXN's tests. It is unreachable today because every
+    other bed refuses -- and "it can only fail to fire" is not a property to rely on in
+    something whose output is a measurement.
+    """
+    elsewhere = tmp_path / "other-repo"
+    elsewhere.mkdir()
+    box = harness.Sandbox("probe", root=elsewhere)
+    assert box.root == elsewhere
+    assert harness.Sandbox("probe").root == harness.ROOT, "the default is still this repository"
