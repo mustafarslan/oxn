@@ -4,13 +4,22 @@
 P10 asks for the ceilings to stop being `judgement n=0`. The roadmap words that as fitting
 them to *corpus percentiles*, and the measurement below is the argument for not doing that.
 
-**A percentile of these distributions is not a ceiling.** Metric distributions over real code
-are dominated by trivial callables: the median cognitive complexity is 0 in all five corpora,
-and 92% of nest's 10,777 arrow functions score 0. So "the 95th percentile" is 2 in
-TypeScript and 9 in Go -- a gate that varies 4.5x by which repository was benchmarked and
-that would reject most ordinary functions in either. Fitting to it would make the ceilings a
-function of the corpus set, which moves whenever a corpus is re-pinned or a sixth language is
-added. That is the retrieval re-pin (`freeze_retrieval_corpus.py`) with a gate behind it.
+**An unweighted percentile of these distributions is not a ceiling.** Metric distributions
+over real code are dominated by trivial callables: the median cognitive complexity is 0 in all
+five corpora, and 92.8% of nest's 10,396 anonymous callables score 0. So "the 95th percentile"
+is 2 in TypeScript and 9 in Go, and would reject most ordinary functions in either.
+
+**LOC-weighted, the method is fine and it agrees with the ceilings we have.** Alves, Ypma &
+Visser (ICSM 2010), which `docs/metrics.md` section 10.3 cites for this, weight each entity by
+its own length so a 500-line function counts 500 times a one-line one. Weighted, cognitive 12
+sits at P79 (go) to P98 (java) -- inside that paper's p80/p90 high-risk band. This script does
+not emit the weighted view; `git log` for this file has the query, and ROADMAP's P10 amendment
+has the numbers. It is a corroboration, not the thing being frozen.
+
+**They are still not fitted to it, for a reason that is not statistical.** The weighted p90
+ranges 7 to 23 across these five repositories, so a fitted ceiling is a function of the corpus
+set and moves whenever a corpus is re-pinned or a sixth language is added. That is the
+retrieval re-pin (`freeze_retrieval_corpus.py`) with a gate behind it.
 
 **The exceedance rate is the statistic that survives.** "What fraction of real code does this
 ceiling reject" is *comparable* across corpora -- same units, same meaning -- and is the
@@ -18,7 +27,7 @@ number anyone arguing about a ceiling actually wants. It is not stable, and sayi
 be the same overclaim: `file_sloc` ranges 0% to 20.9%, and that spread is the finding rather
 than noise around it.
 
-**Two populations, because anonymous callables are not evenly distributed.** 71.8% of nest's
+**Two populations, because anonymous callables are not evenly distributed.** 69.3% of nest's
 callables are anonymous arrow functions and 0.1% of httpx's are lambdas -- a 700x difference
 in what the denominator is made of. Both rows are reported and both are needed:
 `all_callables` is what the gate actually rejects, since `config.CALLABLE_KINDS` gates
@@ -52,13 +61,18 @@ ROOT = Path(__file__).resolve().parent.parent
 OBSERVATIONS = ROOT / "benchmarks" / "ceiling-observations.json"
 CORPORA = ROOT / "benchmarks" / "corpora"
 
-#: The `use: threshold` corpora of `benchmarks/manifest.yaml`, one per supported language.
+#: The `use: threshold` corpora of `benchmarks/manifest.yaml`, as (corpus, language).
+#:
+#: Keyed by *corpus* rather than by language, though today there is one of each: the follow-up
+#: this measurement asks for is a **second** Rust and a second Python repository, to tell
+#: "Rust is written this way" apart from "ripgrep is written this way". Keying by language
+#: would have made that the schema change it should not be.
 BEDS: tuple[tuple[str, str], ...] = (
-    ("python", "python-httpx"),
-    ("go", "go-kit"),
-    ("rust", "rust-ripgrep"),
-    ("java", "java-spring-petclinic"),
-    ("typescript", "typescript-nest"),
+    ("python-httpx", "python"),
+    ("go-kit", "go"),
+    ("rust-ripgrep", "rust"),
+    ("java-spring-petclinic", "java"),
+    ("typescript-nest", "typescript"),
 )
 
 #: Mirrors `config.GATED_METRICS`: rule name -> (metric key, the kinds it is gated on).
@@ -121,7 +135,7 @@ def _distribution(values: list[float], ceiling: float) -> dict[str, object]:
 
 def measure(ceilings: dict[str, float]) -> dict[str, object]:
     """The whole table: every gated ceiling against every threshold corpus."""
-    missing = [name for _, name in BEDS if not (CORPORA / name / ".oxn/cache/graph.db").exists()]
+    missing = [name for name, _ in BEDS if not (CORPORA / name / ".oxn/cache/graph.db").exists()]
     if missing:
         raise SystemExit(
             f"no measured cache for {', '.join(missing)}. Run `oxn metrics . --json --limit 1`"
@@ -129,15 +143,15 @@ def measure(ceilings: dict[str, float]) -> dict[str, object]:
         )
     observed: dict[str, object] = {}
     for rule, metric_key, kinds in GATED:
-        per_language = {
-            language: _populations(
+        per_corpus = {
+            corpus: _populations(
                 CORPORA / corpus / ".oxn/cache/graph.db", metric_key, kinds, ceilings[rule]
             )
-            for language, corpus in BEDS
+            for corpus, _ in BEDS
         }
         observed[rule] = {
             "ceiling": ceilings[rule],
-            "corpora": {lang: found for lang, found in per_language.items() if found},
+            "corpora": {name: found for name, found in per_corpus.items() if found},
         }
     return observed
 
@@ -173,7 +187,7 @@ def _payload() -> dict[str, object]:
             "have median 0, so a p95 ceiling would be 2 in TypeScript and 9 in Go. Read "
             "`named` to compare languages and `all_callables` to see what the gate rejects."
         ),
-        "corpora": {language: corpus for language, corpus in BEDS},
+        "corpora": dict(BEDS),
         "observed": measure(ceilings),
     }
 

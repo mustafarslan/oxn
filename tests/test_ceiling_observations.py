@@ -105,8 +105,8 @@ def test_file_sloc_is_the_ceiling_the_measurement_argues_with(observed: dict[str
     fails if a second Rust corpus changes the picture, which is exactly when to look again.
     """
     exceedance = {
-        language: corpus["all_callables"]["exceedance"]
-        for language, corpus in observed["file_sloc"]["corpora"].items()
+        name: corpus["all_callables"]["exceedance"]
+        for name, corpus in observed["file_sloc"]["corpora"].items()
     }
-    assert exceedance["rust"] > 15.0, f"rust file_sloc exceedance moved to {exceedance['rust']}"
-    assert exceedance["go"] < 1.0, f"go file_sloc exceedance moved to {exceedance['go']}"
+    assert exceedance["rust-ripgrep"] > 15.0, f"ripgrep moved to {exceedance['rust-ripgrep']}"
+    assert exceedance["go-kit"] < 1.0, f"go-kit moved to {exceedance['go-kit']}"

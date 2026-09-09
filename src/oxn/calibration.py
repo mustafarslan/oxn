@@ -22,18 +22,34 @@ And it is worth being plain about the scale involved: fitting one or two scalars
 few dozen labels is a grid search, not machine learning. Calling it the latter would dress a
 lookup in borrowed authority.
 
-**The corpus-percentile route was measured, and set aside as a fitting target.** It was
-called "the stronger method for the ceilings" here until the distributions were in hand
-(`scripts/measure_ceilings.py`, `benchmarks/ceiling-observations.json`). They have median 0:
-71.8% of nest's callables are anonymous arrow functions and 92% of those score zero
-cognitive complexity, so the 95th percentile is **2 in TypeScript and 9 in Go**. A ceiling
-fitted there would reject most ordinary functions in either language and would move whenever
-a corpus was re-pinned or a sixth language added -- which is `freeze_retrieval_corpus.py`'s
-seventeen re-pins with a gate behind them.
+**The corpus-percentile route was measured. Which percentile matters more than it sounds.**
 
-What the corpora do answer is **exceedance**: the fraction of real code a ceiling rejects.
-That is recorded per parameter below. It did not move a single value, and saying so is the
-point -- the ceilings are still judgements, now judgements with a measured cost.
+*Unweighted*, over entities, it is unusable. These distributions have median 0: 69.3% of
+nest's callables are anonymous arrow functions and 92.8% of those score zero cognitive
+complexity, so the 95th percentile is **2 in TypeScript and 9 in Go**. A ceiling fitted
+there would reject most ordinary functions in either language.
+
+*LOC-weighted*, which is what `docs/metrics.md` section 10.3 Mode C actually cites -- Alves,
+Ypma & Visser, ICSM 2010, weighting each entity by its own length so a 500-line function
+counts 500 times a one-line one -- it is sound, and it **corroborates the ceilings already
+here**. `MAX_COGNITIVE_COMPLEXITY = 12` sits at P79 (go) to P98 (java) of the weighted mass,
+inside the p80/p90 band that paper proposes as its high-risk boundary; cyclomatic 10 at
+P86-P99, nesting 4 at P96-P100. This module claimed the percentile route was "the stronger
+method" before any of it was measured, and the first version of this amendment then
+overcorrected into refusing percentiles outright. Neither was right: the method is fine, the
+aggregation is what the trivial mass breaks.
+
+**They are still not fitted to it,** and that is a governance decision rather than a
+statistical one. A fitted ceiling is a function of which repositories were benchmarked --
+the weighted p90 of cognitive complexity ranges 7 to 23 across these five -- so it would
+move whenever a corpus was re-pinned or a sixth language added. That is
+`freeze_retrieval_corpus.py`'s seventeen re-pins with a gate behind them.
+
+What the corpora give the record below is **exceedance**: the fraction of real code a
+ceiling rejects, which is comparable across languages without an aggregation choice standing
+between the number and its meaning. It moved no value, and saying so is the point -- the
+ceilings are still judgements, now judgements with a measured cost and an independent
+method agreeing with them.
 """
 
 from __future__ import annotations
@@ -56,7 +72,8 @@ class Evidence(str, Enum):
     LITERATURE = "literature"
     #: Fitted to observations OXN itself collected, with the count recorded.
     MEASURED = "measured"
-    #: Derived from the distribution of a corpus, which is P10's target for the ceilings.
+    #: Fitted to the distribution of a corpus. No parameter is, and the ceilings are not
+    #: going to be: see the module docstring -- a fitted ceiling tracks the corpus set.
     CALIBRATED = "calibrated"
 
 
@@ -67,12 +84,15 @@ class Parameter:
     name: str
     value: float
     evidence: Evidence
-    #: How many observations OXN has of this parameter -- **not** how many it was fitted to.
-    #: `evidence` already carries that distinction, and conflating the two made P10's exit
-    #: criterion ("no gated threshold still labelled `judgement` with zero observations")
-    #: unsatisfiable except by fitting: a ceiling could not be *measured* without also being
-    #: *changed*. It can. A judgement with 9,880 observations behind its cost is still a
-    #: judgement, and `is_provisional` still says so.
+    #: Observations of this parameter's *cost at its current value*, in whatever unit
+    #: `fit_when` names -- **not** how many it was fitted to. `evidence` already carries that
+    #: distinction, and conflating the two made P10's exit criterion ("no gated threshold
+    #: still labelled `judgement` with zero observations") unsatisfiable except by fitting: a
+    #: ceiling could not be *measured* without also being *changed*. It can. A judgement with
+    #: 10,256 observations behind its cost is still a judgement, and `is_provisional` says so.
+    #:
+    #: Still zero where nobody has measured: `BM25_K1` and `BM25_B` have 153 labelled pairs
+    #: (P8) evaluated at their current values and are the obvious next entries to fill.
     observations: int
     #: Where the number came from, in one line.
     provenance: str
@@ -101,24 +121,26 @@ class Parameter:
 #:
 #: `observations` is the **named** callable population across the five `use: threshold`
 #: corpora of `benchmarks/manifest.yaml` -- httpx, go-kit, ripgrep, petclinic, nest -- which
-#: is 9,880 functions and methods, or 2,389 files for `MAX_FILE_SLOC`. Anonymous callables
+#: is 10,256 functions and methods, or 2,389 files for `MAX_FILE_SLOC`. Anonymous callables
 #: are excluded from the comparison because their density is not comparable (0.1% of httpx's
-#: callables, 71.8% of nest's); `benchmarks/ceiling-observations.json` carries both rows, and
+#: callables, 69.3% of nest's); `benchmarks/ceiling-observations.json` carries both rows, and
 #: they disagree where it matters: TypeScript's `function_sloc` exceedance is 3.17% over all
-#: callables and 0.71% over named ones, so nest's long callables are inline callbacks.
+#: callables and 0.67% over named ones, so nest's long callables are inline callbacks.
 _CEILINGS: tuple[Parameter, ...] = (
     Parameter(
         name="MAX_COGNITIVE_COMPLEXITY",
         value=float(thresholds.MAX_COGNITIVE_COMPLEXITY),
         evidence=Evidence.JUDGEMENT,
-        observations=9880,
+        observations=10256,
         provenance=(
             "12, between idea.md's proposed 8 and SonarSource's default 15. Neither endpoint "
             "is measured either: 15 is a product default, not a finding. Measured cost: it "
             "rejects 0.49% (java) to 3.32% (go) of named callables across the five corpora."
         ),
         fit_when=(
-            "not a percentile -- p95 of these distributions is 2 in TypeScript and 9 in Go. "
+            "not an unweighted percentile -- p95 of these distributions is 2 in TypeScript and 9 "
+            "in Go. LOC-weighted (Alves et al.) it already sits at P79-P98, so the "
+            "corpora corroborate 12 rather than propose a replacement for it. "
             "What would move it is a labelled set of functions where the gate was wrong, "
             "which `benchmarks/dogfood-log.jsonl` collects one repair at a time"
         ),
@@ -127,10 +149,10 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_CYCLOMATIC_COMPLEXITY",
         value=float(thresholds.MAX_CYCLOMATIC_COMPLEXITY),
         evidence=Evidence.LITERATURE,
-        observations=9880,
+        observations=10256,
         provenance=(
             "McCabe (1976); NIST SP 500-235 discusses 10 and 15 as the usual band. Measured "
-            "cost: rejects 0.47% (typescript) to 2.03% (python) of named callables."
+            "cost: rejects 0.48% (typescript) to 2.03% (python) of named callables."
         ),
         fit_when="a published threshold with a corpus behind it, rather than a band",
     ),
@@ -138,7 +160,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_PARAMETERS",
         value=float(thresholds.MAX_PARAMETERS),
         evidence=Evidence.LITERATURE,
-        observations=9880,
+        observations=10256,
         provenance=(
             "Fowler, Refactoring (Long Parameter List); the 4-5 band from Clean Code. "
             "Measured cost: rejects 0.00% (java) to 3.62% (python) of named callables -- the "
@@ -150,7 +172,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_NESTING_DEPTH",
         value=float(thresholds.MAX_NESTING_DEPTH),
         evidence=Evidence.JUDGEMENT,
-        observations=9880,
+        observations=10256,
         provenance=(
             "conventional; nesting is what cognitive complexity already charges for. Measured "
             "cost: rejects 0.00% (go) to 0.96% (rust) of named callables -- the least "
@@ -162,7 +184,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_FUNCTION_SLOC",
         value=float(thresholds.MAX_FUNCTION_SLOC),
         evidence=Evidence.JUDGEMENT,
-        observations=9880,
+        observations=10256,
         provenance=(
             "conventional rather than derived. Measured cost: rejects 0.49% (java) to 2.70% "
             "(go) of named callables."
@@ -320,10 +342,12 @@ def summary() -> dict[str, object]:
         "provisional": sum(1 for parameter in values if parameter.is_provisional),
         "total": len(values),
         "note": (
-            "No parameter here is corpus-calibrated, and the ceilings are not going to be: "
-            "P10 measured the corpus distributions and they have median 0, so a percentile "
-            "is not a ceiling. What the corpora give is exceedance -- the fraction of real "
-            "code each ceiling rejects -- which is recorded in every ceiling's provenance "
-            "and changed no value. The anti-gaming parameters still want dogfood labels."
+            "No parameter here is corpus-calibrated, and the ceilings are not going to be. "
+            "P10 measured the five threshold corpora: LOC-weighted (Alves et al.) the "
+            "ceilings already sit at P79-P100, so the distributions corroborate them, but "
+            "the weighted p90 ranges 7 to 23 across five repositories -- a fitted gate "
+            "tracks the corpus set. What the corpora give instead is exceedance, the "
+            "fraction of real code each ceiling rejects, recorded in every provenance and "
+            "changing no value. The anti-gaming parameters still want dogfood labels."
         ),
     }

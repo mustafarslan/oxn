@@ -1198,6 +1198,17 @@ rating via calibrated boundaries. Report the profile alongside the rating so the
   a research-track deliverable, and publishing OXN's per-language percentile tables would be a
   genuinely useful open artifact.
 
+  **Measured, 2026-09-09** (`scripts/measure_ceilings.py`, five `use: threshold` corpora). The LOC
+  weighting is load-bearing and not a detail: *un*weighted, these distributions have median 0 —
+  69.3% of nest's callables are anonymous arrow functions and 92.8% of those score 0 — so an
+  unweighted p95 for cognitive complexity is 2 in TypeScript against 9 in Go. Weighted as Alves
+  et al. specify, the boundaries are sane and OXN's existing ceilings already sit on them:
+  cognitive 12 at P79 (go-kit) to P98 (petclinic), cyclomatic 10 at P86–P99, nesting 4 at
+  P96–P100. The ceilings were **not** refitted — the weighted p90 for cognitive complexity ranges
+  7 to 23 across the five, so a fitted gate tracks whichever repositories were benchmarked. What
+  the corpora contribute instead is each ceiling's *exceedance*, recorded in `oxn.calibration` and
+  frozen in `benchmarks/ceiling-observations.json`. See ROADMAP P10.
+
 ### 10.4 Composite health score
 An explicit weighted sum of per-dimension ratings — `{complexity, cohesion, coupling, architecture,
 history}` — with weights in `oxn.yaml`, **always reported alongside its sub-ratings**. No magic
