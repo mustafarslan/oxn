@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from oxn.profiles.base import decorator_texts, receiver_type
 from oxn.resolve.importers import IMPORT_READERS
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -250,11 +251,12 @@ def _bind_parameters(
 ) -> str | None:
     """Declare a callable's parameters; return its receiver name if it is a method.
 
-    Two questions, and `_receiver_name` answers the second: which parameters this callable
-    binds, and what the receiver is called. They meet only at `takes_receiver`, because a
-    language that passes no receiver must not have parameter zero bound as one.
+    Two questions: which names this callable binds, and what its receiver is called.
+    `_receiver_name` answers the second, and the answer feeds back here -- parameter zero is
+    labelled a receiver only when it *is* the one, which is what stops Java's
+    `save(String k)` from making `k` one.
     """
-    takes_receiver = _passes_receiver(spec, class_name)
+    receiver = _receiver_name(node, profile, spec, class_name)
     names = profile.parameter_names(node)
     for index, name in enumerate(names):
         if not name:
@@ -262,38 +264,84 @@ def _bind_parameters(
         scope.declare(
             Binding(
                 name,
-                "receiver" if (index == 0 and takes_receiver) else "parameter",
+                "receiver" if (index == 0 and name == receiver) else "parameter",
                 node.start_point[0] + 1,
                 node.start_byte,
                 node.end_byte,
             )
         )
-    return _receiver_name(spec, names, class_name)
+    if receiver and receiver not in names:
+        # Go writes its receiver outside the parameter list and Rust writes `&self`, so
+        # neither reaches `parameter_names`. Unbound, `s` in `s.db.Write(k)` reads as a
+        # free name rather than as this method's receiver.
+        scope.declare(
+            Binding(receiver, "receiver", node.start_point[0] + 1, node.start_byte, node.end_byte)
+        )
+    return receiver
 
 
-def _passes_receiver(spec: ScopeSpec, class_name: str | None) -> bool:
-    """True when this language hands a method its receiver as parameter zero.
+def _receiver_name(
+    node: Node, profile: LanguageProfile, spec: ScopeSpec, class_name: str | None
+) -> str | None:
+    """What this callable's receiver is called, or `None` when it has none.
 
-    False for a plain function, and false for Java, TypeScript and JavaScript, where the
-    receiver is implicit -- and there it matters twice over, because binding parameter zero
-    as a receiver is what made Java's `save(String k)` treat `k` as one.
+    Four languages, four mechanisms, and the reason this dispatches on mechanism rather than
+    on "is it inside a class" is that two of them are not:
+
+    * **A declared receiver** (Go): `func (s *Service) Save(...)` is a *top-level*
+      declaration, so there is no enclosing class scope to ask. The receiver field's presence
+      is the whole test, and the name comes from it.
+    * **A receiver among the parameters** (Rust): `fn save(&self)` is a method and
+      `fn new(cfg: Config)` is an associated function, sitting side by side in one `impl`.
+      The `self_parameter` node tells them apart; nothing else does, and treating parameter
+      zero as a receiver would have made `cfg` one.
+    * **An implicit receiver** (Java, TypeScript, JavaScript): the language passes none, so
+      the spec names it, and it applies to anything inside a class.
+    * **Parameter zero** (Python): read from the source, because assuming ``self`` breaks
+      every codebase spelling it otherwise -- less ``@staticmethod``, which is in a class and
+      has no receiver at all. Without that exclusion `parse(raw)` made `raw` the receiver and
+      every `raw.strip()` became a field access on the class.
     """
-    return bool(class_name) and not spec.implicit_receiver
-
-
-def _receiver_name(spec: ScopeSpec, names: list[str], class_name: str | None) -> str | None:
-    """What a method's receiver is called here, or `None` when this is not a method.
-
-    Where the language passes it, the receiver is the *actual* first parameter read from the
-    source: assuming ``self`` silently breaks every codebase that spells it differently.
-    Where it does not, ``spec`` names the implicit one, and naming it is what lets `this.db`
-    be found at all.
-    """
-    if not class_name:
+    declared = receiver_type(node, profile.receiver_field)
+    if declared is not None:
+        return _declared_receiver_name(node, profile.receiver_field)
+    if spec.self_parameter_kind:
+        return "self" if _has_self_parameter(node, profile, spec) else None
+    if not class_name or _is_static(node, profile, spec):
         return None
     if spec.implicit_receiver:
         return spec.implicit_receiver
+    names = profile.parameter_names(node)
     return names[0] if names and spec.style == "python" else None
+
+
+def _declared_receiver_name(node: Node, field: str) -> str | None:
+    """The receiver's *variable* name in `func (s *Service) Save(...)` -- the `s`.
+
+    `receiver_type` answers the other half, the `Service`. A receiver may be written with no
+    name at all (`func (*Service) Save()`), and then there is nothing for an access to be
+    attributed to, so it reports none rather than inventing one.
+    """
+    receiver = node.child_by_field_name(field)
+    written = receiver.text.decode("utf-8", "replace") if receiver and receiver.text else ""
+    parts = written.strip("()").strip().split()
+    return parts[0] if len(parts) > 1 else None
+
+
+def _has_self_parameter(node: Node, profile: LanguageProfile, spec: ScopeSpec) -> bool:
+    """True when the parameter list carries the language's own receiver node."""
+    parameters = node.child_by_field_name(profile.params_field)
+    if parameters is None:
+        return False
+    return any(child.type == spec.self_parameter_kind for child in parameters.named_children)
+
+
+def _is_static(node: Node, profile: LanguageProfile, spec: ScopeSpec) -> bool:
+    """True when a decorator says this callable takes no receiver."""
+    if not spec.static_markers:
+        return False
+    written = decorator_texts(node, profile.wrappers)
+    return any(marker in text for text in written for marker in spec.static_markers)
 
 
 def _bind_from(

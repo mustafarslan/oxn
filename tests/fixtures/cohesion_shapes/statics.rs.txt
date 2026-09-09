@@ -1,0 +1,6 @@
+pub struct Holder { db: Db }
+
+impl Holder {
+    pub fn new(cfg: Config) -> Holder { Holder { db: cfg.db } }
+    pub fn save(&self, k: &str) { self.db.write(k); }
+}

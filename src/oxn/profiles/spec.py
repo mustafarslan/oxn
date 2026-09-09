@@ -238,6 +238,13 @@ class ScopeSpec:
     #: every Java class read as maximally incohesive -- LCOM\* 1.25 on a class with two
     #: clean halves, stamped EXACT.
     implicit_receiver: str = ""
+    #: Node kind for a receiver that is written among the parameters but is not one --
+    #: Rust's ``&self``. Where it is set, a callable is a method exactly when it has such a
+    #: node, which is what tells `fn save(&self)` from the associated `fn new(cfg)`.
+    self_parameter_kind: str = ""
+    #: Decorators that mean "no receiver despite sitting in a class" -- Python's
+    #: ``@staticmethod``. Matched as substrings, since a decorator may be written qualified.
+    static_markers: frozenset[str] = frozenset()
     #: Node kind for attribute access, used to find ``self.x`` field writes.
     attribute_kind: str = "attribute"
     #: Field on the attribute node holding the receiver.

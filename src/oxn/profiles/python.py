@@ -157,6 +157,7 @@ PYTHON_METRICS = MetricSpec(
         call_kinds=frozenset({"call"}),
     ),
     scopes=ScopeSpec(
+        static_markers=frozenset({"staticmethod"}),
         style="python",
         scope_kinds={
             "module": "module",

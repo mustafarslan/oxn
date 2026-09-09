@@ -127,6 +127,7 @@ RUST_METRICS = MetricSpec(
         call_kinds=frozenset({"call_expression"}),
     ),
     scopes=ScopeSpec(
+        self_parameter_kind="self_parameter",
         style="rust",
         scope_kinds={
             "source_file": "module",
@@ -158,6 +159,7 @@ RUST = LanguageProfile(
     extensions=frozenset({".rs"}),
     version=1,
     function_like=frozenset({"function_item", "function_signature_item", "closure_expression"}),
+    implements_field="type",
     class_like=frozenset({"struct_item", "enum_item", "trait_item", "union_item", "impl_item"}),
     wrappers={},
     name_field="name",

@@ -1,31 +1,35 @@
-"""One class, five languages, and the numbers that must agree.
+r"""One class, five languages, and the numbers that must agree.
 
 Cohesion is a property of a design, not of a syntax. The same two-collaborator service --
 a `db` half and a `cache` half, four methods, no cross-talk -- is written here in Python,
 Java, TypeScript, Go and Rust, and every LCOM variant must read the same on all five. It is
 the cheapest possible check and it was not being made, so four of the five were wrong:
 
-===========  ===============  ==============  ==========================================
-language     LCOM3/4 before   LCOM3/4 after   what was broken
-===========  ===============  ==============  ==========================================
-Python       2                2               nothing
-Java         4                2               no receiver at all, so `this.db` matched
-                                              nothing and every method was a singleton
-TypeScript   4                2               `class_body` opens a second, *nameless*
-                                              class scope, which blanked the class name
-                                              and left every method receiverless
-Go           --               --              methods are top-level with a receiver and
-                                              are never joined to their struct
-Rust         --               --              methods live in `impl` blocks, which are
-                                              never joined to the type they implement
-===========  ===============  ==============  ==========================================
+===========  ======  ====================================================================
+language     before  what was broken
+===========  ======  ====================================================================
+Python            2  nothing
+Java              4  no receiver at all, so `this.db` matched nothing and every method was
+                     its own component
+TypeScript        4  `class_body` opens a second, *nameless* class scope, which blanked
+                     the enclosing class name and left every method receiverless
+Go            NOM 0  methods are top-level declarations carrying a receiver, and were
+                     never joined to the struct they belong to
+Rust          NOM 0  methods live in `impl` blocks, which carry no name of their own and
+                     were never joined to the type they implement
+===========  ======  ====================================================================
 
-Java and TypeScript reported LCOM\\* 1.25 -- above 1, which is OXN's own signal for "the
-fields are never touched" (`test_tier3.py`) -- and stamped the answer EXACT. Go and Rust
-found the type but attached no methods to it, so every class read NOM 0.
+All five now read 2. Java and TypeScript had been reporting LCOM\* 1.25 -- above 1, which is
+OXN's own signal for "the fields are never touched" (`test_tier3.py`) -- and stamping the
+answer EXACT. Go and Rust found the type, attached no methods to it, and a class with no
+methods reports a perfectly cohesive 0, so nothing looked wrong.
 
-The Go and Rust halves are xfail rather than deleted: the defect is real, the fixtures are
-correct, and a passing xfail is the signal that the join has landed.
+LCOM\* is asserted only where the fixtures share a denominator. Go and Rust have no
+constructor, so they carry four methods against the others' five, and Henderson-Sellers
+normalises by that count: 0.667 against 0.5 is the same design, correctly reported.
+
+`statics` covers the other half of the receiver question -- the callables that sit in a class
+and have no receiver at all.
 """
 
 from __future__ import annotations
@@ -42,42 +46,46 @@ EXPECTED_COMPONENTS = 2
 EXPECTED_LCOM1 = 4
 EXPECTED_LCOM_STAR = 0.5
 
-WORKING = ("python", "java", "typescript")
-#: Their methods are declared outside the type -- Go by receiver, Rust by `impl` block --
-#: and `build_class_models` looks only at a class body.
-NOT_YET_JOINED = ("go", "rust")
+ALL = ("python", "java", "typescript", "go", "rust")
+#: The three whose fixtures carry a constructor, so LCOM* shares a denominator.
+WITH_CONSTRUCTOR = ("python", "java", "typescript")
 
 _SUFFIX = {"python": "py", "java": "java", "typescript": "ts", "go": "go", "rust": "rs"}
 
 
-def _cohesion(language: str):
-    """Every LCOM variant for the one `Service` class in that language's fixture."""
+def _model(language: str, stem: str = "service"):
+    """The `ClassModel` for the one class in that language's fixture."""
     from oxn.languages import get_parser
-    from oxn.metrics.cohesion import cohesion
     from oxn.profiles import get_profile
     from oxn.resolve.members import build_class_models
     from oxn.resolve.scopes import build_scopes
 
     profile = get_profile(language)
-    data = (FIXTURES / f"service.{_SUFFIX[language]}.txt").read_bytes()
+    data = (FIXTURES / f"{stem}.{_SUFFIX[language]}.txt").read_bytes()
     tree = get_parser(language).parse(data)
-    assert not tree.root_node.has_error, f"the {language} fixture does not parse"
-    models = build_class_models(tree.root_node, profile, build_scopes(tree.root_node, profile))
+    assert not tree.root_node.has_error, f"the {language} {stem} fixture does not parse"
+    return build_class_models(tree.root_node, profile, build_scopes(tree.root_node, profile))
+
+
+def _cohesion(language: str):
+    """Every LCOM variant for the one `Service` class in that language's fixture."""
+    from oxn.metrics.cohesion import cohesion
+
+    models = _model(language)
     assert "Service" in models, f"{language}: no class named Service was found at all"
     return cohesion(models["Service"])
 
 
-@pytest.mark.parametrize("language", WORKING)
+@pytest.mark.parametrize("language", ALL)
 def test_the_same_design_measures_the_same_in_every_language(language: str) -> None:
     """The whole point. A number that moves with the syntax is not measuring the design."""
     measured = _cohesion(language)
     assert measured.lcom3 == EXPECTED_COMPONENTS, f"{language}: lcom3 {measured.lcom3}"
     assert measured.lcom4 == EXPECTED_COMPONENTS, f"{language}: lcom4 {measured.lcom4}"
     assert measured.lcom1 == EXPECTED_LCOM1, f"{language}: lcom1 {measured.lcom1}"
-    assert measured.lcom_star == pytest.approx(EXPECTED_LCOM_STAR), f"{language}: lcom*"
 
 
-@pytest.mark.parametrize("language", WORKING)
+@pytest.mark.parametrize("language", ALL)
 def test_the_fields_are_actually_reached(language: str) -> None:
     """The specific regression, stated as the thing that was false rather than as a total.
 
@@ -90,8 +98,52 @@ def test_the_fields_are_actually_reached(language: str) -> None:
     )
 
 
-@pytest.mark.xfail(reason="methods are declared outside the type and are not joined to it")
-@pytest.mark.parametrize("language", NOT_YET_JOINED)
-def test_go_and_rust_methods_reach_their_type(language: str) -> None:
-    """Known broken, and stated rather than skipped, so a fix announces itself."""
-    assert _cohesion(language).lcom4 == EXPECTED_COMPONENTS
+@pytest.mark.parametrize("language", ALL)
+def test_every_method_reaches_its_type(language: str) -> None:
+    """Go declares methods beside the struct and Rust inside `impl` blocks. Both must arrive.
+
+    Stated as a count rather than through LCOM, because a class with no methods reports a
+    perfectly cohesive 0 -- which is how these two read as fine while measuring nothing.
+    """
+    measured = _cohesion(language)
+    expected = 5 if language in WITH_CONSTRUCTOR else 4
+    assert measured.method_count == expected, f"{language}: {measured.method_count} methods"
+
+
+@pytest.mark.parametrize("language", WITH_CONSTRUCTOR)
+def test_lcom_star_agrees_where_the_method_count_does(language: str) -> None:
+    """The normalised variant, held only across fixtures sharing a denominator."""
+    assert _cohesion(language).lcom_star == pytest.approx(EXPECTED_LCOM_STAR)
+
+
+def test_a_python_static_method_has_no_receiver() -> None:
+    """`@staticmethod` sits in a class and takes no receiver, and the binder must agree.
+
+    Without the exclusion, parameter zero of `parse(raw)` was bound as the receiver and
+    every `raw.strip()` was recorded as a field access on the class. `@classmethod` is the
+    control: it *does* take one, spelled `cls`, and must keep it.
+    """
+    holder = _model("python", "statics")["Holder"]
+    assert holder.methods["parse"].receiver == "", "a static method has no receiver"
+    assert holder.methods["parse"].touches == set(), "`raw` is a parameter, not a field"
+    assert holder.methods["of"].receiver == "cls", "a class method's receiver is the class"
+    assert holder.methods["save"].receiver == "self"
+
+
+def test_a_rust_associated_function_is_not_a_method() -> None:
+    """`fn new(cfg: Config)` and `fn save(&self)` sit in one `impl`, and only one is a method.
+
+    The `self_parameter` node is the only thing that separates them. Reading parameter zero
+    instead would have made `cfg` the receiver, and every `cfg.x` a field of `Holder`.
+    """
+    holder = _model("rust", "statics")["Holder"]
+    assert holder.methods["new"].receiver == "", "an associated function has no receiver"
+    assert holder.methods["save"].receiver == "self"
+    assert holder.methods["save"].touches == {"db"}
+
+
+def test_a_go_method_binds_the_receiver_it_declares() -> None:
+    """Go writes the receiver outside the parameter list, so it reaches no parameter scan."""
+    service = _model("go")["Service"]
+    assert {access.receiver for access in service.methods.values()} == {"s"}
+    assert service.methods["Save"].touches == {"db"}

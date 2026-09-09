@@ -946,7 +946,9 @@ it ships early** — see the roadmap phase ordering.
 **CST recipe — field access, the crux.**
 - **Python:** `attribute` node whose `object` is an `identifier` equal to the method's **actual first
   parameter name** — read it from the CST, never hardcode `"self"`. Skip `@staticmethod`; for
-  `@classmethod` the receiver is the class. The field set is the union of `self.x = …` assignments
+  `@classmethod` the receiver is the class. *Implemented*, `ScopeSpec.static_markers`; the
+  `@staticmethod` exclusion is held by `test_a_python_static_method_has_no_receiver`, and without
+  it `parse(raw)` made `raw` the receiver and every `raw.strip()` a field access on the class. The field set is the union of `self.x = …` assignments
   across all methods (especially `__init__`), class-level assignments, `__slots__`, and
   dataclass/annotation fields.
 - **TS/JS:** `member_expression` with `object = this`; `#private` fields; and TS constructor parameter
@@ -956,8 +958,17 @@ it ships early** — see the roadmap phase ordering.
   simply wrong.
 - **Go:** methods are `method_declaration` with a receiver; the "class" is the receiver's named type
   (**impl spread across files → needs L1**); field access is `selector_expression` on the receiver.
+  The receiver is written outside the parameter list, so it reaches no parameter scan and is read
+  from the `receiver` field — both its type (`receiver_type`) and its variable name.
 - **Rust:** the "class" is a type plus **all its `impl` blocks**, possibly in several files (L1);
-  field access is `field_expression` on `self`.
+  field access is `field_expression` on `self`. `&self` is a `self_parameter` node rather than a
+  parameter, and its presence is the only thing separating a method from an associated function:
+  `fn save(&self)` and `fn new(cfg: Config)` sit side by side in one `impl`.
+
+Both are joined **within a file** today; a type whose methods are declared in a sibling file keeps
+only the ones written beside it. `LanguageProfile.implements_field` names the type an `impl` block
+belongs to, and generic arguments are dropped so `impl<'b, R> LineBufferReader<'b, R>` and `struct
+LineBufferReader` are one type rather than two models with eight methods and none.
 
 **What breaks without resolution, precisely:**
 1. **Inherited fields are invisible** → a subclass touching only inherited state looks maximally

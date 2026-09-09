@@ -28,7 +28,7 @@ computed under the old tables.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Container, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -88,6 +88,10 @@ class LanguageProfile:
     #: any class body. Go alone needs this: `func (c *Counter) Inc()` is a top-level
     #: declaration, so containment cannot say it belongs to `Counter` and the receiver must.
     receiver_field: str = ""
+    #: Field naming the type a body implements, where the members live apart from the type:
+    #: Rust's ``impl Service { ... }``. Such a node carries no name of its own, so without
+    #: this it is skipped and the type keeps none of its methods.
+    implements_field: str = ""
     #: Names that make a method's *first* parameter its receiver, where the grammar gives
     #: the receiver no node kind of its own. Rust has `self_parameter` and needs none of
     #: this; Python spells the receiver as an ordinary identifier, so without these a
@@ -224,6 +228,28 @@ def receiver_type(node: Node, field: str) -> str | None:
     written = receiver.text.decode("utf-8", "replace") if receiver and receiver.text else ""
     parts = written.strip("()").strip().split()
     return parts[-1].lstrip("*").split("[")[0] or None if parts else None
+
+
+def decorator_texts(node: Node, wrappers: Container[str]) -> tuple[str, ...]:
+    """The decorators attached to a definition, exactly as written.
+
+    Decorators hang off the *wrapper* node rather than the definition itself, so the
+    profile's `wrappers` set is the entry point rather than the node. Text is returned
+    unparsed because callers match loosely: `@property`, `@x.setter` and
+    `@functools.cached_property` are all the property question, and pretending otherwise
+    would need a decorator resolver this does not have.
+
+    Module-level for the same reason as `receiver_type`, and shared because both the scope
+    binder and the member model ask this question.
+    """
+    parent = node.parent
+    if parent is None or parent.type not in wrappers:
+        return ()
+    return tuple(
+        child.text.decode("utf-8", "replace")
+        for child in parent.named_children
+        if child.type == "decorator" and child.text
+    )
 
 
 _BINDING_FIELDS = ("name", "left", "pattern")

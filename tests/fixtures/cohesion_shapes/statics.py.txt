@@ -1,0 +1,15 @@
+class Holder:
+    def __init__(self, db):
+        self._db = db
+
+    @staticmethod
+    def parse(raw):
+        raw.strip()
+        return raw
+
+    @classmethod
+    def of(cls, db):
+        return cls(db)
+
+    def save(self, k):
+        self._db.write(k)

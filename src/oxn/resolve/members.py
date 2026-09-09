@@ -1,9 +1,14 @@
 """Class member access: which method touches which field, and which calls which.
 
-This is the substrate every cohesion metric reads. Getting it right depends on one thing
-the scope resolver already established: **the receiver is whatever the first parameter is
-actually called**, not an assumed ``self``. A codebase spelling it ``cls``, ``this`` or
-``me`` would otherwise report every class as maximally incohesive.
+This is the substrate every cohesion metric reads, and it rests on the scope resolver
+answering two questions per language. **What is the receiver called** -- read from the
+source where the language passes one, since a codebase spelling it ``cls`` or ``me`` would
+otherwise report every class as maximally incohesive, and named by the profile where the
+language passes none, as Java and TypeScript do with ``this``. And **where does a class keep
+its methods** -- inside itself in Python, Java and TypeScript; beside itself in Go, whose
+methods are top-level declarations carrying a receiver; across any number of ``impl`` blocks
+in Rust. A class here is everything that declares it, which is why `_ClassParts` collects
+before it builds.
 
 What cannot be recovered here, and is counted rather than guessed at:
 
@@ -20,6 +25,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
+from oxn.profiles.base import receiver_type
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Iterator
@@ -79,32 +86,55 @@ class ClassModel:
         ]
 
 
+@dataclass
+class _ClassParts:
+    """Every node in a file that contributes to one class.
+
+    Python, Java and TypeScript put a class in a single declaration, and for them this holds
+    exactly one. Go and Rust do not: Go declares the struct and each of its methods as
+    separate top-level declarations, and Rust splits a type across a ``struct`` and any
+    number of ``impl`` blocks. Collecting the parts before building the model is what lets a
+    method see its siblings regardless of which part it was written in -- without it, `Save`
+    could not tell a call to `s.Load` from a field access.
+    """
+
+    #: Nodes declaring the type itself: the class, the struct, each `impl` block.
+    declarations: list[Node] = field(default_factory=list)
+    #: Methods declared outside all of them -- Go's `func (s *Service) Save(...)`.
+    external: list[Node] = field(default_factory=list)
+
+
 def build_class_models(
     root: Node, profile: LanguageProfile, scopes: ScopeTree
 ) -> dict[str, ClassModel]:
     """Extract the member-access model for every class in a file."""
     spec = profile.metrics.scopes
+    parts: dict[str, _ClassParts] = {}
+    for class_node, class_name in _iter_classes(root, profile):
+        parts.setdefault(class_name, _ClassParts()).declarations.append(class_node)
+    for type_name, method_node in _iter_declared_methods(root, profile):
+        parts.setdefault(type_name, _ClassParts()).external.append(method_node)
     return {
-        class_name: _one_class(class_node, class_name, profile, scopes, spec)
-        for class_node, class_name in _iter_classes(root, profile)
+        class_name: _one_class(class_name, part, profile, scopes, spec)
+        for class_name, part in parts.items()
     }
 
 
 def _one_class(
-    class_node: Node,
     class_name: str,
+    parts: _ClassParts,
     profile: LanguageProfile,
     scopes: ScopeTree,
     spec: ScopeSpec,
 ) -> ClassModel:
     """One class: what it declares, what its methods touch, and what it inherits."""
-    model = ClassModel(name=class_name, bases=_base_names(class_node, profile))
-    body = class_node.child_by_field_name(profile.body_field)
-    if body is None:
-        return model
+    model = ClassModel(name=class_name, bases=_bases_of(parts, profile))
+    for declaration in parts.declarations:
+        body = _class_body(declaration, profile)
+        if body is not None:
+            model.fields |= _declared_fields(body, profile, spec)
 
-    model.fields |= _declared_fields(body, profile, spec)
-    method_nodes = list(_iter_methods(body, profile))
+    method_nodes = _methods_of(parts, profile)
     method_names = {name for _, name in method_nodes}
 
     context = _Members(profile, scopes, spec, method_names)
@@ -115,6 +145,61 @@ def _one_class(
 
     _settle_fields(model, method_names)
     return model
+
+
+def _bases_of(parts: _ClassParts, profile: LanguageProfile) -> tuple[str, ...]:
+    """Supertypes named by any part, in order, without repeats."""
+    names: list[str] = []
+    for declaration in parts.declarations:
+        names.extend(name for name in _base_names(declaration, profile) if name not in names)
+    return tuple(names)
+
+
+def _methods_of(parts: _ClassParts, profile: LanguageProfile) -> list[tuple[Node, str]]:
+    """Every method of the class: those inside its parts, and those declared beside them."""
+    found: list[tuple[Node, str]] = []
+    for declaration in parts.declarations:
+        body = _class_body(declaration, profile)
+        if body is not None:
+            found.extend(_iter_methods(body, profile))
+    found.extend((node, profile.entity_name(node) or "") for node in parts.external)
+    return [(node, name) for node, name in found if name]
+
+
+#: Fields a definition may hang its members from when it has no body field. Go writes
+#: `type Service struct { ... }` as a `type_spec` whose `type` child holds the fields, so
+#: reading `body` alone found nothing and every Go struct modelled as empty.
+_BODY_HOLDER_FIELDS = ("type",)
+
+
+def _class_body(class_node: Node, profile: LanguageProfile) -> Node | None:
+    """Where this declaration keeps its members, across the two shapes that exist."""
+    direct = class_node.child_by_field_name(profile.body_field)
+    if direct is not None:
+        return direct
+    for field_name in _BODY_HOLDER_FIELDS:
+        holder = class_node.child_by_field_name(field_name)
+        if holder is not None and holder.named_child_count:
+            return holder
+    return None
+
+
+def _iter_declared_methods(root: Node, profile: LanguageProfile) -> Iterator[tuple[str, Node]]:
+    """Methods that name their type in a receiver rather than sitting inside it.
+
+    Go's whole method syntax: `func (s *Service) Save(...)` is a top-level declaration and
+    `Service` never contains it. Languages without a receiver field yield nothing here, which
+    is why this needs no per-language branch.
+    """
+    if not profile.receiver_field:
+        return
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        stack.extend(node.named_children)
+        owner = receiver_type(node, profile.receiver_field)
+        if owner is not None and profile.unwrap(node).type in profile.function_like:
+            yield owner, node
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,9 +252,26 @@ def _iter_classes(root: Node, profile: LanguageProfile) -> Iterator[tuple[Node, 
         stack.extend(node.named_children)
         target = profile.unwrap(node)
         if target.type in profile.class_like:
-            name = profile.entity_name(target)
+            name = profile.entity_name(target) or _implemented_type(target, profile)
             if name:
                 yield target, name
+
+
+def _implemented_type(node: Node, profile: LanguageProfile) -> str:
+    """The type an unnamed member-holding block belongs to -- Rust's `impl Service`.
+
+    `impl Display for Service` names the type in the same field and the trait in another, so
+    both forms answer `Service`, and a type's inherent and trait methods land in one model.
+    That matches what the gate counts, which is the point: two answers to "how many methods
+    does this type have" is worse than either.
+    """
+    if not profile.implements_field:
+        return ""
+    named = node.child_by_field_name(profile.implements_field)
+    # `impl<'b, R: io::Read> LineBufferReader<'b, R>` names the same type as `struct
+    # LineBufferReader`, and keeping the arguments made them two models -- eight methods on
+    # one and none on the other. `receiver_type` drops Go's `[...]` for the same reason.
+    return _text(named).split("<")[0].strip() if named is not None else ""
 
 
 def _iter_methods(body: Node, profile: LanguageProfile) -> Iterator[tuple[Node, str]]:
@@ -186,7 +288,9 @@ def _iter_methods(body: Node, profile: LanguageProfile) -> Iterator[tuple[Node, 
 _HERITAGE_KINDS = frozenset({"class_heritage", "extends_clause", "super_interfaces"})
 
 #: Field declarations whose name lives in a `name` field rather than left of an assignment.
-_NAMED_FIELD_KINDS = frozenset({"public_field_definition", "property_signature"})
+_NAMED_FIELD_KINDS = frozenset(
+    {"public_field_definition", "property_signature", "field_declaration"}
+)
 
 
 def _base_names(class_node: Node, profile: LanguageProfile) -> tuple[str, ...]:
