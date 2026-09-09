@@ -205,3 +205,31 @@ def test_a_bed_finds_its_own_files_and_not_this_repositorys(harness, bed_name, s
         assert target.path.endswith(suffix), f"{bed_name} returned {target.path}"
         assert (found.root / target.path).is_file(), "the path must exist inside the bed"
         assert target.trail, "an explanation read from the wrong root would have raised"
+
+
+def test_two_arms_are_given_the_same_targets(harness) -> None:
+    """The property every number in the arm table rests on, and it did not hold.
+
+    `oxn metrics` ranks by value and leaves equal scores in the order it found them, so
+    taking the first `limit` rows returned a different target on consecutive runs -- three
+    calls to `plan --limit 1` gave `topological_order`, `_merge_split_classes` and
+    `tsconfig_aliases`, all scoring 12.
+
+    A pilot ran the control and the treatment on that, and its table read "none 100%,
+    hybrid 0%" because the two arms had been handed different problems. That is an artifact
+    presented as a finding, which is worse than no finding, and it is the reason the tie-break
+    is asserted rather than left to whatever the query happens to return.
+    """
+    runs = [
+        [target.qualified_name for target in harness.select_targets(6, 5, skip=set())]
+        for _ in range(3)
+    ]
+    assert runs[0] == runs[1] == runs[2], f"target order is unstable: {runs}"
+    assert len(runs[0]) == len(set(runs[0])), "a target must not be offered twice"
+
+
+def test_targets_are_ordered_worst_first_then_by_name(harness) -> None:
+    """Worst-first is what the harness is for; the name is only how ties are settled."""
+    picked = harness.select_targets(6, 8, skip=set())
+    scored = [(-target.score, target.qualified_name) for target in picked]
+    assert scored == sorted(scored), f"not worst-first with a stable tie-break: {scored}"

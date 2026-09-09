@@ -59,19 +59,34 @@ def select_targets(ceiling: int, limit: int, skip: set[str], where: Bed = SELF) 
         check=True,
     )
     payload = json.loads(result.stdout)
-    targets: list[Target] = []
-    for row in payload.get("entities", []):
-        if row["value"] <= ceiling or row["qualified_name"] in skip:
-            continue
-        targets.append(
-            Target(qualified_name=row["qualified_name"], path=row["path"], score=row["value"])
-        )
-        if len(targets) >= limit:
-            break
-
+    over = [
+        row
+        for row in payload.get("entities", [])
+        if row["value"] > ceiling and row["qualified_name"] not in skip
+    ]
+    targets = [
+        Target(qualified_name=row["qualified_name"], path=row["path"], score=row["value"])
+        for row in sorted(over, key=_worst_first)[:limit]
+    ]
     for target in targets:
         target.trail = _trail_for(target, where)
     return targets
+
+
+def _worst_first(row: dict[str, Any]) -> tuple[float, str]:
+    """Highest score first, ties broken by name -- and the tie-break is the load-bearing half.
+
+    `oxn metrics` ranks by value and leaves equal scores in whatever order it found them, so
+    taking the first `limit` rows gave a *different* target on consecutive runs: three calls
+    to `plan --limit 1` returned `topological_order`, `_merge_split_classes` and
+    `tsconfig_aliases`, all scoring 12.
+
+    For repairing the worst function that is untidy. For an experiment it is fatal: two arms
+    are only comparable on the same problems, and without this each one silently got its own.
+    A pilot's first arm table read "none 100%, hybrid 0%" for exactly that reason -- an
+    artifact of target assignment presented as a finding.
+    """
+    return (-row["value"], row["qualified_name"])
 
 
 def _trail_for(target: Target, where: Bed = SELF) -> list[str]:
