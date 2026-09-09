@@ -111,11 +111,14 @@ class Ask:
     arm: Arm | None = None
 
 
-def ask_actor(client: Any, ask: Ask) -> tuple[str, str]:
-    """The candidate, and the raw reply it was extracted from.
+def ask_actor(client: Any, ask: Ask) -> tuple[str, str, str]:
+    """The candidate, the raw reply it was extracted from, and the prompt that produced it.
 
-    Both are kept: the raw reply is the only thing that can diagnose an extraction bug, and
-    logging just the extracted candidate is how one went unnoticed.
+    All three are kept. The raw reply is the only thing that can diagnose an extraction bug,
+    and logging just the extracted candidate is how one went unnoticed. The prompt is
+    returned because the arms differ *by prompt* -- an arm's cost is what it asked for, and
+    reconstructing it afterwards would measure a second construction rather than the one
+    that was sent.
     """
     prompt = ACTOR_PROMPT.format(
         ceiling=ask.ceiling,
@@ -127,7 +130,7 @@ def ask_actor(client: Any, ask: Ask) -> tuple[str, str]:
         feedback=FEEDBACK.format(failures=ask.feedback) if ask.feedback else "",
     )
     reply = client.generate(prompt, system=ACTOR_SYSTEM)
-    return _strip_fences(reply, ask.target.leaf), reply
+    return _strip_fences(reply, ask.target.leaf), reply, prompt
 
 
 def _context_block(ask: Ask) -> str:

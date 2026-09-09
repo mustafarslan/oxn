@@ -45,6 +45,30 @@ def summarise() -> None:
     agreement = _judge_agreement(rows)
     if agreement:
         say(agreement)
+    _arm_table(rows)
+
+
+def _arm_table(rows: list[dict[str, Any]]) -> None:
+    """P11's measures, one line per (arm, backend), worst convergence first.
+
+    Printed only when more than one configuration is present. A table of one row is not a
+    comparison, and putting one on screen invites reading a single arm's convergence rate as
+    though it meant something on its own -- the control is what makes it mean anything.
+    """
+    from runlog import COST_NOTE, measures
+
+    found = measures(rows)
+    if len(found) < 2:
+        return
+    say(f"\n{BOLD}arms{RESET}")
+    say(f"  {'arm':16s}{'backend':12s}{'conv':>6s}{'att/t':>7s}{'ok':>4s}{'chars':>9s}")
+    for result in found:
+        say(
+            f"  {result.arm:16s}{result.backend:12s}"
+            f"{result.convergence_rate:>5.0%} {result.attempts_per_target:>6.1f}"
+            f"{result.correct:>4d}{result.prompt_chars + result.reply_chars:>9,d}"
+        )
+    say(f"  {DIM}{COST_NOTE}{RESET}")
 
 
 def _target_line(name: str, group: list[dict[str, Any]]) -> str:

@@ -1,0 +1,206 @@
+"""What a run records, so that one arm can be compared with another.
+
+The repair loop produces attempts; this is what an attempt *is* and where it goes. It moved
+out of `scripts/dogfood.py` when that file hit its own `file_sloc` ceiling, and the split was
+real rather than a trim: nothing here decides anything, and P11's measures read this rather
+than the loop.
+
+**Provenance is the point.** Before the arms existed the log was one undifferentiated pile,
+which was fine with one configuration and useless the moment there were twelve -- six arms
+against two real backends. An attempt that cannot say which arm produced it cannot enter an
+arm table, and a table assembled from such a log would be six copies of one number.
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parent.parent
+LOG = ROOT / "benchmarks" / "dogfood-log.jsonl"
+
+#: Written by the loop so the log line reads the same however it is produced. `dogfood`
+#: re-exports these; nothing else should reach past this module for them.
+DIM = "\033[2m"
+RESET = "\033[0m"
+
+
+def say(message: str = "") -> None:
+    print(message)
+
+
+@dataclass
+class Attempt:
+    """One repair attempt, logged whether it succeeded or not."""
+
+    target: str
+    path: str
+    attempt: int
+    accepted: bool
+    gauntlet: dict[str, Any]
+    judge: dict[str, Any] = field(default_factory=dict)
+    error: str = ""
+    seconds: float = 0.0
+    #: The extracted candidate and the raw reply it came from. A few KB each, and the only
+    #: way to diagnose a bug in extraction after the fact -- which is precisely the analysis
+    #: that was impossible when only the verdict was recorded.
+    candidate: str = ""
+    reply: str = ""
+    #: What to tell the actor if there is another attempt. Carried on the attempt rather
+    #: than returned separately, so the loop cannot forget to thread it through.
+    next_feedback: str = ""
+    #: Which arm and which actor produced this. Without them the log is one undifferentiated
+    #: pile and no arm can be compared to any other -- which is the entire experiment.
+    arm: str = ""
+    backend: str = ""
+    #: Characters in and out. **A proxy for token cost, and named as one**: P11 asks for
+    #: tokens, `OllamaClient.generate` returns a string, and threading `eval_count` out of it
+    #: would change the actor protocol every backend implements. Characters are comparable
+    #: across arms of the same backend, which is the comparison the arm table makes, and they
+    #: are not comparable across models. `summary.py` says so where it prints them.
+    prompt_chars: int = 0
+    reply_chars: int = 0
+
+
+def _append_log(attempts: list[Attempt]) -> None:
+    if not attempts:
+        return
+    LOG.parent.mkdir(parents=True, exist_ok=True)
+    with LOG.open("a") as handle:
+        for attempt in attempts:
+            handle.write(json.dumps({"timestamp": time.time(), **asdict(attempt)}) + "\n")
+    say(f"\n{DIM}logged {len(attempts)} attempt(s) to {LOG.relative_to(ROOT)}{RESET}")
+
+
+# ---- P11's measures ------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ArmResult:
+    """What one arm did, over every target it was asked to repair.
+
+    P11 lists the measures: *"violation rate, erosion and verbosity trajectory, convergence
+    rate and retry counts, token cost, and functional correctness -- so we can show the gate
+    does not break the code."* Four of those are here, and the two that are not say so:
+
+    * **convergence** and **retries** come straight from the log;
+    * **functional correctness** is `tests_pass` on the accepted attempt, which is the
+      "does not break the code" half and the one a gate can fail on;
+    * **cost** is characters, and `cost_note` states what that is and is not;
+    * **erosion and verbosity trajectory** need a repository measured over time rather than
+      one repair at a time, so they are `oxn volume`'s output across a run rather than this
+      log's, and are not computed here.
+    """
+
+    arm: str
+    backend: str
+    targets: int
+    converged: int
+    attempts: int
+    #: Accepted repairs whose test run passed. Equal to `converged` unless the gate ever
+    #: accepts code that fails its tests -- which is the thing worth noticing, so it is
+    #: counted separately rather than assumed.
+    correct: int
+    prompt_chars: int
+    reply_chars: int
+    seconds: float
+
+    @property
+    def convergence_rate(self) -> float:
+        return self.converged / self.targets if self.targets else 0.0
+
+    @property
+    def attempts_per_target(self) -> float:
+        return self.attempts / self.targets if self.targets else 0.0
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "arm": self.arm,
+            "backend": self.backend,
+            "targets": self.targets,
+            "converged": self.converged,
+            "convergence_rate": round(self.convergence_rate, 4),
+            "attempts": self.attempts,
+            "attempts_per_target": round(self.attempts_per_target, 2),
+            "functionally_correct": self.correct,
+            "prompt_chars": self.prompt_chars,
+            "reply_chars": self.reply_chars,
+            "seconds": round(self.seconds, 1),
+        }
+
+
+#: Said wherever the cost columns are printed, because a number without it is misread.
+COST_NOTE = (
+    "cost is characters, not tokens: `generate` returns a string, and threading `eval_count` "
+    "out of it would change the protocol every backend implements. Comparable across arms of "
+    "one backend -- which is the comparison an arm table makes -- and not across models."
+)
+
+
+def measures(rows: list[dict[str, Any]]) -> list[ArmResult]:
+    """One row per (arm, backend), worst convergence first.
+
+    Attempts logged before the arms existed carry no arm, and are grouped under `""` rather
+    than folded into a named one. Silently attributing them to `hybrid` -- which is what the
+    harness did then -- would put real numbers from a different experiment into its row.
+    """
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault((row.get("arm", ""), row.get("backend", "")), []).append(row)
+    found = [_result(arm, backend, group) for (arm, backend), group in grouped.items()]
+    return sorted(found, key=lambda r: (r.convergence_rate, r.arm))
+
+
+def _result(arm: str, backend: str, rows: list[dict[str, Any]]) -> ArmResult:
+    """One group's measures. Targets are counted by name, since each has several attempts."""
+    by_target: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_target.setdefault(row["target"], []).append(row)
+    return ArmResult(
+        arm=arm or "(unrecorded)",
+        backend=backend or "(unrecorded)",
+        targets=len(by_target),
+        converged=_converged(by_target),
+        attempts=len(rows),
+        correct=_functionally_correct(rows),
+        prompt_chars=int(_total(rows, "prompt_chars")),
+        reply_chars=int(_total(rows, "reply_chars")),
+        seconds=_total(rows, "seconds"),
+    )
+
+
+def _converged(by_target: dict[str, list[dict[str, Any]]]) -> int:
+    """Targets where some attempt was accepted. Per target, not per attempt.
+
+    A target repaired on the third try converged once, not three times, and counting
+    attempts here would reward an arm for needing more of them.
+    """
+    return sum(1 for group in by_target.values() if any(row.get("accepted") for row in group))
+
+
+def _functionally_correct(rows: list[dict[str, Any]]) -> int:
+    """Accepted repairs whose test run actually passed.
+
+    Counted rather than assumed equal to `converged`. P11 asks for functional correctness so
+    the result can show "the gate does not break the code", and a number derived from
+    acceptance could not show it -- it would be the gate grading itself.
+    """
+    return sum(
+        1 for row in rows if row.get("accepted") and row.get("gauntlet", {}).get("tests_pass")
+    )
+
+
+def _total(rows: list[dict[str, Any]], key: str) -> float:
+    """One numeric column, summed, tolerating rows written before it existed."""
+    return sum(float(row.get(key) or 0) for row in rows)
+
+
+def read_log(path: Path | None = None) -> list[dict[str, Any]]:
+    """Every attempt ever logged, or an empty list when nothing has run."""
+    found = path or LOG
+    if not found.exists():
+        return []
+    return [json.loads(line) for line in found.read_text().splitlines() if line.strip()]

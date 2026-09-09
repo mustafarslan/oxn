@@ -62,6 +62,7 @@ from gauntlet import (
     measure,
     run_gauntlet,
 )
+from runlog import Attempt, _append_log
 from summary import summarise
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -185,28 +186,6 @@ def function_span(path: Path, leaf: str, profile: Any) -> tuple[int, int] | None
 # ---- the loop -----------------------------------------------------------------------------
 
 
-@dataclass
-class Attempt:
-    """One repair attempt, logged whether it succeeded or not."""
-
-    target: str
-    path: str
-    attempt: int
-    accepted: bool
-    gauntlet: dict[str, Any]
-    judge: dict[str, Any] = field(default_factory=dict)
-    error: str = ""
-    seconds: float = 0.0
-    #: The extracted candidate and the raw reply it came from. A few KB each, and the only
-    #: way to diagnose a bug in extraction after the fact -- which is precisely the analysis
-    #: that was impossible when only the verdict was recorded.
-    candidate: str = ""
-    reply: str = ""
-    #: What to tell the actor if there is another attempt. Carried on the attempt rather
-    #: than returned separately, so the loop cannot forget to thread it through.
-    next_feedback: str = ""
-
-
 @dataclass(frozen=True, slots=True)
 class Session:
     """How one repair run is configured: which models, and what the loop may do.
@@ -299,6 +278,7 @@ def _repair_one(target: Target, session: Session, actor: Any, judge: Any) -> lis
             ceiling=session.ceiling,
             allow_extraction=session.allow_extraction,
             arm=arm(session.arm),
+            backend="dry-run" if session.dry_run else session.backend,
         )
         feedback = ""
         for index in range(1, _attempts_for(session) + 1):
@@ -333,6 +313,8 @@ class Run:
     allow_extraction: bool
     #: The channels this run opens, and therefore whether a retry means anything.
     arm: Arm
+    #: What answered. Recorded per attempt so a log can be split by actor as well as by arm.
+    backend: str
 
 
 def _one_attempt(run: Run, index: int, feedback: str) -> Attempt | None:
@@ -346,7 +328,7 @@ def _one_attempt(run: Run, index: int, feedback: str) -> Attempt | None:
     original = original_file[span[0] : span[1]].decode()
 
     try:
-        candidate, reply = ask_actor(
+        candidate, reply, prompt = ask_actor(
             run.actor,
             Ask(
                 target=run.target,
@@ -396,6 +378,10 @@ def _one_attempt(run: Run, index: int, feedback: str) -> Attempt | None:
         candidate=candidate,
         reply=reply,
         next_feedback=_feedback(gauntlet),
+        arm=run.arm.name,
+        backend=run.backend,
+        prompt_chars=len(prompt),
+        reply_chars=len(reply),
     )
 
 
@@ -423,6 +409,8 @@ def _failed(attempt: _Try, *, error: str, next_feedback: str, **extra: str) -> A
         error=error,
         seconds=attempt.elapsed,
         next_feedback=next_feedback,
+        arm=attempt.run.arm.name,
+        backend=attempt.run.backend,
         **extra,
     )
 
@@ -478,16 +466,6 @@ def _write_diff(target: Target, original: str, candidate: str) -> None:
     out = DIFFS / f"{target.leaf}.diff"
     out.write_text("".join(diff))
     say(f"{GREEN}  diff written: {out}{RESET}")
-
-
-def _append_log(attempts: list[Attempt]) -> None:
-    if not attempts:
-        return
-    LOG.parent.mkdir(parents=True, exist_ok=True)
-    with LOG.open("a") as handle:
-        for attempt in attempts:
-            handle.write(json.dumps({"timestamp": time.time(), **asdict(attempt)}) + "\n")
-    say(f"\n{DIM}logged {len(attempts)} attempt(s) to {LOG.relative_to(ROOT)}{RESET}")
 
 
 # ---- reporting ------------------------------------------------------------------------------
