@@ -71,9 +71,73 @@ def run_health(paths: list[str], output: Output = TO_JSON, *, limit: int = 10) -
         for rule, ceiling in sorted(settings.ceilings.items())
         if not GATED_METRICS[rule].follows
     }
-    payload: dict[str, Any] = {"status": "OK", "files": len(wanted), "profiles": profiles}
+    payload: dict[str, Any] = {
+        "status": "OK",
+        "files": len(wanted),
+        "profiles": profiles,
+        "coupling": _coupling(targets, limit),
+    }
     emit_health(payload, output)
     return payload
+
+
+def _coupling(targets: list[Path], limit: int) -> dict[str, Any]:
+    """CBO and RFC across the project's classes, as a distribution rather than a share.
+
+    A second pass rather than a column on the rows above, because coupling is not in the
+    store: it is a property of a class *and the project around it*, so it needs the symbol
+    table and the hierarchy that `resolve.project` builds, not a per-file measurement.
+
+    It was left out of this view entirely until now, on the grounds that CBO and RFC are
+    APPROX below L2. That was the wrong conclusion from a right premise -- the answer to a
+    number that is sometimes a lower bound is to say which, not to withhold it, and
+    `metrics.profile.coupling_profile` keeps the two populations apart.
+    """
+    from oxn.config import Config
+    from oxn.metrics.coupling import build_hierarchy
+    from oxn.metrics.profile import coupling_profile
+    from oxn.resolve.project import build_class_views
+    from oxn.resolve.symbols import build_project_symbols
+
+    with _indexer(Config.load()) as indexer:
+        files = indexer.sources(targets)
+        views = build_class_views(indexer, files)
+        symbols = build_project_symbols(views.entities, views.scopes, _graph(indexer, files))
+        hierarchy = build_hierarchy(views.models)
+        measured = [
+            _coupled(relative, model, hierarchy, symbols, views)
+            for relative, models in views.models.items()
+            for model in models.values()
+        ]
+    return coupling_profile(measured, limit=limit)
+
+
+def _coupled(relative: str, model: Any, hierarchy: Any, symbols: Any, views: Any) -> Any:
+    """One class's CK coupling, flattened to what the profile reads."""
+    from oxn.metrics.coupling import Evidence, ck_metrics
+    from oxn.metrics.profile import Coupled
+
+    found = ck_metrics(
+        model,
+        hierarchy,
+        Evidence(
+            path=relative, symbols=symbols, complexity=views.weights[relative].get(model.name, {})
+        ),
+    )
+    return Coupled(
+        name=model.name,
+        path=relative,
+        cbo=found.cbo,
+        rfc=found.rfc,
+        exact=found.exactness == "EXACT",
+    )
+
+
+def _graph(indexer: Indexer, files: Any) -> Any:
+    """The dependency graph the symbol table needs to place an import."""
+    from oxn.graph.depgraph import build_dependency_graph
+
+    return build_dependency_graph(indexer.root, files)
 
 
 def _for_rule(rule: str, ceiling: float, rows: list[_Row]) -> Profile:

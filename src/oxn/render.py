@@ -316,6 +316,53 @@ def emit_health(payload: dict[str, Any], output: Output) -> None:
                 f"      {worst['value']:>6g}  {worst['entity'][:56]:<56}"
                 f" [dim]{worst['path']}:{worst['line']}[/dim]"
             )
+    _emit_coupling(console, payload.get("coupling"))
+
+
+def _emit_coupling(console: Console, found: Any) -> None:
+    """Coupling as a distribution, with the bounded rows kept visibly apart.
+
+    No share and no ceiling: CBO and RFC have no calibrated budget, and printing one here
+    would assert more than `oxn.calibration` can support. A `>=` in front of a number is the
+    whole point of showing it at all -- below L2 an unplaced base or callee makes the value a
+    floor, and a reader who cannot see which is which has been given an average of facts and
+    guesses.
+    """
+    if not found or not found["classes"]:
+        return
+    console.print(
+        f"\n  [bold]coupling[/bold] [dim]no ceiling; distribution over "
+        f"{found['exact']} exactly-measured of {found['classes']} classes[/dim]"
+    )
+    for key in ("cbo", "rfc"):
+        spread = found[key]
+        if spread is None:
+            console.print(f"      {key.upper():<4} [dim]no exactly-measured class[/dim]")
+            continue
+        console.print(
+            f"      {key.upper():<4} median {spread['median']:g}"
+            f"   p90 {spread['p90']:g}   max {spread['max']:g}"
+        )
+    if found["bounded"]:
+        console.print(
+            f"      [dim]{found['bounded']} class(es) left a base or callee unplaced; "
+            f"their numbers are lower bounds[/dim]"
+        )
+    for worst in found["worst"][:5]:
+        bound = ">=" if worst["exactness"] == "APPROX" else "  "
+        console.print(
+            f"      {bound}{worst['cbo']:>3} cbo {worst['rfc']:>3} rfc  "
+            f"{worst['entity'][:24]:<24} [dim]{_tail(worst['path'], 26)}[/dim]"
+        )
+
+
+def _tail(path: str, width: int) -> str:
+    """The end of a path, marked when it has been cut.
+
+    The end is the informative half of a source path, and a silent trim reads as a real
+    path that happens to start oddly.
+    """
+    return path if len(path) <= width else "…" + path[-(width - 1) :]
 
 
 def _by_share(item: tuple[str, Any]) -> float:

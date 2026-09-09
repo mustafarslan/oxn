@@ -20,6 +20,12 @@ gate uses -- so "over budget" means one thing in both outputs rather than two.
 
 Weighting is by SLOC, not by entity count, for the reason section 10.2 gives: these
 distributions are heavy-tailed, and one 300-line function is not one three-line function.
+
+**Coupling is the exception, and reports no share at all.** CBO and RFC have no declared
+ceiling, so there is no "over budget" to take a share of, and the boundaries the literature
+offers were fitted to systems this project has not measured. `coupling_profile` reports the
+distribution and the offenders instead, with the classes whose numbers are lower bounds kept
+out of the summary rather than averaged into it.
 """
 
 from __future__ import annotations
@@ -114,3 +120,78 @@ def profile(metric: str, ceiling: float, entities: Iterable[Measured]) -> Profil
                 Offender(entity.name, entity.path, entity.line, entity.value, weight)
             )
     return found
+
+
+@dataclass(frozen=True, slots=True)
+class Coupled:
+    """One class's coupling, and whether each number is a fact or a floor."""
+
+    name: str
+    path: str
+    cbo: int
+    rfc: int
+    #: False when resolution left a base or a callee unplaced, which makes both numbers
+    #: lower bounds. Carried per class rather than summarised, because a distribution mixing
+    #: facts with floors is neither.
+    exact: bool
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "entity": self.name,
+            "path": self.path,
+            "cbo": self.cbo,
+            "rfc": self.rfc,
+            "exactness": "EXACT" if self.exact else "APPROX",
+        }
+
+
+def coupling_profile(measured: Iterable[Coupled], limit: int = 10) -> dict[str, object]:
+    """Coupling across a project's classes, reported as a distribution and never as a share.
+
+    Every other health dimension is "what share of the lines sits over the declared ceiling".
+    Coupling has no declared ceiling, and inventing one here would be the thing this project
+    refuses everywhere else: `oxn.calibration` records a measured cost for every threshold it
+    enforces, and CBO and RFC have none yet. The literature's numbers -- Sahraoui's CBO > 14,
+    RFC > 50 -- were fitted to systems this project has not measured, and adopting a boundary
+    is how a health view starts asserting more than it knows.
+
+    So this reports the shape and the offenders, which is what a reader can act on, and leaves
+    the budget question to the calibration record that would have to answer it.
+
+    **EXACT and APPROX are never averaged together.** Below L2, a class whose base or callee
+    resolution left something unplaced has a CBO that is a *floor*: the true value is that or
+    higher. Summarising the two populations as one number would publish a median that is
+    neither a measurement nor a bound, so the exact rows carry the distribution and the
+    bounded ones are counted and named separately.
+    """
+    rows = list(measured)
+    exact = [row for row in rows if row.exact]
+    return {
+        "classes": len(rows),
+        "exact": len(exact),
+        "bounded": len(rows) - len(exact),
+        "cbo": _spread([row.cbo for row in exact]),
+        "rfc": _spread([row.rfc for row in exact]),
+        "worst": [row.as_dict() for row in sorted(rows, key=_by_coupling)[:limit]],
+    }
+
+
+def _by_coupling(row: Coupled) -> tuple[int, int, str]:
+    """Worst first, with the name breaking ties so the order is stable across runs."""
+    return (-row.cbo, -row.rfc, row.name)
+
+
+def _spread(values: list[int]) -> dict[str, float] | None:
+    """Median, p90 and max, or `None` when nothing exact was measured.
+
+    `None` rather than zeros: a project whose every class is a lower bound has no measured
+    distribution, and printing 0 would say the opposite of that.
+    """
+    if not values:
+        return None
+    ordered = sorted(values)
+    return {
+        "median": float(ordered[len(ordered) // 2]),
+        "p90": float(ordered[min(len(ordered) - 1, int(len(ordered) * 0.9))]),
+        "max": float(ordered[-1]),
+    }

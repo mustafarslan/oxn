@@ -125,3 +125,63 @@ def test_health_never_blocks(project: Path) -> None:
     payload = _health()
     assert payload["status"] == "OK", "a tree with a violation in it is still OK to report on"
     assert "exit_code" not in payload and "violations" not in payload
+
+
+# ---- coupling: the dimension that has no ceiling ------------------------------------------
+
+
+def _coupling(project: Path) -> dict:
+    from oxn.health import run_health
+
+    return run_health(["."])["coupling"]
+
+
+def test_coupling_is_reported_as_a_distribution_and_never_as_a_share(project: Path) -> None:
+    """Every other dimension answers "what share is over budget". This one has no budget.
+
+    CBO and RFC have no entry in `oxn.calibration`, so there is no measured cost for any
+    boundary and inventing one -- Sahraoui's CBO > 14, say, fitted to systems this project
+    has never measured -- is exactly what the calibration record exists to prevent. The
+    shape and the offenders are what a reader can act on; the budget waits for evidence.
+    """
+    (project / "m.py").write_text(
+        "class A:\n"
+        "    def __init__(self, x):\n"
+        "        self._x = x\n"
+        "    def go(self):\n"
+        "        return self._x\n"
+    )
+    found = _coupling(project)
+    assert found["classes"] == 1
+    assert "share_over_ceiling" not in found and "ceiling" not in found
+    assert set(found) == {"classes", "exact", "bounded", "cbo", "rfc", "worst"}
+
+
+def test_a_bounded_class_is_counted_apart_from_the_measured_ones(project: Path) -> None:
+    """A CBO that is a lower bound must not enter a median that reads as a measurement.
+
+    Below L2 an unplaced base or callee makes both numbers floors. Averaging those with
+    exact ones publishes a number that is neither, which is the failure this whole output
+    is supposed to avoid -- so the distribution is over the exact rows only, and the rest
+    are counted and named.
+    """
+    (project / "m.py").write_text(
+        "from elsewhere import Base\n\n\nclass A(Base):\n    def go(self):\n        return 1\n"
+    )
+    found = _coupling(project)
+    assert found["bounded"] == 1, found
+    assert found["exact"] == 0
+    assert found["cbo"] is None, "a distribution over nothing must say so, not report zero"
+    assert found["worst"][0]["exactness"] == "APPROX"
+
+
+def test_the_distribution_covers_only_the_exact_rows(project: Path) -> None:
+    """Both populations present, and the summary reads from one of them."""
+    (project / "exact.py").write_text("class E:\n    def go(self):\n        return 1\n")
+    (project / "bounded.py").write_text(
+        "from elsewhere import Base\n\n\nclass B(Base):\n    def go(self):\n        return 1\n"
+    )
+    found = _coupling(project)
+    assert found["classes"] == 2
+    assert (found["exact"], found["bounded"]) == (1, 1)
+    assert found["cbo"] is not None and found["rfc"] is not None
