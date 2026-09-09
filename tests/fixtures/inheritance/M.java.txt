@@ -1,0 +1,3 @@
+class Base { int go() { return 1; } }
+class Mid extends Base { int go() { return 2; } }
+class Leaf extends Mid { int go() { return 3; } }

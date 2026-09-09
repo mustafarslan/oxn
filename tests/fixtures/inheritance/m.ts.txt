@@ -1,0 +1,3 @@
+class Base { go() { return 1; } }
+class Mid extends Base { go() { return 2; } }
+class Leaf extends Mid { go() { return 3; } }

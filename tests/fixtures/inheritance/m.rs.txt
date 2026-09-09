@@ -1,0 +1,5 @@
+pub trait Base { fn go(&self) -> i32; }
+pub struct Mid;
+impl Base for Mid { fn go(&self) -> i32 { 2 } }
+pub struct Leaf;
+impl Base for Leaf { fn go(&self) -> i32 { 3 } }

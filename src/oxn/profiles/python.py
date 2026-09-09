@@ -197,6 +197,7 @@ PYTHON = LanguageProfile(
     version=4,
     privacy="underscore",
     function_like=frozenset({"function_definition", "lambda"}),
+    supertype_fields=frozenset({"superclasses"}),
     class_like=frozenset({"class_definition"}),
     # A decorated function is `decorated_definition > [definition] function_definition`,
     # so the decorators belong to the wrapper's span and the entity is the inner node.

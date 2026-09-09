@@ -66,15 +66,22 @@ class CkMetrics:
 class ClassHierarchy:
     """In-repo inheritance, built from what every file declares."""
 
+    #: Keys are `"<language>\x00<name>"`. A bare supertype name means one thing inside a
+    #: language and nothing across two, and this table is matched by name.
     bases: dict[str, tuple[str, ...]] = field(default_factory=dict)
     children: dict[str, set[str]] = field(default_factory=dict)
 
-    def add(self, name: str, bases: tuple[str, ...]) -> None:
-        self.bases[name] = bases
-        for base in bases:
-            self.children.setdefault(base, set()).add(name)
+    @staticmethod
+    def key(scope: str, name: str) -> str:
+        """One table entry's identity. NUL joins them because no identifier contains it."""
+        return f"{scope}\x00{name}"
 
-    def depth(self, name: str) -> tuple[int, bool]:
+    def add(self, scope: str, name: str, bases: tuple[str, ...]) -> None:
+        self.bases[self.key(scope, name)] = bases
+        for base in bases:
+            self.children.setdefault(self.key(scope, base), set()).add(name)
+
+    def depth(self, scope: str, name: str) -> tuple[int, bool]:
         """``(depth, whether a base lies outside the tree)``.
 
         An external base -- ``BaseModel``, ``Exception`` -- contributes one level and a
@@ -90,7 +97,7 @@ class ClassHierarchy:
             if current in seen:
                 continue
             seen.add(current)
-            bases = self.bases.get(current)
+            bases = self.bases.get(self.key(scope, current))
             if bases is None:
                 if current != name:
                     external = True
@@ -100,15 +107,27 @@ class ClassHierarchy:
                 frontier.extend(bases)
         return (depth + (1 if external else 0), external)
 
-    def child_count(self, name: str) -> int:
-        return len(self.children.get(name, ()))
+    def child_count(self, scope: str, name: str) -> int:
+        return len(self.children.get(self.key(scope, name), ()))
+
+    def declares(self, scope: str, name: str) -> bool:
+        """True when this language's half of the project declares that type."""
+        return self.key(scope, name) in self.bases
 
 
 def build_hierarchy(models_by_file: Mapping[str, Mapping[str, ClassModel]]) -> ClassHierarchy:
+    """Every declared supertype edge in the project, scoped by language.
+
+    A supertype is written as a bare name and resolving it to an entity is L1's job, so this
+    matches on the name -- which is fine within a language and nonsense across one. A
+    directory holding `m.go` and `m.rs` gave Go's `Base` interface two children, and they
+    were Rust's: a `noc` no Go program could produce, from a language whose interfaces are
+    satisfied structurally and never declared at all.
+    """
     hierarchy = ClassHierarchy()
     for models in models_by_file.values():
         for name, model in models.items():
-            hierarchy.add(name, model.bases)
+            hierarchy.add(model.language, name, model.bases)
     return hierarchy
 
 
@@ -263,10 +282,11 @@ def ck_metrics(
     evidence = evidence or Evidence()
     weights = evidence.complexity or {}
     wmc = sum(weights.get(name, 1) for name in model.methods)
-    depth, external = hierarchy.depth(model.name)
+    scope = model.language
+    depth, external = hierarchy.depth(scope, model.name)
 
     external_calls = {callee for access in model.methods.values() for callee in access.calls}
-    coupled, bases_uncertain = _coupled_bases(model, hierarchy)
+    coupled, bases_uncertain = _coupled_bases(model, hierarchy, scope)
     confident, calls_uncertain = _confident_callees(model, evidence)
 
     return CkMetrics(
@@ -274,7 +294,7 @@ def ck_metrics(
         wmc=wmc,
         nom=len(model.methods),
         dit=depth,
-        noc=hierarchy.child_count(model.name),
+        noc=hierarchy.child_count(scope, model.name),
         cbo=len(coupled | confident),
         rfc=len(model.methods) + len(confident),
         rfc_syntactic=len(set(model.methods) | external_calls),
@@ -285,13 +305,15 @@ def ck_metrics(
     )
 
 
-def _coupled_bases(model: ClassModel, hierarchy: ClassHierarchy) -> tuple[set[str], bool]:
+def _coupled_bases(
+    model: ClassModel, hierarchy: ClassHierarchy, scope: str
+) -> tuple[set[str], bool]:
     """Base classes CBO can count, and whether any could not be placed.
 
     A base OXN cannot find is not absent -- it is unknown, and the difference is the whole
     point of the exactness stamp: an unknown base means CBO is a lower bound, not a fact.
     """
-    coupled = {base for base in model.bases if base in hierarchy.bases}
+    coupled = {base for base in model.bases if hierarchy.declares(scope, base)}
     return coupled, len(coupled) != len(model.bases)
 
 

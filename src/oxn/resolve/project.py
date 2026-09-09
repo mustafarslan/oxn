@@ -75,15 +75,20 @@ def _merge_split_classes(views: ClassViews) -> None:
     from oxn.profiles import profile_for_path
     from oxn.resolve.members import settle_fields
 
-    grouped: dict[tuple[str, str], list[str]] = {}
+    grouped: dict[tuple[str, str, str], list[str]] = {}
     for relative, models in views.models.items():
         profile = profile_for_path(relative)
         if profile is None or not (profile.receiver_field or profile.implements_field):
             continue
         for name in models:
-            grouped.setdefault((relative.rpartition("/")[0], name), []).append(relative)
+            # Keyed by language as well as directory. A polyglot directory holding `m.go` and
+            # `m.rs` is not one package, and grouping on the directory alone merged Go's
+            # `Base` into Rust's -- one type absorbing another that merely shares its name.
+            grouped.setdefault((relative.rpartition("/")[0], profile.name, name), []).append(
+                relative
+            )
 
-    for (_directory, name), paths in grouped.items():
+    for (_directory, _language, name), paths in grouped.items():
         if len(paths) < 2:
             continue
         home = _home_of(name, paths, views)

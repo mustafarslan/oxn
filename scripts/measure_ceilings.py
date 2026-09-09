@@ -141,12 +141,7 @@ def _distribution(values: list[float], ceiling: float) -> dict[str, object]:
 
 def measure(ceilings: dict[str, float]) -> dict[str, object]:
     """The whole table: every gated ceiling against every threshold corpus."""
-    missing = [name for name, _ in BEDS if not (CORPORA / name / ".oxn/cache/graph.db").exists()]
-    if missing:
-        raise SystemExit(
-            f"no measured cache for {', '.join(missing)}. Run `oxn metrics . --json --limit 1`"
-            " from inside each corpus root first (see this file's docstring)."
-        )
+    _require_fresh_caches()
     observed: dict[str, object] = {}
     for rule, metric_key, kinds in GATED:
         per_corpus = {
@@ -160,6 +155,48 @@ def measure(ceilings: dict[str, float]) -> dict[str, object]:
             "corpora": {name: found for name, found in per_corpus.items() if found},
         }
     return observed
+
+
+def _require_fresh_caches() -> None:
+    """Refuse to measure a cache the current builder did not write.
+
+    Existence was the only check, and it is not enough: the caches were left at schema 7
+    while the builder had moved to 9, and the script measured them and reported the numbers
+    as current. Nothing downstream could notice -- `tests/test_ceiling_observations.py` holds
+    the frozen record against the live ceilings and never re-measures -- so a stale figure
+    would have survived indefinitely under a green suite. A measurement that cannot say
+    whether it measured today's code is not a measurement.
+    """
+    from oxn.graph.store import SCHEMA_VERSION
+
+    stale: list[str] = []
+    for name, _ in BEDS:
+        db = CORPORA / name / ".oxn/cache/graph.db"
+        if not db.exists():
+            stale.append(f"{name}: no cache")
+            continue
+        found = _schema_version(db)
+        if found != str(SCHEMA_VERSION):
+            stale.append(f"{name}: schema {found}, builder writes {SCHEMA_VERSION}")
+    if stale:
+        raise SystemExit(
+            "refusing to measure stale caches:\n  "
+            + "\n  ".join(stale)
+            + "\n\nRun `oxn metrics . --json --limit 1` from inside each corpus root first"
+            " (see this file's docstring); a schema bump makes every cache stale."
+        )
+
+
+def _schema_version(db: Path) -> str:
+    """The schema the cache was written at, or a marker when it does not say."""
+    with sqlite3.connect(db) as connection:
+        try:
+            row = connection.execute(
+                "SELECT value FROM meta WHERE key = 'schema_version'"
+            ).fetchone()
+        except sqlite3.DatabaseError:
+            return "unreadable"
+    return str(row[0]) if row else "unrecorded"
 
 
 def _populations(

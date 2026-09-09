@@ -92,6 +92,16 @@ class LanguageProfile:
     #: Rust's ``impl Service { ... }``. Such a node carries no name of its own, so without
     #: this it is skipped and the type keeps none of its methods.
     implements_field: str = ""
+    #: Fields naming this type's supertypes. Every grammar spells it differently and the
+    #: names are not interchangeable: Python has `superclasses`, Java `superclass` *and*
+    #: `interfaces`, Rust the `trait` an `impl` block satisfies, and TypeScript none at all
+    #: -- it hangs a `class_heritage` child off the declaration instead. Empty for Go, whose
+    #: interfaces are satisfied structurally and never declared.
+    #:
+    #: `type_parameters` is deliberately absent. It was read as a supertype field, so
+    #: `class Foo[T](Base)` reported bases `("Base", "T")` and counted a generic parameter
+    #: as an ancestor in DIT and as a coupled class in CBO.
+    supertype_fields: frozenset[str] = frozenset()
     #: Names that make a method's *first* parameter its receiver, where the grammar gives
     #: the receiver no node kind of its own. Rust has `self_parameter` and needs none of
     #: this; Python spells the receiver as an ordinary identifier, so without these a

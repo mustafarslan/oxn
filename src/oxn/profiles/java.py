@@ -185,6 +185,7 @@ JAVA = LanguageProfile(
     extensions=frozenset({".java"}),
     version=1,
     function_like=frozenset({"method_declaration", "constructor_declaration", "lambda_expression"}),
+    supertype_fields=frozenset({"superclass", "interfaces"}),
     class_like=frozenset(
         {
             "class_declaration",

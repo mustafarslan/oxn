@@ -72,6 +72,11 @@ class ClassModel:
     fields: set[str] = field(default_factory=set)
     methods: dict[str, MethodAccess] = field(default_factory=dict)
     bases: tuple[str, ...] = ()
+    #: The language this class was written in. Carried on the model because a supertype is
+    #: written as a bare name, and a bare name means one thing inside a language and nothing
+    #: across two: without it a directory holding `m.go` and `m.rs` gave Go's `Base` two
+    #: children that were Rust's.
+    language: str = ""
     #: Receiver-qualified accesses naming nothing this class declares -- inherited or
     #: dynamic. Counted, never silently dropped.
     unresolved_accesses: int = 0
@@ -133,7 +138,7 @@ def _one_class(
     spec: ScopeSpec,
 ) -> ClassModel:
     """One class: what it declares, what its methods touch, and what it inherits."""
-    model = ClassModel(name=class_name, bases=_bases_of(parts, profile))
+    model = ClassModel(name=class_name, language=profile.name, bases=_bases_of(parts, profile))
     for declaration in parts.declarations:
         body = _class_body(declaration, profile)
         if body is not None:
@@ -285,7 +290,21 @@ def _iter_methods(body: Node, profile: LanguageProfile) -> Iterator[tuple[Node, 
 
 
 #: Grammar nodes that hold a class's supertypes when they are not in a named field.
-_HERITAGE_KINDS = frozenset({"class_heritage", "extends_clause", "super_interfaces"})
+#: Nodes that *hold* supertype names rather than being one. Descent stops at anything else,
+#: which is what stops a generic argument from being read as a base.
+_HERITAGE_KINDS = frozenset(
+    {
+        "class_heritage",
+        "extends_clause",
+        "implements_clause",
+        "super_interfaces",
+        "extends_interfaces",
+        "superclass",
+        "interfaces",
+        "type_list",
+        "argument_list",
+    }
+)
 
 #: Field declarations whose name lives in a `name` field rather than left of an assignment.
 _NAMED_FIELD_KINDS = frozenset(
@@ -294,15 +313,17 @@ _NAMED_FIELD_KINDS = frozenset(
 
 
 def _base_names(class_node: Node, profile: LanguageProfile) -> tuple[str, ...]:
-    """Superclass names as written. Resolving them to entities is L1's job.
+    """Supertype names as written. Resolving them to entities is L1's job.
 
-    Two grammar shapes: Python and Java put supertypes in a named field, TypeScript hangs
-    them off a heritage clause. Both are read, and duplicates collapse.
+    Two grammar shapes, and reading only one of them left DIT and NOC working in Python
+    alone: every TypeScript, Java and Rust class reported no bases at all, so the whole
+    inheritance half of the CK suite was zero for four of six languages. `supertype_fields`
+    names the fields each grammar uses; TypeScript uses none and hangs a `class_heritage`
+    child off the declaration instead.
     """
     names: list[str] = []
-    for field_name in ("superclasses", "type_parameters"):
-        holder = class_node.child_by_field_name(field_name)
-        if holder is not None:
+    for field_name in sorted(profile.supertype_fields):
+        for holder in class_node.children_by_field_name(field_name):
             names.extend(_plain_names(holder))
     for child in class_node.named_children:
         if child.type in _HERITAGE_KINDS:
@@ -311,11 +332,28 @@ def _base_names(class_node: Node, profile: LanguageProfile) -> tuple[str, ...]:
 
 
 def _plain_names(holder: Node) -> Iterator[str]:
-    """Direct children that are bare identifiers, skipping generics and expressions."""
+    """The supertype names a holder names, seen through whatever wraps them.
+
+    A holder is sometimes the name itself -- Rust's `trait` field is a bare
+    `type_identifier` -- sometimes a flat list, as Python's `superclasses` is, and sometimes
+    a clause around a list: TypeScript writes `class_heritage > extends_clause > identifier`,
+    which the old direct-children read could not see, and Java wraps its interfaces in a
+    `type_list`.
+
+    Descent is through *named wrapper kinds only*, never through anything else. That is what
+    keeps `extends Box<Inner>` from yielding `Inner` as a second supertype: a generic
+    argument sits under a type node, not under a heritage clause.
+    """
+    text = _text(holder)
+    if text and text.isidentifier():
+        yield text
+        return
     for child in holder.named_children:
-        text = _text(child)
-        if text and text.isidentifier():
-            yield text
+        child_text = _text(child)
+        if child.type in _HERITAGE_KINDS:
+            yield from _plain_names(child)
+        elif child_text and child_text.isidentifier():
+            yield child_text
 
 
 def _declared_fields(body: Node, profile: LanguageProfile, spec: ScopeSpec) -> set[str]:

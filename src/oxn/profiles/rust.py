@@ -164,6 +164,7 @@ RUST = LanguageProfile(
     version=1,
     function_like=frozenset({"function_item", "function_signature_item", "closure_expression"}),
     implements_field="type",
+    supertype_fields=frozenset({"trait"}),
     class_like=frozenset({"struct_item", "enum_item", "trait_item", "union_item", "impl_item"}),
     wrappers={},
     name_field="name",

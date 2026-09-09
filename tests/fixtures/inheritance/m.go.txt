@@ -1,0 +1,7 @@
+package m
+
+type Base interface{ Go() int }
+
+type Mid struct{}
+
+func (m Mid) Go() int { return 2 }
