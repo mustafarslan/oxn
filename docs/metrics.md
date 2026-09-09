@@ -400,6 +400,13 @@ the Lines: Indentation as a Proxy for Complexity Metrics," *ICPC 2008*.
 **CST recipe.** Reuse the cognitive B2 `nesting_level` set; DFS tracking max depth. Emit two
 variants: `max_nesting` and `avg_nesting` (mean depth of leaf statements).
 
+Reuse the **rule** and not only the set. An `else` branch continues its `if` rather than nesting
+under it — section 3.2's hybrid class — and re-deriving the traversal from the node set alone missed
+that: TypeScript and Rust wrap `else if` in an `else_clause`, so the wrapper *and* the `if` it holds
+each added a level, and identical logic read depth 4 there against 3 in Python, Java and Go. On a
+gated ceiling that means code rejected for how its language spells `else`. Measured cost fell an
+order of magnitude when it was fixed — ripgrep 0.96% → 0.10%, nest 0.28% → 0.02%.
+
 **Exactness.** EXACT. **Verdict: SELF-IMPLEMENT** (free-rides the cognitive traversal).
 **Effort/Risk:** S (0.5 d) / Low.
 
@@ -414,6 +421,12 @@ CMU/SEI-92-TR-020.
 strings and heredocs. CLOC = union of line spans of nodes in `comment_kinds`; a line with code and a
 trailing comment counts in both. LLOC = count of nodes in the profile's `statement_kinds`.
 Blank = total − (SLOC ∪ CLOC). Comment density = CLOC / (SLOC + CLOC).
+
+A statement that is the *sole* content of another statement is one statement, not two. Rust writes
+`return a;` as a `return_expression` inside an `expression_statement` and both kinds are counted, so
+a function whose whole body was one return reported LLOC 3 against Go's and Python's 2. LLOC still
+differs across languages after that, and should: it counts statements in the text, and an
+expression-oriented language genuinely has a different number of them.
 
 **Edge cases.** Python docstrings are `expression_statement > string`, not comments — profile flag
 `docstring_counts_as_comment`, default yes, matching radon's `multi` handling. Multi-line strings
@@ -436,6 +449,14 @@ rust-code-analysis and the single-exit tradition.
 (`func f(a, b int)` = 2 params); Rust `self` receiver (excluded); Java varargs; destructured params
 (OXN normative: **count as 1**); decorator-injected params (invisible — approximation). Function
 length = `line_range` span, plus a `body_sloc` variant excluding signature and docstring.
+
+**Rust leaves without a keyword, twice**, and NEXITS must count both. A function ends on its body's
+final expression, and `?` leaves on the error path — Go spells that same control flow
+`if err != nil { return err }`, which has always been counted, so omitting `?` made the two
+incomparable on the most common error shape either language has. The tail is exact rather than
+guessed: a block's statements are statement nodes, so a final child that is not one can only be the
+tail expression. Transliterating one function into six languages read 4 exits in Rust against 5
+everywhere else, and the missing one was the `-1` on the last line.
 
 **Exactness.** EXACT. **Verdict: SELF-IMPLEMENT**; **lizard** (MIT) is the oracle for param count and
 NLOC across all launch languages. **Effort/Risk:** S (1 d) / Low.
@@ -933,6 +954,17 @@ it ships early** — see the roadmap phase ordering.
   `max(0, |P| − |Q|)`, P = non-sharing pairs, Q = sharing pairs.
 - **LCOM3** — Li & Henry, "Object-oriented metrics that predict maintainability," *JSS* 23(2), 1993:
   number of connected components of G(methods, edges = shared attribute access).
+
+**Inheritance is read per grammar, and `LanguageProfile.supertype_fields` names where.** Python has
+`superclasses`, Java `superclass` *and* `interfaces`, Rust the `trait` an `impl` satisfies, and
+TypeScript none at all — it hangs a `class_heritage` child off the declaration. Reading only Python's
+left DIT and NOC at zero for four of six languages, which is invisible because 0 is what a root class
+reports and most classes are roots. Go declares no inheritance: its interfaces are satisfied
+structurally, so there is no edge and reporting one would be an invention. Descent into a heritage
+clause goes through wrapper kinds only, which is what stops `extends Box<Inner>` yielding `Inner`;
+`type_parameters` is not a supertype field, and reading it made `class Foo[T](Base)` report `T` as an
+ancestor. The hierarchy table is keyed by language, because a bare supertype name means one thing
+inside a language and nothing across two.
 - **LCOM4** — Hitz & Montazeri, "Measuring coupling and cohesion in object-oriented systems," 1995:
   LCOM3 **plus** edges for intra-class method invocation. Also defines **connectivity**
   `C = 2(|E| − (n−1)) / ((n−1)(n−2))`, used to discriminate classes when LCOM4 = 1.

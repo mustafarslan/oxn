@@ -63,8 +63,13 @@ def run_health(paths: list[str], output: Output = TO_JSON, *, limit: int = 10) -
     settings = Config.load()
     with _indexer(settings) as indexer:
         indexer.index(targets)
-        wanted = [indexer.relative(path) for path in indexer.sources(targets)]
+        files = indexer.sources(targets)
+        wanted = [indexer.relative(path) for path in files]
         rows = _measured(indexer, wanted)
+        # Inside the same indexer: coupling needs the class views and the symbol table, and
+        # opening a second one re-walked and re-parsed every file to build views this one
+        # could hand over.
+        coupling = _coupling(indexer, files, limit)
 
     profiles = {
         rule: _for_rule(rule, float(ceiling), rows).as_dict(limit=limit)
@@ -75,13 +80,13 @@ def run_health(paths: list[str], output: Output = TO_JSON, *, limit: int = 10) -
         "status": "OK",
         "files": len(wanted),
         "profiles": profiles,
-        "coupling": _coupling(targets, limit),
+        "coupling": coupling,
     }
     emit_health(payload, output)
     return payload
 
 
-def _coupling(targets: list[Path], limit: int) -> dict[str, Any]:
+def _coupling(indexer: Indexer, files: Any, limit: int) -> dict[str, Any]:
     """CBO and RFC across the project's classes, as a distribution rather than a share.
 
     A second pass rather than a column on the rows above, because coupling is not in the
@@ -93,22 +98,19 @@ def _coupling(targets: list[Path], limit: int) -> dict[str, Any]:
     number that is sometimes a lower bound is to say which, not to withhold it, and
     `metrics.profile.coupling_profile` keeps the two populations apart.
     """
-    from oxn.config import Config
     from oxn.metrics.coupling import build_hierarchy
     from oxn.metrics.profile import coupling_profile
     from oxn.resolve.project import build_class_views
     from oxn.resolve.symbols import build_project_symbols
 
-    with _indexer(Config.load()) as indexer:
-        files = indexer.sources(targets)
-        views = build_class_views(indexer, files)
-        symbols = build_project_symbols(views.entities, views.scopes, _graph(indexer, files))
-        hierarchy = build_hierarchy(views.models)
-        measured = [
-            _coupled(relative, model, hierarchy, symbols, views)
-            for relative, models in views.models.items()
-            for model in models.values()
-        ]
+    views = build_class_views(indexer, files)
+    symbols = build_project_symbols(views.entities, views.scopes, _graph(indexer, files))
+    hierarchy = build_hierarchy(views.models)
+    measured = [
+        _coupled(relative, model, hierarchy, symbols, views)
+        for relative, models in views.models.items()
+        for model in models.values()
+    ]
     return coupling_profile(measured, limit=limit)
 
 

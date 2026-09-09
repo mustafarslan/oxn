@@ -40,7 +40,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 import time
@@ -212,14 +211,20 @@ class Session:
     """How one repair run is configured: which models, and what the loop may do.
 
     Models are chosen per run -- an explicit flag wins, then the environment, then the
-    defaults. Nothing here assumes a particular model: the loop wants *an* actor and *a*
-    judge, and which ones is the operator's business.
+    defaults. Nothing here assumes a particular model *or a particular backend*: the loop
+    wants *an* actor and *a* judge, and which ones is the operator's business. That claim
+    was in this docstring while `_clients` named `OllamaClient` outright; `scripts.actors`
+    is what makes it true.
     """
 
     ceiling: int
     retries: int
     dry_run: bool = False
     allow_extraction: bool = False
+    #: Which actor drives the loop. P11's arms are not all local models -- the one that
+    #: decides what the result means is Claude Code under OXN's own hooks -- so this is a
+    #: name resolved by `scripts.actors` rather than a fixed client.
+    backend: str = "ollama"
     model: str = ""
     judge_model: str = ""
     host: str = ""
@@ -247,14 +252,18 @@ def repair(targets: list[Target], session: Session) -> list[Attempt]:
 
 
 def _clients(session: Session) -> tuple[Any, Any]:
-    """The actor and the judge, or two fakes when the run is a dry one."""
-    from oxn.llm import OllamaClient
+    """The actor and the judge, chosen by name rather than assumed.
 
-    if session.dry_run:
-        return _FakeClient(), _FakeClient()
+    `--dry-run` is the `dry-run` backend rather than a branch here, so the fake goes through
+    exactly the path a real backend does: a stand-in reached by a different route tests a
+    different thing.
+    """
+    from actors import build, build_judge
+
+    backend = "dry-run" if session.dry_run else session.backend
     return (
-        _client(OllamaClient.from_env(), session.model, session.host),
-        _client(OllamaClient.judge_from_env(), session.judge_model, session.host),
+        build(backend, session.model, session.host),
+        build_judge(backend, session.judge_model, session.host),
     )
 
 
@@ -473,43 +482,14 @@ def _append_log(attempts: list[Attempt]) -> None:
     say(f"\n{DIM}logged {len(attempts)} attempt(s) to {LOG.relative_to(ROOT)}{RESET}")
 
 
-def _client(base: Any, model: str, host: str) -> Any:
-    """Apply per-run overrides to a client built from the environment."""
-    import dataclasses
-
-    changes: dict[str, Any] = {}
-    if model:
-        changes["model"] = model
-    if host:
-        changes["host"] = host
-    return dataclasses.replace(base, **changes) if changes else base
-
-
-class _FakeClient:
-    """A deterministic stand-in, so the harness itself has tests that need no model."""
-
-    model = "dry-run"
-    host = "(none)"
-
-    def generate(self, prompt: str, *, temperature: float = 0.0, system: str = "") -> str:
-        """A reply that defines the function actually asked for.
-
-        A fixed `def placeholder()` stopped exercising anything once the harness began
-        rejecting candidates that omit the target: every dry run failed at extraction and
-        the gauntlet was never reached. Reading the name back out of the prompt keeps the
-        dry run a test of the plumbing rather than of the check that guards it.
-        """
-        del temperature, system
-        match = re.search(r"replacement for `([^`]+)`", prompt)
-        name = match.group(1) if match else "placeholder"
-        return f"def {name}(*args, **kwargs):\n    return None\n"
-
-    def generate_json(self, prompt: str, *, system: str = "") -> dict[str, object]:
-        del prompt, system
-        return {"verdict": "reject", "concerns": ["dry run"], "genuinely_simpler": False}
-
-
 # ---- reporting ------------------------------------------------------------------------------
+
+
+def _backend_names() -> tuple[str, ...]:
+    """The registered backends, so `--help` lists what exists rather than what was typed."""
+    from actors import names
+
+    return names()
 
 
 def plan(ceiling: int, limit: int) -> None:
@@ -533,6 +513,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=3)
     parser.add_argument("--retries", type=int, default=3)
     parser.add_argument("--dry-run", action="store_true", help="exercise the loop with no model")
+    parser.add_argument(
+        "--backend",
+        default="ollama",
+        choices=_backend_names(),
+        help="what drives the loop. `claude-code` is the arm P11 says the result depends on",
+    )
     parser.add_argument(
         "--model", default="", help="actor model (default: $OXN_OLLAMA_MODEL, else glm-5.3:cloud)"
     )
@@ -563,6 +549,7 @@ def main(argv: list[str] | None = None) -> int:
             retries=args.retries,
             dry_run=args.dry_run,
             allow_extraction=args.allow_extraction,
+            backend=args.backend,
             model=args.model,
             judge_model=args.judge_model,
             host=args.host,

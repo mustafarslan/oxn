@@ -18,11 +18,12 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 
 
-#: The harness is three modules -- `dogfood` drives, `actor.py` talks to a model, and
-#: `gauntlet.py` verifies without one -- and these tests are about the harness rather than
-#: about any one of them. The fixture merges the three, so a test names what it is testing
-#: instead of where the code happens to live this week.
-HARNESS_MODULES = ("gauntlet", "actor", "dogfood")
+#: The harness is four modules -- `dogfood` drives, `actor.py` builds the prompts,
+#: `actors.py` says what may answer them, and `gauntlet.py` verifies without a model -- and
+#: these tests are about the harness rather than about any one of them. The fixture merges
+#: them, so a test names what it is testing instead of where the code happens to live this
+#: week.
+HARNESS_MODULES = ("gauntlet", "actor", "actors", "dogfood")
 
 
 def load_harness():
@@ -437,7 +438,7 @@ def test_landing_exactly_on_the_ceiling_is_an_acceptance(harness) -> None:
 
 def test_the_fake_client_makes_the_loop_testable(harness) -> None:
     """A stand-in that duck-types the real client, so plumbing tests need no model."""
-    client = harness._FakeClient()
+    client = harness.FakeClient()
     assert "def " in client.generate("anything")
     assert client.generate_json("anything")["verdict"] == "reject"
 
@@ -448,7 +449,7 @@ def test_the_fake_client_defines_the_function_it_was_asked_for(harness) -> None:
     A fixed `def placeholder()` made every dry run fail at extraction, which tests the
     guard rather than the plumbing the guard protects.
     """
-    reply = harness._FakeClient().generate("Reply with the complete replacement for `_walk` only.")
+    reply = harness.FakeClient().generate("Reply with the complete replacement for `_walk` only.")
     assert harness._defines(reply, "_walk")
 
 

@@ -138,6 +138,34 @@ Exit 1 and exit 2 are deliberately different numbers: a gate that could not star
 never be read as a gate that passed. The retry budget does not apply in CI — it is keyed
 on the agent `session_id` a hook sends and a pipeline does not — so CI always reports.
 
+## The health view, which never gates
+
+`oxn health` is the other output, and it decides nothing. Per declared ceiling it reports the
+share of source lines sitting in code over budget and names the code carrying it — a risk
+profile rather than a rating, because a 1–5 score needs calibrated boundaries and OXN has five
+corpora, not SIG's hundred.
+
+```sh
+oxn health src/
+```
+
+```
+  cognitive_complexity <= 12   4.1% of 12,043 lines over budget  (7 of 1,204 entities)
+      21  oxn.graph.indexer.Indexer.index          src/oxn/graph/indexer.py:88
+
+  coupling  no ceiling; distribution over 22 exactly-measured of 30 classes
+      CBO  median 0   p90 0   max 3
+      RFC  median 1   p90 3   max 7
+      8 class(es) left a base or callee unplaced; their numbers are lower bounds
+      >=  5 cbo  16 rfc  Indexer      src/oxn/graph/indexer.py
+```
+
+Coupling is the one dimension with no share and no ceiling. CBO and RFC have no entry in
+`oxn calibration`, so no boundary here has a measured cost, and the numbers the literature
+offers were fitted to systems this project has not measured. The `>=` is the other half of
+that honesty: below L2 an unplaced base or callee makes a value a floor, so the distribution
+covers the exactly-measured classes and the rest are counted and named rather than averaged in.
+
 ## The MCP server
 
 `oxn init` writes `.mcp.json`, so an agent gets four read-only tools. They inform; the hook
