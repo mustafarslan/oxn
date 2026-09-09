@@ -32,13 +32,31 @@ def test_the_self_bed_is_runnable_and_is_this_repository(harness) -> None:
     assert found.verify, "a bed that cannot verify cannot report"
 
 
-def test_an_unfetched_bed_says_the_one_command_that_fixes_it(harness) -> None:
-    """The pins exist; the checkout does not. That is a fetch, not a decision."""
-    with pytest.raises(SystemExit) as raised:
-        harness.bed("slop-code-bench")
-    message = str(raised.value)
-    assert "not fetched" in message
-    assert "fetch_corpora.py --use eval" in message
+def test_a_fetched_bed_stops_asking_to_be_fetched(harness) -> None:
+    """Both eval beds are pinned in the lock and on disk, so the refusal moves on.
+
+    It moves to the *right* refusal: fetching them was the easy half, and opening them is
+    what showed the hard half -- neither is a tree of code this loop can repair.
+    """
+    for name in ("slop-code-bench", "realworld-conduit"):
+        assert harness.BEDS[name].fetched, f"{name} is not fetched; run fetch_corpora --use eval"
+        with pytest.raises(SystemExit) as raised:
+            harness.bed(name)
+        assert "no verification commands" in str(raised.value)
+
+
+def test_an_unfetched_bed_would_say_the_one_command_that_fixes_it(harness) -> None:
+    """The other refusal, exercised on a bed that cannot be on disk."""
+    absent = harness.Bed(name="not-here", corpus="not-here", sources=())
+    assert not absent.fetched
+    harness.BEDS["not-here"] = absent
+    try:
+        with pytest.raises(SystemExit) as raised:
+            harness.bed("not-here")
+        assert "not fetched" in str(raised.value)
+        assert "fetch_corpora.py --use eval" in str(raised.value)
+    finally:
+        del harness.BEDS["not-here"]
 
 
 def test_a_bed_with_no_verification_is_refused_rather_than_guessed_at(harness, tmp_path) -> None:
@@ -50,7 +68,11 @@ def test_a_bed_with_no_verification_is_refused_rather_than_guessed_at(harness, t
     """
     declared = harness.BEDS["slop-code-bench"]
     assert not declared.verify
-    assert declared.blocked_on and "checkpoints" in declared.blocked_on
+    assert "agent-evaluation harness" in declared.blocked_on, "the reason must be the real one"
+
+    conduit = harness.BEDS["realworld-conduit"]
+    assert not conduit.verify
+    assert "no implementation" in conduit.blocked_on
 
     fetched = harness.Bed(
         name="fetched-but-unverifiable", corpus="", sources=("src",), blocked_on="nothing decided"

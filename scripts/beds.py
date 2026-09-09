@@ -18,8 +18,16 @@ A bed is three things, and the third is why the external ones cannot simply be p
 **The declared beds carry no verification commands, and are refused rather than guessed at.**
 Inventing a test command for a corpus nobody here has opened would produce a harness that
 runs, reports, and measures nothing -- the failure this project keeps finding in its own
-metrics. `benchmarks/manifest.yaml` already pins both with `use: eval`; fetching them is one
-command, and filling in `verify` is a decision to make with the corpus in front of you.
+metrics.
+
+Both are now fetched and opened, and both need more than a `verify` line -- which is exactly
+why guessing one would have been wrong. SlopCodeBench is an agent-evaluation *harness*, not a
+corpus: it drives the agent, so using it inverts this loop rather than feeding it, and its
+problems are in a separate repository this pin does not include. RealWorld is the Conduit
+*specification* and contains no implementation at all; its Hurl and Bruno collections are a
+real conformance suite, and what must be chosen first is which of the hundred-plus
+implementations is under test. `blocked_on` on each says what was found rather than what was
+assumed, which is the difference between a note and a next step.
 """
 
 from __future__ import annotations
@@ -81,29 +89,40 @@ BEDS: dict[str, Bed] = {
     "slop-code-bench": Bed(
         name="slop-code-bench",
         corpus="slop-code-bench",
-        sources=(".",),
+        sources=(),
         why=(
             "20 problems / 93 checkpoints, language-agnostic, measuring code erosion under "
             "iterative specification refinement -- the Tier 1.5 signals OXN computes "
             "natively, which is what makes it P11's primary bed. arXiv:2603.24755."
         ),
         blocked_on=(
-            "its checkpoints are the verification and they are per problem, so `verify` is "
-            "a decision to make with the corpus open rather than a command to guess"
+            "it is an agent-evaluation harness, not a corpus to repair -- SCBench drives "
+            "the agent itself. Integrating it inverts this harness: OXN's arms become a "
+            "configuration of *its* agent rather than a bed this loop repairs. It also "
+            "needs Docker, an API key, and the problems, which live in a separate "
+            "repository (gabeorlanski/scb-problems) that this pin does not include. Its "
+            "own src/ and tests/ could be repaired like any Python project, and that would "
+            "measure the benchmark's source instead of the benchmark"
         ),
     ),
     "realworld-conduit": Bed(
         name="realworld-conduit",
         corpus="realworld-conduit",
-        sources=(".",),
+        sources=(),
         why=(
             "the Conduit API specification (19 endpoints) used by the constraint-decay "
             "study to layer architectural constraints L0..L3, which is the directly "
             "comparable setup for the constraint-budgeting arm. arXiv:2605.06445."
         ),
         blocked_on=(
-            "Conduit is many implementations behind one API spec, so which one is under "
-            "test -- and therefore how it is verified -- is a choice, not a lookup"
+            "the pinned repository is the specification and nothing else -- 156 Bruno and "
+            "13 Hurl request files under specs/api/, and no implementation at all, since "
+            "the hundred-plus implementations live in their own repositories. The good "
+            "news is that those request collections *are* the verification, so `verify` "
+            "here is knowable rather than inventable: it is `hurl` against a running "
+            "implementation. What has to be chosen and pinned first is which "
+            "implementation, and in which language, since that decides what OXN is even "
+            "governing"
         ),
     ),
 }
