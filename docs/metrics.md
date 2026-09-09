@@ -1209,6 +1209,26 @@ rating via calibrated boundaries. Report the profile alongside the rating so the
   the corpora contribute instead is each ceiling's *exceedance*, recorded in `oxn.calibration` and
   frozen in `benchmarks/ceiling-observations.json`. See ROADMAP P10.
 
+#### Shipped 2026-09-09: profiles, and why the rating is not in them
+
+`oxn health` implements 10.1's second output. Per declared ceiling it reports the share of source
+lines in entities over budget and names the entities carrying it, weighted by SLOC rather than by
+entity count for the reason 10.2 gives. It never blocks, and the layer contract keeps it out of
+`check.py`.
+
+**What is deliberately absent is the 1-5 rating and 10.4's composite.** The recipe above ends by
+mapping a profile to a rating via calibrated boundaries; SIG derived those from roughly a hundred
+systems and OXN has five — the same five its ceilings were measured against, so a rating fitted to
+them would state how httpx compares to httpx. That is the circularity 10.3's amendment records for
+the ceilings themselves, one step further along. The profile satisfies P10's exit criterion on its
+own: a share that decomposes into named entities is explainable in the sense the criterion means,
+and "3 stars" is not.
+
+**The buckets are the declared ceilings, not per-language percentiles**, which would have meant
+fifteen new tunables fitted to one repository each. A ceiling is already argued and already
+recorded, and reusing it means "over budget" says the same thing in the gate and in the health
+view rather than two things that drift.
+
 ### 10.4 Composite health score
 An explicit weighted sum of per-dimension ratings — `{complexity, cohesion, coupling, architecture,
 history}` — with weights in `oxn.yaml`, **always reported alongside its sub-ratings**. No magic

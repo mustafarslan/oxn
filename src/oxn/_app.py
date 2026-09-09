@@ -323,6 +323,28 @@ def classes(
 
 
 @app.command()
+def health(
+    paths: list[str] = typer.Argument(None, help="Files or directories to report on."),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    limit: int = typer.Option(10, "--limit", help="Entities to name per profile."),
+) -> None:
+    """Risk profiles: how much of the code is over budget, and which code.
+
+    The informational output of `docs/metrics.md` section 10.1 -- it never blocks, and it
+    reports no single score. Every share names the entities that carry it, because a number
+    on its own is not something an agent or a person can act on.
+    """
+    from oxn.health import run_health
+    from oxn.render import Output
+
+    run_health(
+        paths or ["."],
+        Output(console=None if json_output else _console()),
+        limit=limit,
+    )
+
+
+@app.command()
 def doctor() -> None:
     """Report the environment OXN found: grammars, toolchains, and indexers."""
     from oxn.doctor import run_doctor

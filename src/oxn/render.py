@@ -283,3 +283,40 @@ def _emit_classes(payload: dict[str, Any], output: Output) -> None:
             f" [dim]{row['path']}[/dim]{flag}"
         )
     console.print("\n[dim]~ marks a value computed from an inherited or dynamic access[/dim]")
+
+
+def emit_health(payload: dict[str, Any], output: Output) -> None:
+    """Risk profiles, worst-first, with the entities that account for each share.
+
+    The share is printed beside the names that carry it rather than alone, because a number
+    with nothing attached is the output `docs/metrics.md` section 10.1 refuses.
+    """
+    console = output.console
+    if console is None:
+        json.dump(payload, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return
+    if payload["status"] == "ERROR":
+        for path, message in payload["errors"].items():
+            console.print(f"[red]{path}[/red]: {message}")
+        return
+
+    console.print(
+        f"[bold]Health[/bold] [dim]{payload['files']} file(s); informational, never gates[/dim]"
+    )
+    for rule, found in sorted(payload["profiles"].items(), key=_by_share):
+        console.print(
+            f"\n  [bold]{rule}[/bold] <= {found['ceiling']:g}   "
+            f"[bold]{found['share_over_ceiling']:.1%}[/bold] of "
+            f"{found['sloc']:,.0f} lines over budget"
+            f"  [dim]({found['entities_over']} of {found['entities']} entities)[/dim]"
+        )
+        for worst in found["worst"][:5]:
+            console.print(
+                f"      {worst['value']:>6g}  {worst['entity'][:56]:<56}"
+                f" [dim]{worst['path']}:{worst['line']}[/dim]"
+            )
+
+
+def _by_share(item: tuple[str, Any]) -> float:
+    return -float(item[1]["share_over_ceiling"])
