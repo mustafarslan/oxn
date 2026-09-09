@@ -648,3 +648,37 @@ recorded twice today.
 Still not read: *which* module an import-qualified call names. Restricting `metrics.Foo()` to
 the files `metrics` resolves to would gain at most 3 answers on go-kit — later steps already
 score 99.3% there — so it is not built, and this is what that decision was based on.
+
+## Amendment, 2026-09-09 — the bare half of the import rule, and a metric that overstated itself
+
+The ninth amendment's second rule applied only to *qualified* calls. It applies to bare ones
+now, and for the same reason: `import { readFile } from "fs"` binds `readFile`, so a bare
+`readFile()` **is** that binding, and an in-tree function of the same name is a coincidence.
+The governing name is the qualifier where there is one and the callee itself where there is
+not.
+
+Locality is consulted first, which is what makes Python's `from x import helper` followed by
+a local `def helper` come out right: the language says the later binding wins, and the local
+declaration answers before the import table is ever asked.
+
+**It withdraws 35 wrong confident answers — 27 on nest, 7 on httpx, 1 on go-kit — and changes
+no graded number on any of the five corpora.**
+
+**35, against the 519 that motivated it, and the gap is the entry that matters.** That 519
+came from counting "sites where the oracle placed the callee out of tree and L1 still
+answered confidently" and reading it as "calls that leave the tree". **The two are not the
+same claim.** On nest, of the 619 that remain: 391 are names imported from `@nestjs/*`
+packages that *do* resolve in-tree, so nothing about them is external at all; 101 are not
+imported anywhere in their file; 127 are qualified. Sampling the causes gives a **function
+parameter** (`callback`, which OXN has no entity for and never will at L0), a `const` arrow
+function (`sleep`), and one real external global (`fetch`, from TypeScript's `lib.dom.d.ts`).
+
+Only the last is this rule's business. The others are **callees OXN has no entity for**,
+which is a different gap with a different fix, and it now has a name instead of being folded
+into this one's headline. The 519 figure published with the ninth amendment's commit is
+withdrawn as a measurement of anything.
+
+The lesson is the session's third of this shape and the cheapest yet: the number was
+suspicious *before* the fix was written -- 519 bare calls to externally-imported names in one
+repository is a lot -- and printing the sites first would have cost two minutes. It was
+printed only after the fix under-delivered.

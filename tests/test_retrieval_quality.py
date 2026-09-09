@@ -38,7 +38,7 @@ LABELS = ROOT / "benchmarks" / "retrieval-labels-oxn.json"
 #: lives in a script drifts silently while one that lives in an assertion carries its delta
 #: in the diff, exactly as `.oxn/baseline.json` does for the gate.
 #:
-#: Sixteen re-pins across 2026-09-05 and 09-06, none of them a ranker change:
+#: Seventeen re-pins across 2026-09-05 and 09-06, none of them a ranker change:
 #: 0.377/0.579 -> 0.377/0.577 (ADR-0001, ADR-0004 amended) -> 0.396/0.596 (ADR-0003) ->
 #: 0.396/0.592 -> 0.377/0.583 (ADR-0005) -> 0.396/0.603 -> 0.434/0.628 -> 0.491/0.663 ->
 #: 0.528/0.689 -> 0.547/0.708 (ADR-0002, five times across one day of resolution work)
@@ -48,10 +48,11 @@ LABELS = ROOT / "benchmarks" / "retrieval-labels-oxn.json"
 #: -> 0.604/0.747 (ADR-0002 a fifth time, TypeScript measured)
 #: -> 0.604/0.750 (ADR-0002 a sixth time, the import table)
 #: -> 0.623/0.757 (ADR-0002 a seventh time, the gate that was off for three languages)
-#: -> 0.604/0.750 (ADR-0002 an eighth time, the call qualifier -- and *down* this time).
+#: -> 0.604/0.750 (ADR-0002 an eighth time, the call qualifier -- and *down* this time)
+#: -> 0.623/0.760 (ADR-0002 a ninth time, the bare half of the import rule).
 #:
-#: Sixteen re-pins in two days is itself the finding. ADR-0002 is gold for the resolution
-#: commits and it has roughly tripled in length, so P@1 has moved from 0.377 to 0.604
+#: Seventeen re-pins in three days is itself the finding. ADR-0002 is gold for the resolution
+#: commits and it has roughly tripled in length, so P@1 has moved from 0.377 to 0.623
 #: without one line of the ranker changing. A corpus of five documents cannot be a quality
 #: measurement while it is also the thing under edit -- which is what ADR-0006 section 5a
 #: concluded from the other direction, and why the floor lives on the external corpus.
@@ -62,8 +63,8 @@ LABELS = ROOT / "benchmarks" / "retrieval-labels-oxn.json"
 #: it is five documents shifting under a fixed query set -- and it is the argument for
 #: putting the quality claim on the external corpus (ADR-0006 section 5b) while this file
 #: asserts only reproducibility.
-RECORDED_P_AT_1 = 0.604
-RECORDED_MRR = 0.750
+RECORDED_P_AT_1 = 0.623
+RECORDED_MRR = 0.760
 
 
 @pytest.fixture(scope="module")

@@ -98,21 +98,30 @@ class ProjectSymbols:
         99.3%-100% for every later step. It is the single mechanism behind all 318
         confidently-wrong qualified answers.
 
-        **A call through an import that reached no file in this tree resolves to nothing.**
-        If `np` names `numpy` and `numpy` is not in the tree, `np.array()` is not an entity
-        here, and any in-tree `array` is a coincidence. The grader cannot score these at all
-        -- the oracle places them out of tree, so they are never graded -- but they reach
+        **A call governed by an import that reached no file in this tree resolves to
+        nothing.** If `np` names `numpy` and `numpy` is not in the tree, `np.array()` is not
+        an entity here and any in-tree `array` is a coincidence -- and the same holds with no
+        qualifier at all, because `import { readFile } from "fs"` binds `readFile` and a bare
+        `readFile()` *is* that binding. The grader cannot score either shape -- the oracle
+        places these callees out of tree, so they are never graded -- but they reach
         `metrics.callgraph`, CBO and RFC. ADR-0002's ninth amendment has the numbers.
         """
-        if qualifier is not None and qualifier in self.external_aliases.get(path, ()):
-            return None
+        # Locality first, and it still wins outright for a bare call. Ambiguity inside one
+        # file is still ambiguity, hence `1/n` rather than a bare first answer:
+        # `metrics.callgraph` admits only confidence-1.0 edges below L2, so anything less
+        # honest enters the call graph as ground truth.
         if qualifier is None:
-            # Ambiguity inside one file is still ambiguity, hence `1/n` rather than a bare
-            # first answer: `metrics.callgraph` admits only confidence-1.0 edges below L2,
-            # so anything less honest enters the call graph as ground truth.
             local = _answer(name, self.by_file.get(path, {}).get(name) or [], path, Resolution.L0)
             if local is not None:
                 return local
+
+        # The name governing this call: the qualifier where there is one, the callee itself
+        # where there is not. Reached only after locality declined, which is what makes
+        # Python's `from x import helper` followed by a local `def helper` come out right --
+        # the local declaration answers first, exactly as the language says it should.
+        governing = name if qualifier is None else qualifier
+        if governing in self.external_aliases.get(path, ()):
+            return None
 
         for imported in sorted(self.imports.get(path, ())):
             candidates = self.by_file.get(imported, {}).get(name) or []
