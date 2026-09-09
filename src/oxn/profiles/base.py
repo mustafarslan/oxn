@@ -155,11 +155,33 @@ class LanguageProfile:
         return current
 
     def entity_name(self, node: Node) -> str | None:
-        """The declared name of a definition node, or ``None`` for anonymous callables."""
-        name_node = node.child_by_field_name(self.name_field)
+        """The declared name of a definition node, or ``None`` for a truly anonymous one.
+
+        **A callable bound to a name is not anonymous**, and treating it as one cost more
+        call sites than any other single gap: `const handler = () => {}`,
+        `var Fn = func() {}`, `f = lambda: 1` all produced an entity with `name=None`, which
+        `_declared_in` skips -- so nothing could ever resolve a call to them. Measured across
+        the pinned corpora, 575 call sites reach a callee SCIP places in the tree and OXN had
+        no *named* entity for, on top of the closures below it.
+
+        The binding field differs by grammar -- `name`, `left`, `pattern` -- which is the
+        same set `_binding_targets` already walks for assignments, for the same reason.
+        """
+        name_node = self.name_node(node)
         if name_node is None:
             return None
         return name_node.text.decode("utf-8", "replace") if name_node.text else None
+
+    def name_node(self, node: Node) -> Node | None:
+        """The node that *names* a definition, which is not always inside it.
+
+        A single answer for both readers, because they must agree: `entity_name` records
+        what an entity is called, and `scip/join.py` matches an entity to a SCIP symbol by
+        looking up the occurrence at this node's position. Naming a bound callable without
+        teaching the join the same thing produced entities that could be *looked up* by name
+        and never *graded*, which is a measurement that cannot see its own subject.
+        """
+        return node.child_by_field_name(self.name_field) or _bound_name(node)
 
     def parameter_names(self, node: Node) -> list[str]:
         """Declared parameter names, receivers excluded.
@@ -178,6 +200,35 @@ class LanguageProfile:
                 continue
             names.append(_first_identifier(child))
         return names
+
+
+#: Fields under which a declaration holds the name it binds. `name` covers a TypeScript
+#: `variable_declarator` and a Go `var_spec`, `left` a Python assignment, `pattern` a Rust
+#: `let`. The same three `_binding_targets` walks, and for the same reason.
+_BINDING_FIELDS = ("name", "left", "pattern")
+
+
+def _bound_name(node: Node) -> Node | None:
+    """The identifier a callable was assigned to, when the callable has no name of its own.
+
+    Only the immediate parent, and only when it yields a plain identifier: `const [a, b] =
+    ...` destructures, `obj.method = () => {}` binds an attribute, and neither is a name this
+    callable can be called by from the bare-name table this feeds.
+    """
+    parent = node.parent
+    if parent is not None and parent.named_children == [node]:
+        # A wrapper carrying no name of its own: Go puts the value of `var Fn = func() {}`
+        # inside an `expression_list`. Only when it is the *sole* child, so that
+        # `a, b = 1, func() {}` -- where names bind positionally and `a` is not this
+        # function's name -- stays correctly anonymous.
+        parent = parent.parent
+    if parent is None:
+        return None
+    for binding_field in _BINDING_FIELDS:
+        bound = parent.child_by_field_name(binding_field)
+        if bound is not None and bound.type == "identifier" and bound != node:
+            return bound
+    return None
 
 
 def _first_identifier(node: Node) -> str:

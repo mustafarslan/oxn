@@ -787,3 +787,42 @@ which is precisely what that rule exists to catch, and it caught it at 15 agains
 of 12. The complexity was then removed rather than relocated: keying the package table on
 files instead of directories deleted a scan of every known path and both of its conditions.
 The gate refusing OXN's own shortcut is the strongest evidence yet that the rule works.
+
+## Amendment, 2026-09-09 (fourth) — a callable bound to a name is not anonymous
+
+Scoping the gap named two amendments ago produced a number worth keeping: across the five
+corpora, **~3,350 call sites reach a callee SCIP places inside the tree and OXN has no entity
+for** — TypeScript 2,052, Go 576, Python 453, Rust 267, Java 0. Counted by shape rather than
+sampled, which is how the 519 went wrong.
+
+The largest *fixable* share was one thing: `const handler = () => {}` produced an entity with
+`name=None`. `_declared_in` skips those, so nothing could ever resolve `handler()`. The
+binding field differs by grammar — `name` for a TypeScript declarator and a Go `var_spec`,
+`left` for a Python assignment, `pattern` for a Rust `let` — which is the same set
+`_binding_targets` already walks.
+
+**Doing only that made the corpora slightly worse, and that is the useful part of this
+entry.** Graded call sites did not move on any corpus, while Rust's precision fell 53.03% →
+52.76%: the new named entities became candidates in lookups without becoming *gradeable*,
+because `scip/join.py` matched an entity to its SCIP symbol through the definition's **name
+field** — which an arrow function does not have. The entity was resolvable by a name no
+measurement could check.
+
+`LanguageProfile.name_node` is now the single answer both readers ask for, and the two halves
+together give:
+
+    typescript   graded 2,172 -> 2,362    precision 66.9% -> 69.2%    confident recall 53.2% -> 56.7%
+    rust         graded unchanged         precision 53.03% -> 52.76%  confident recall 42.3% -> 42.2%
+    python, go, java   unchanged
+
+Confident precision is unchanged everywhere — 100% on TypeScript across 190 more sites. Rust
+keeps a 0.27-point precision cost, stated rather than hidden: naming a `let g = |x| x`
+closure adds a project-wide candidate for a name that is only callable inside one function
+body, because `by_name` holds every entity regardless of scope. Fixing *that* is a change to
+what the project-wide table admits, which touches all five languages and wants its own
+measurement.
+
+**What stays anonymous stays anonymous on purpose.** nest's remaining 1,785 are 1,551 inline
+callbacks (`items.map(x => x.id)` has no name a caller could write), 119 parameters — which
+OXN will never have an entity for, correctly — and 115 terms. Inventing a name for any of
+them would put a wrong answer in the bare-name table instead of leaving a gap that is visible.

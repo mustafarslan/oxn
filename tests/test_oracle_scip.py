@@ -420,8 +420,9 @@ def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     """The fifth language, and the corpus whose exclusion count was hiding a real defect.
 
     On `typescript-nest`: L2 coverage **99.9% of declarations and 83.6% of call sites**,
-    index built in 3 s. L0/L1 scores **100% precision when certain** at 53.2% confident
-    recall, 66.9% overall at 100% recall, over 2,172 graded call sites.
+    index built in 3 s. L0/L1 scores **100% precision when certain** at 56.7% confident
+    recall, 69.2% overall at 100% recall, over 2,362 graded sites -- 190 of them gradeable
+    only once a callable bound to a name stopped being anonymous to the SCIP join.
 
     **99.7% is Python's number, on a corpus larger than Python's.** That is the second high
     row, and it is the one that makes "only Python is high" no longer the shape of the table:
@@ -438,17 +439,15 @@ def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     sixth amendment carries the split across all five languages.
 
     **This row cost 529 fabricated L2 edges to publish, which is what it was worth.** The
-    first measurement excluded 441 sites (16.9%). Attributing that to TypeScript being hard
-    is what the Rust retraction was about, so the sites were printed instead: every one was a
-    `local N` symbol, `local N` is document-scoped, and OXN's symbol table was keyed globally
+    first measurement excluded 441 sites (16.9%); printing them rather than attributing them
+    found that every one was a document-scoped `local N` symbol keyed globally
     (`tests/test_scip_local_symbols.py`). Exclusions are 1.94% after the fix -- the 441 were
-    a double error that cancelled, a collision manufacturing a truth the spelling rule then
-    discarded.
+    a double error that cancelled.
 
-    The 43 that remain were read, not assumed. 16 are same-file `local` functions, which have
-    no name in the symbol to compare against; 7 are `typeLiteral268:commitOffsets`, methods
-    on an anonymous type literal; 1 is a `<get>id` accessor. All three are descriptor
-    decoration rather than disagreement, and none is worth a speculative strip at 0.36%.
+    The remaining exclusions were read, not assumed: same-file `local` functions with no name
+    in the symbol, `typeLiteral268:commitOffsets` methods on anonymous type literals, and one
+    `<get>id` accessor -- descriptor decoration rather than disagreement, and not worth a
+    speculative strip.
     """
     from oxn.graph.indexer import Indexer
     from oxn.resolve.measure import measure_corpus

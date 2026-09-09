@@ -117,7 +117,11 @@ def _map_definitions(
 ) -> None:
     """Match each entity to the SCIP symbol declared at its name."""
     for definition, entity in _iter_definitions(profile, tree_root, by_def_range):
-        name_node = definition.child_by_field_name(profile.name_field)
+        # `profile.name_node`, not the name field: a callable bound to a name -- `const
+        # handler = () => {}` -- is named by the identifier *outside* it, and SCIP puts its
+        # definition occurrence there too. Reading the field alone left every one of them
+        # unjoined, so they could be resolved by name and never graded.
+        name_node = profile.name_node(definition)
         if name_node is None:
             continue
         result.definition_sites += 1
