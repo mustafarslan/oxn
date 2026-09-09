@@ -22,12 +22,14 @@ from typing import TYPE_CHECKING
 
 from oxn.graph.manifests import (
     cargo_crates,
+    cargo_roots,
     go_module,
     java_packages,
     normalize,
     tsconfig_aliases,
     workspace_packages,
 )
+from oxn.graph.resolve_rust import resolve_rust
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Iterable, Iterator
@@ -76,6 +78,8 @@ class ResolutionContext:
     java_packages: dict[str, str] = field(default_factory=dict)
     #: Crate name as an import spells it -> its directory, for a Cargo workspace.
     cargo_crates: dict[str, str] = field(default_factory=dict)
+    #: Crate directory -> the file holding its root module, which `crate::` is relative to.
+    crate_roots: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def build(cls, root: Path, files: Iterable[str]) -> ResolutionContext:
@@ -89,6 +93,7 @@ class ResolutionContext:
             go_module=go_module(root),
             java_packages=java_packages(known),
             cargo_crates=cargo_crates(root),
+            crate_roots=cargo_roots(root),
         )
 
     def is_own_module(self, specifier: str) -> bool:
@@ -155,6 +160,8 @@ def resolve_import(
         targets = _resolve_python(source_path, raw, context)
     elif language == "go":
         targets = _resolve_go(raw, context)
+    elif language == "rust":
+        targets = resolve_rust(source_path, raw, context)
     else:
         single = _resolve_ecmascript(source_path, raw, context)
         targets = (single,) if single is not None else ()

@@ -682,3 +682,74 @@ The lesson is the session's third of this shape and the cheapest yet: the number
 suspicious *before* the fix was written -- 519 bare calls to externally-imported names in one
 repository is a lot -- and printing the sites first would have cost two minutes. It was
 printed only after the fix under-delivered.
+
+## Amendment, 2026-09-09 (second) — Rust resolves, and step 2 learns the same lesson step 1 did
+
+`resolve_rust` places a `use` path on a file. Rust's module tree mirrors its directory tree,
+so it probes the known file set the way `_resolve_python` does rather than walking `mod`
+declarations: reading `mod` is the authority, and it costs a parse of every file to resolve
+one import. Four heads are ours — `crate`, `self`, `super`, and any workspace crate name —
+and everything else (`std`, `bstr`, `serde`) stays external, correctly.
+
+**On ripgrep: 0 in-tree edges → 224, and reported-missing 611 → 0.** The layer gate is now on
+for four of the five launch languages; `tests/test_rust_resolution.py` carries the same
+demonstration `test_go_resolution.py` does — a contract that passed unconditionally because
+it had nothing to judge.
+
+Two things it took two measurements to get right, and neither was guessed:
+
+* **A crate root is not always `src/lib.rs`.** ripgrep's own package declares
+  `[[bin]] path = "crates/core/main.rs"`, so `[lib] path` and `[[bin]] path` are read before
+  the conventions. Assuming the convention works for its ten libraries and fails silently on
+  its binary.
+* **A file directly beneath a crate root has that root as its `super`.** That was every one
+  of the 54 imports still unresolved once the rest worked: a crate root is `lib.rs` or
+  `main.rs`, never `mod.rs` and never `src.rs`, so probing only those two spellings found
+  nothing. The last 3 after *that* were `use super::X` inside a crate root — necessarily from
+  an inline `#[cfg(test)] mod tests`, whose parent is the crate root itself.
+
+**Turning imports on for Rust cost confident precision immediately: 99.6% → 98.0%, with the
+correct count unchanged.** Answers that were uncertain-and-wrong had become
+confident-and-wrong. The cause was the rule this ADR deferred one amendment ago as "worth at
+most 3 answers on go-kit":
+
+> **Step 2 belongs to bare and package-qualified calls, not to receivers.** "A declaration in
+> a file this one imports" is evidence about a *name*. A receiver's type is unknown, and an
+> imported file's declarations are no more evidence about it than the calling file's were at
+> step 1.
+
+It was 24 on ripgrep, and it is the same category error as step 1's, one rung out. The
+deferral was defensible on the number available at the time and wrong on the one that
+appeared when Rust got edges — which is the argument for measuring a rule on every corpus
+rather than on the one that motivated it.
+
+A second correction: **a Rust `Type::method()` path call is qualified.** `callee_qualifier`
+denied this for a day, reasoning that a `scoped_identifier` is "not the receiver kind" and so
+"needs no table". That conflated *not a receiver* with *not qualified* — `new` in
+`Searcher::new()` belongs to `Searcher`, and the calling file's own `new` is no more the
+answer than it is for a receiver.
+
+    language      confident precision      confident recall     precision
+    Go            93.0% -> 99.7%           74.6% -> 64.1%       75.5% -> 71.4%
+    Rust          99.6% -> 99.2%           42.0% -> 42.3%       52.8% -> 53.0%
+    TypeScript    99.7% -> 100%            53.4% -> 53.2%       66.7% -> 66.9%
+    Python, Java  unchanged                unchanged            unchanged
+
+**Go's overall precision fell 4.2 points and that is the honest cost**: 66 receiver calls
+that step 2 had been answering correctly by luck now fall through and are answered
+uncertainly. Confident precision is what the gating policy reads and it rose 6.7 points;
+overall precision is reported and not gated. Rust's overall precision *exceeded* its
+pre-resolution figure, which is the check that the 224 edges are worth having.
+
+**An assertion retired rather than re-pinned.** `test_go_l0_l1_accuracy...` asserted
+`confident_precision < 0.99` with the comment "if Go ever reaches Python's level, this test
+should fail and the gating policy be revisited on the evidence." Go reached 99.7%. The
+premise it guarded — that L1 certainty is worth less in Go than in Python — is not what the
+corpora say any more. What survives is a *recall* gap: Go is certain about 64.1% of its call
+sites against Python's 65.5% and Java's 88.0%, and the test now guards that instead.
+
+**Deferred, with its reason.** `pub use` re-export following: `grep::matcher::Matcher` reaches
+`grep_matcher` through a re-export in `grep/src/lib.rs`, and this resolves it to the
+re-exporting crate's root instead. Following it needs that crate's root parsed for `pub use`,
+which is the `mod`-walking declined above. It leaves a correct edge to the wrong file rather
+than a missing one, and on ripgrep it costs nothing measurable — the residue is 0.

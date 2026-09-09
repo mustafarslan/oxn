@@ -98,6 +98,10 @@ class ProjectSymbols:
         99.3%-100% for every later step. It is the single mechanism behind all 318
         confidently-wrong qualified answers.
 
+        **Step 2 is for bare and package-qualified calls only.** "A declaration in a file
+        this one imports" is evidence about a name, not about a receiver's type, so a
+        receiver-qualified call skips it exactly as it skips step 1.
+
         **A call governed by an import that reached no file in this tree resolves to
         nothing.** If `np` names `numpy` and `numpy` is not in the tree, `np.array()` is not
         an entity here and any in-tree `array` is a coincidence -- and the same holds with no
@@ -123,12 +127,39 @@ class ProjectSymbols:
         if governing in self.external_aliases.get(path, ()):
             return None
 
+        return self._from_imports(path, name, qualifier) or self._from_project(name)
+
+    def _from_imports(self, path: str, name: str, qualifier: str | None) -> ResolvedName | None:
+        """Step 2: a declaration in a file this one imports.
+
+        **Bare and package-qualified calls only.** `metrics.NewCounter()` is exactly what
+        this step is for. `reader.consume_all()` is not: a receiver's type is unknown, and an
+        imported file's declarations are no more evidence about it than the calling file's
+        were at step 1. The distinction is the import table -- a qualifier the file imported
+        nothing under is a receiver.
+
+        This was deferred once, as worth "at most 3 answers on go-kit". Resolving ripgrep's
+        imports made it 24, every one a confident *wrong* answer: step 2 could not fire for
+        Rust at all until then, and turning it on took confident precision 99.6% -> 98.0%
+        while the correct count did not move. The whole of that regression was this rule
+        missing.
+        """
+        if qualifier is not None and qualifier not in self.aliases.get(path, ()):
+            return None
         for imported in sorted(self.imports.get(path, ())):
-            candidates = self.by_file.get(imported, {}).get(name) or []
-            found = _answer(name, candidates, imported, Resolution.L1)
+            found = _answer(
+                name, self.by_file.get(imported, {}).get(name) or [], imported, Resolution.L1
+            )
             if found is not None:
                 return found
+        return None
 
+    def _from_project(self, name: str) -> ResolvedName | None:
+        """Steps 3 and 4: a declaration anywhere, unique or reported as `1/n`.
+
+        The last rung, and the only one with no locality argument behind it -- which is why
+        it reports the candidate count rather than a preference.
+        """
         anywhere = self.by_name.get(name, [])
         if not anywhere:
             return None

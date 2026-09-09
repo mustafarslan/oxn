@@ -334,15 +334,53 @@ def cargo_crates(root: Path) -> dict[str, str]:
     `grep_searcher::sinks::UTF8` lives in: that needs `mod` declarations walked across
     `x.rs`, `x/mod.rs` and `#[path]`, plus re-exports, and it has no pinned measurement yet.
     """
-    manifests = [root / "Cargo.toml"]
-    for member in _toml_field(_read(manifests[0]), "workspace", "members"):
-        manifests.extend(sorted(root.glob(f"{member}/Cargo.toml")))
+    manifests = _cargo_manifests(root)
 
     crates: dict[str, str] = {}
     for manifest in manifests:
         for name in _toml_field(_read(manifest), "package", "name"):
             crates[name.replace("-", "_")] = _relative_dir(manifest.parent, root)
     return crates
+
+
+def _cargo_manifests(root: Path) -> list[Path]:
+    """The workspace root's manifest and every member's, in that order."""
+    manifests = [root / "Cargo.toml"]
+    for member in _toml_field(_read(manifests[0]), "workspace", "members"):
+        manifests.extend(sorted(root.glob(f"{member}/Cargo.toml")))
+    return manifests
+
+
+#: Where a crate's root module lives when the manifest does not say. Rust's own convention,
+#: and the fallback order `cargo` itself uses.
+_CARGO_DEFAULT_ROOTS = ("src/lib.rs", "src/main.rs")
+
+
+def cargo_roots(root: Path) -> dict[str, str]:
+    """Crate directory -> the file holding its root module, which `crate::` is relative to.
+
+    **Not always `src/lib.rs`.** ripgrep's own package declares
+    `[[bin]] path = "crates/core/main.rs"`, so a `crate::` path written in `crates/core/`
+    resolves against a directory three levels from the manifest that declares it. Assuming
+    the convention would have silently failed on the binary crate of the pinned corpus while
+    working for its ten libraries.
+
+    `[lib]` wins over `[[bin]]` because a package that is both is imported as the library;
+    `[[test]]` and `[[bench]]` declare a `path` too and are not root modules, which is why
+    this reads tables by name rather than scanning for `path =`.
+    """
+    roots: dict[str, str] = {}
+    for manifest in _cargo_manifests(root):
+        text = _read(manifest)
+        if not text:
+            continue
+        directory = manifest.parent
+        declared = _toml_field(text, "lib", "path") or _toml_field(text, "bin", "path")
+        candidates = [*declared, *_CARGO_DEFAULT_ROOTS]
+        found = next((c for c in candidates if (directory / c).is_file()), None)
+        if found is not None:
+            roots[_relative_dir(directory, root)] = _relative_dir(directory / found, root)
+    return roots
 
 
 def _relative_dir(directory: Path, root: Path) -> str:

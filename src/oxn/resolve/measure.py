@@ -263,6 +263,11 @@ def symbol_tail(symbol: str) -> str:
     return parts[-1].split("(")[0].rstrip(".:").strip("`[")
 
 
+#: Callee kinds that name a path rather than a receiver -- `Searcher::new()`. The qualifier
+#: is the `path` field rather than the object field, and it is a type or module name.
+_PATH_CALLEES = frozenset({"scoped_identifier"})
+
+
 def callee_qualifier(node: Node, callee: Node, profile: LanguageProfile) -> str | None:
     """The name a call was written *through*, or ``None`` for a bare call.
 
@@ -272,17 +277,21 @@ def callee_qualifier(node: Node, callee: Node, profile: LanguageProfile) -> str 
     its object field. Java is the exception: `method_invocation` keeps `object` and `name`
     as siblings, so the callee is a bare identifier and the qualifier hangs off the *call*.
 
-    Rust's `std::fmt::format()` is deliberately not qualified here. Its callee is a
-    `scoped_identifier`, not the receiver kind, and Rust is the one language where a path
-    call and a receiver call are distinguishable by shape alone -- so it needs no table to
-    tell them apart and gets the plain lookup.
+    **A path call is qualified too**, and this said otherwise for a day. `Searcher::new()`
+    has a `scoped_identifier` callee rather than a receiver one, and the first version of
+    this function concluded that Rust "needs no table to tell them apart and gets the plain
+    lookup". That conflated *not a receiver* with *not qualified*: `new` there belongs to
+    `Searcher`, and the calling file's own top-level `new` is no more the answer than it is
+    for a receiver. `Searcher` is usually in the import table as well, so the call still
+    reaches step 2 and lands in the file that defines the type.
     """
     spec = profile.metrics.scopes
-    through = (
-        callee.child_by_field_name(spec.attribute_object_field)
-        if callee.type == spec.attribute_kind
-        else None
-    ) or node.child_by_field_name(spec.attribute_object_field)
+    through = None
+    if callee.type == spec.attribute_kind:
+        through = callee.child_by_field_name(spec.attribute_object_field)
+    elif callee.type in _PATH_CALLEES:
+        through = callee.child_by_field_name("path")
+    through = through or node.child_by_field_name(spec.attribute_object_field)
     if through is None:
         return None
     return _head_name(through, profile.metrics.cognitive.call_kinds) or _text(through)

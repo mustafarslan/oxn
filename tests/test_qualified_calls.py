@@ -187,9 +187,11 @@ QUALIFIER_CASES = [
     ("go", "package m\nfunc f() { c.With() }\n", "c"),
     ("go", "package m\nfunc f() { plain() }\n", None),
     ("rust", "fn f() { r.consume_all(); }\n", "r"),
-    # Rust is the one language where a path call and a receiver call differ by *shape*:
-    # `scoped_identifier` is not the receiver kind, so it needs no table to be told apart.
-    ("rust", "fn f() { std::fmt::format(); }\n", None),
+    # A path call is qualified too -- by a type or module rather than by a receiver. This
+    # case asserted `None` for a day, on the reasoning that Rust tells the two apart by
+    # shape; it does, and both of them are still qualified.
+    ("rust", "fn f() { std::fmt::format(); }\n", "std"),
+    ("rust", "fn f() { Searcher::new(); }\n", "Searcher"),
     ("typescript", "pkg.thing();\n", "pkg"),
     # Java keeps `object` and `name` as siblings of the *call*, so the callee is a bare
     # identifier and the qualifier hangs off the call node instead.
