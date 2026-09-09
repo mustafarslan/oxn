@@ -113,6 +113,19 @@ class Session:
     #: How many times to attempt each target. One sample of a stochastic process is an
     #: anecdote; the arm table prints this so a reader can tell which they have.
     repeats: int = 1
+
+    @property
+    def is_fake(self) -> bool:
+        """True when nothing real answered, however that was asked for.
+
+        `--dry-run` and `--backend dry-run` reach the same `FakeClient`, and only the first
+        used to suppress logging -- so the second wrote fabricated attempts into
+        `benchmarks/dogfood-log.jsonl` beside real ones, where nothing downstream could tell
+        them apart. A record that mixes invented rows with measured ones is worse than an
+        empty one.
+        """
+        return self.dry_run or self.backend == "dry-run"
+
     #: Which of OXN's three channels the actor is given. `scripts.arms` holds the table;
     #: `hybrid` is what the harness did before the arms existed.
     arm: str = "hybrid"
@@ -124,7 +137,7 @@ class Session:
 def repair(targets: list[Target], session: Session, where: Bed = SELF) -> list[Attempt]:
     """Attempt to repair each target, verifying every candidate before judging it."""
     crew = Crew(*_clients(session))
-    if not session.dry_run:
+    if not session.is_fake:
         say(f"{DIM}actor {crew.actor.model}  judge {crew.judge.model}  at {crew.actor.host}{RESET}")
 
     DIFFS.mkdir(parents=True, exist_ok=True)
@@ -136,7 +149,7 @@ def repair(targets: list[Target], session: Session, where: Bed = SELF) -> list[A
             say(f"\n{BOLD}{target.leaf}{RESET} {where_at}{of}")
             attempts.extend(_repair_one(target, session, crew, where, sample))
 
-    if session.dry_run:
+    if session.is_fake:
         # The fake client emits fixed junk, so these rows would be indistinguishable from
         # real attempts in a benchmark record that exists to be read later.
         say(f"\n{DIM}dry run -- not logged{RESET}")
@@ -167,7 +180,7 @@ def _clients(session: Session) -> tuple[Any, Any]:
     """
     from actors import build, build_judge
 
-    backend = "dry-run" if session.dry_run else session.backend
+    backend = "dry-run" if session.is_fake else session.backend
     return (
         build(backend, session.model, session.host),
         build_judge(backend, session.judge_model, session.host),
@@ -204,7 +217,7 @@ def _repair_one(
             ceiling=session.ceiling,
             allow_extraction=session.allow_extraction,
             arm=arm(session.arm),
-            backend="dry-run" if session.dry_run else session.backend,
+            backend="dry-run" if session.is_fake else session.backend,
             checks=where.verify,
             repeat=sample,
         )

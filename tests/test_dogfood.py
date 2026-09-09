@@ -34,6 +34,7 @@ HARNESS_MODULES = (
     "runlog",
     "summary",
     "dogfood",
+    "experiment",
 )
 
 
