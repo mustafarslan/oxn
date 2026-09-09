@@ -24,7 +24,16 @@ ROOT = Path(__file__).resolve().parent.parent
 #: these tests are about the harness rather than about any one of them. The fixture merges
 #: them, so a test names what it is testing instead of where the code happens to live this
 #: week.
-HARNESS_MODULES = ("gauntlet", "actor", "actors", "arms", "runlog", "summary", "dogfood")
+HARNESS_MODULES = (
+    "gauntlet",
+    "actor",
+    "actors",
+    "arms",
+    "beds",
+    "runlog",
+    "summary",
+    "dogfood",
+)
 
 
 def load_harness():

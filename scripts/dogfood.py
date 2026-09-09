@@ -55,6 +55,7 @@ from actor import (
     ask_judge,
 )
 from arms import Arm, arm
+from beds import SELF, Bed, bed, bed_names
 from gauntlet import (
     SCRATCH,
     GauntletResult,
@@ -106,11 +107,16 @@ class Target:
         return self.qualified_name.rsplit(".", 1)[-1]
 
 
-def select_targets(ceiling: int, limit: int, skip: set[str]) -> list[Target]:
-    """Functions whose cognitive complexity exceeds the ceiling, worst first."""
+def select_targets(ceiling: int, limit: int, skip: set[str], where: Bed = SELF) -> list[Target]:
+    """Functions whose cognitive complexity exceeds the ceiling, worst first.
+
+    `where` used to be `src/oxn`, written into this function. A result measured only on the
+    repository the tool was written for is a statement about that repository, which is why
+    P11 names three beds and why this now takes one.
+    """
     result = subprocess.run(
-        [sys.executable, "-m", "oxn", "metrics", "--json", "--limit", "60", "src/oxn"],
-        cwd=ROOT,
+        [sys.executable, "-m", "oxn", "metrics", "--json", "--limit", "60", *where.sources],
+        cwd=where.root,
         capture_output=True,
         text=True,
         check=True,
@@ -522,6 +528,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--retries", type=int, default=3)
     parser.add_argument("--dry-run", action="store_true", help="exercise the loop with no model")
     parser.add_argument(
+        "--bed",
+        default="self",
+        choices=bed_names(),
+        help="where targets come from. Beds other than `self` need fetching first",
+    )
+    parser.add_argument(
         "--arm",
         default="hybrid",
         choices=_arm_names(),
@@ -556,7 +568,8 @@ def main(argv: list[str] | None = None) -> int:
         summarise()
         return 0
 
-    targets = select_targets(args.ceiling, args.limit, skip=set(args.skip))
+    where = bed(args.bed)
+    targets = select_targets(args.ceiling, args.limit, skip=set(args.skip), where=where)
     if not targets:
         say("nothing over the ceiling")
         return 0
