@@ -56,11 +56,17 @@ def test_the_measurement_used_the_ceilings_that_are_actually_enforced(
 #:
 #: For callables, `named` is the comparable row: anonymous density runs from 0.1% of httpx's
 #: to 69.4% of nest's, so it is the only row two languages can be compared on. For classes the
-#: same filter measures the wrong thing, because the anonymous entities are where the methods
-#: are: a Rust `impl` block is an unnamed class entity holding every method of its type, so
-#: ripgrep reads 840 class entities against 395 named ones and its exceedance falls from 3.10%
-#: to 0.25% under the filter. Go is starker -- all 379 of go-kit's structs are unnamed, so the
-#: named row does not exist. The gate applies no name filter, so neither does this.
+#: same filter measures the wrong thing. Go is the starkest case and is unaffected by anything
+#: since: all 379 of go-kit's structs are unnamed entities, so the named row does not exist. Rust
+#: made the same argument at measurement time -- an `impl` block is an unnamed class entity
+#: holding every method of its type, and ripgrep read 840 against 395 named, its exceedance
+#: falling from 3.10% to 0.25% under the filter -- but the `impl` join has since moved those
+#: methods onto the named type. The gate applies no name filter, so neither does this.
+#:
+#: Nothing here re-measures: these tests hold the frozen record against the live ceilings and
+#: against `calibration.py`. They therefore cannot notice that the record predates the `impl`
+#: join and the Java, TypeScript, Go and Rust receiver fixes, all of which move class
+#: populations. Re-running `scripts/measure_ceilings.py` is the only thing that can.
 _WHOLE_POPULATION = frozenset({"methods_per_class", "weighted_methods_per_class"})
 
 

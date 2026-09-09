@@ -1510,12 +1510,19 @@ which became four baselined entries, `GraphStore` (NOM 27, WMC 64) among them.
 
 Two containment facts decide what the population is, and both are language-specific:
 
-* **The unnamed class entities are where the methods are.** A Rust `impl` block is an unnamed
-  class holding its type's methods, so ripgrep reads 840 class entities against 395 named ones,
-  and filtering to named ones drops its exceedance from 3.10% to 0.25% — measuring the struct
-  declarations rather than the code. The gate applies no name filter and neither does the
-  calibration record, which is the opposite of the choice made for the callable ceilings, where
-  anonymous density (0.1% of httpx, 69.4% of nest) makes `named` the only comparable row.
+* **The unnamed class entities are where the methods are** — or were, when these figures were
+  taken. A Rust `impl` block is an unnamed class holding its type's methods, so ripgrep read 840
+  class entities against 395 named ones, and filtering to named ones dropped its exceedance from
+  3.10% to 0.25% — measuring the struct declarations rather than the code. The gate applies no
+  name filter and neither does the calibration record, which is the opposite of the choice made
+  for the callable ceilings, where anonymous density (0.1% of httpx, 69.4% of nest) makes `named`
+  the only comparable row.
+
+  Since then the `impl` join folds each block's methods onto the named type and leaves the block
+  carrying no aggregate, so the unnamed *class* entities are no longer where Rust's methods are.
+  The population stays unfiltered anyway: the gate does not filter, and Go's structs are unnamed
+  entities either way. **The recorded exceedances predate the join and both receiver fixes and are
+  due a re-measurement.**
 * **Go needed receiver-based ownership, and now has it** *(2026-09-09)*. A Go method is a
   top-level declaration carrying its receiver rather than a member of its type — the same fact
   ADR-0002 records for `by_file` — so all 379 of go-kit's structs measured NOM 0 and both
