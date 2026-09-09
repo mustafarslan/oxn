@@ -1,0 +1,94 @@
+class Router:
+    """Evasion 3: the same shred, each helper given a second call site."""
+
+    def route(self, request):
+        if self._is_get(request):
+            return self._get(request)
+        if self._is_post(request):
+            return self._post(request)
+        if self._is_delete(request):
+            return self._delete(request)
+        return "unknown"
+
+    def _is_get(self, request):
+        return request.get("method") == "GET"
+
+    def _is_post(self, request):
+        return request.get("method") == "POST"
+
+    def _is_delete(self, request):
+        return request.get("method") == "DELETE"
+
+    def _path(self, request):
+        return request.get("path", "")
+
+    def _get(self, request):
+        if self._users(request):
+            return self._get_users(request)
+        if self._orders(request):
+            return self._get_orders(request)
+        return "get-other"
+
+    def _users(self, request):
+        return self._path(request).startswith("/users")
+
+    def _orders(self, request):
+        return self._path(request).startswith("/orders")
+
+    def _get_users(self, request):
+        if self._path(request).endswith("/profile"):
+            return "user-profile"
+        if "?" in self._path(request):
+            return "user-search"
+        return "user-list"
+
+    def _get_orders(self, request):
+        if request.get("admin"):
+            return "all-orders"
+        return "own-orders"
+
+    def _post(self, request):
+        if self._users(request):
+            return self._post_users(request)
+        if self._orders(request):
+            return self._post_orders(request)
+        return "post-other"
+
+    def _post_users(self, request):
+        if request.get("body"):
+            return "create-user"
+        return "bad-request"
+
+    def _post_orders(self, request):
+        if request.get("body"):
+            return "create-order"
+        return "bad-request"
+
+    def _delete(self, request):
+        if request.get("admin"):
+            return "delete"
+        return "forbidden"
+
+
+class Auditor:
+    """A second caller, so no helper is called from exactly one site."""
+
+    def __init__(self, router):
+        self.router = router
+
+    def audit(self, request):
+        return [
+            self.router._is_get(request),
+            self.router._is_post(request),
+            self.router._is_delete(request),
+            self.router._path(request),
+            self.router._users(request),
+            self.router._orders(request),
+            self.router._get_users(request),
+            self.router._get_orders(request),
+            self.router._post_users(request),
+            self.router._post_orders(request),
+            self.router._get(request),
+            self.router._post(request),
+            self.router._delete(request),
+        ]

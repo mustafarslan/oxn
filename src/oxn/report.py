@@ -6,6 +6,8 @@ server (P9) and the hook, without any of them importing the others' dependencies
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from dataclasses import field as dc_field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -433,28 +435,24 @@ def run_classes(
 
     with _indexer() as indexer:
         files = indexer.sources(targets)
+        views = _class_views(indexer, files)
         graph = build_dependency_graph(indexer.root, files)
-        models_by_file: dict[str, Any] = {}
-        entities_by_file: dict[str, Any] = {}
-        scopes_by_file: dict[str, Any] = {}
-
-        for path in files:
-            parsed = _class_models_for(indexer.relative(path), path)
-            if parsed is None:
-                continue
-            relative, models, entities, scopes = parsed
-            models_by_file[relative] = models
-            entities_by_file[relative] = entities
-            scopes_by_file[relative] = scopes
-
-        symbols = build_project_symbols(entities_by_file, scopes_by_file, graph)
-        hierarchy = build_hierarchy(models_by_file)
+        symbols = build_project_symbols(views.entities, views.scopes, graph)
+        hierarchy = build_hierarchy(views.models)
 
         rows: list[dict[str, Any]] = []
-        for relative, models in models_by_file.items():
+        for relative, models in views.models.items():
             for model in models.values():
                 measures = cohesion(model)
-                ck = ck_metrics(model, hierarchy, Evidence(path=relative, symbols=symbols))
+                ck = ck_metrics(
+                    model,
+                    hierarchy,
+                    Evidence(
+                        path=relative,
+                        symbols=symbols,
+                        complexity=views.weights[relative].get(model.name, {}),
+                    ),
+                )
                 rows.append({"path": relative, **measures.as_dict(), **ck.as_dict()})
 
     rows.sort(key=lambda row: (row.get(sort_by) is None, -(row.get(sort_by) or 0)))
@@ -468,14 +466,49 @@ def run_classes(
     return payload
 
 
-def _class_models_for(relative: str, path: Path) -> tuple[str, Any, Any, Any] | None:
-    """Parse one file into the three views the CK suite needs, or `None` if it cannot be read.
+@dataclass(frozen=True, slots=True)
+class _ClassViews:
+    """The per-file views the CK suite needs, keyed alike.
+
+    One object rather than four dicts passed around together: they share a key space, are
+    always built in one pass, and are always read as a group.
+    """
+
+    models: dict[str, Any] = dc_field(default_factory=dict)
+    entities: dict[str, Any] = dc_field(default_factory=dict)
+    scopes: dict[str, Any] = dc_field(default_factory=dict)
+    weights: dict[str, Any] = dc_field(default_factory=dict)
+
+
+def _class_views(indexer: Any, files: Any) -> _ClassViews:
+    """Parse and measure every readable file into the views above."""
+    views = _ClassViews()
+    for path in files:
+        parsed = _class_models_for(indexer.relative(path), path)
+        if parsed is None:
+            continue
+        relative, models, entities, scopes, weights = parsed
+        views.models[relative] = models
+        views.entities[relative] = entities
+        views.scopes[relative] = scopes
+        views.weights[relative] = weights
+    return views
+
+
+def _class_models_for(relative: str, path: Path) -> tuple[str, Any, Any, Any, Any] | None:
+    """Parse one file into the views the CK suite needs, or `None` if it cannot be read.
 
     A file that fails to parse is skipped rather than guessed at: half a syntax tree yields a
     cohesion number that looks like a measurement and is not one.
+
+    The file is also *measured* here, for one reason: WMC is a weighted sum and the weights
+    are per-method complexities. Without them `ck_metrics` weighted every method 1 and WMC
+    was NOM under another name -- see `coupling.method_weights`.
     """
     from oxn.graph.builder import build_file
     from oxn.languages import get_parser
+    from oxn.metrics.coupling import method_weights
+    from oxn.metrics.engine import measure_file
     from oxn.profiles import profile_for_path
     from oxn.resolve.members import build_class_models
     from oxn.resolve.scopes import build_scopes
@@ -488,9 +521,12 @@ def _class_models_for(relative: str, path: Path) -> tuple[str, Any, Any, Any] | 
     if tree.root_node.has_error:
         return None
     scopes = build_scopes(tree.root_node, profile)
+    entities = list(build_file(relative, source, profile, tree.root_node).entities)
+    measured = measure_file(entities, source, profile, tree.root_node)
     return (
         relative,
         build_class_models(tree.root_node, profile, scopes),
-        list(build_file(relative, source, profile, tree.root_node).entities),
+        entities,
         scopes,
+        method_weights(measured),
     )

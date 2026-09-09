@@ -22,9 +22,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Mapping
+from oxn.graph.model import EntityKind
 
+if TYPE_CHECKING:  # pragma: no cover
+    from collections.abc import Mapping, Sequence
+
+    from oxn.graph.model import EntityMetrics
     from oxn.resolve.members import ClassModel
     from oxn.resolve.symbols import ProjectSymbols
 
@@ -125,6 +128,31 @@ class Evidence:
     @property
     def can_resolve(self) -> bool:
         return self.symbols is not None and bool(self.path)
+
+
+def method_weights(measured: Sequence[EntityMetrics]) -> dict[str, dict[str, int]]:
+    """Class name -> method name -> cyclomatic complexity, ready for `Evidence.complexity`.
+
+    `docs/metrics.md` section 3.6 specifies cyclomatic as OXN's default WMC weight, and
+    without it `ck_metrics` falls back to `sum(1 for ...)`: **WMC was NOM under another
+    name**, identical in every class of every corpus measured. The hook existed from the
+    start and nothing ever filled it.
+
+    Keyed by the *bare* names `ClassModel` uses, which is why the qualified name is split
+    rather than matched: `m.Router.route` contributes `Router -> route`. Two classes sharing
+    a bare name in one file collide here exactly as they already collide in `models`.
+    """
+    weights: dict[str, dict[str, int]] = {}
+    for entity in measured:
+        if entity.kind is not EntityKind.METHOD:
+            continue
+        parts = entity.qualified_name.split(".")
+        if len(parts) < 2:
+            continue
+        value = entity.values.get("cyclomatic_complexity")
+        if value is not None:
+            weights.setdefault(parts[-2], {})[parts[-1]] = int(value.value)
+    return weights
 
 
 def ck_metrics(

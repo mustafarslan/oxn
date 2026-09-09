@@ -1400,6 +1400,46 @@ this module's high-risk share may not rise — not an absolute ceiling, and not 
 instrument. Shredding detection stays where 2026-08-30 left it: the `shredding` rule, plus cohesion
 and the judge. `tests/test_risk_profile.py` holds this result so it cannot be quietly re-adopted.
 
+#### Measured 2026-09-09: the class aggregate survives, and it is the backstop for `shredding`
+
+Two of this section's four mitigations have now failed a control. The **first** — pair every
+per-function ceiling with a class-level aggregate — passes one, and the reason is worth having
+in full, because it is the only mitigation here with a measured case behind it.
+
+`shredding` clusters a function with the **private** helpers **only it calls**. Both premises are
+evadable, and `TRIVIAL_HELPER`'s own `fit_when` in `oxn.calibration` already named the three
+evasions. Six variants of one router class, the same routing work in each
+(`tests/fixtures/class_scope/`, driven by `tests/test_class_scope_evasion.py`):
+
+| variant | what it is | `oxn check` | NOM | WMC |
+|---|---|---|---|---|
+| before | one honest method, cognitive 28 | blocked (cognitive) | 1 | 14 |
+| spread | split by HTTP verb — a *good* refactoring | **passes**, correctly | 4 | 17 |
+| gamed | 14 private trivial helpers | blocked (`shredding` 13) | 14 | 27 |
+| plump | each helper lifted above `TRIVIAL_HELPER` | blocked (`shredding` 19) | 14 | 39 |
+| public | the same shred, public names | **passes** ✗ | 14 | 27 |
+| shared | the same shred, every helper given a second caller | **passes** ✗ | 14 | 27 |
+
+`plump` fails as an evasion — lifting the helpers above the threshold raises the cluster total
+instead, 13 → 19. `public` and `shared` succeed: remove *private* or *only it calls* and there is
+no cluster to total. **Both class aggregates separate them from the legitimate refactoring by a
+wide margin** — NOM 4 against 14, WMC 17 against 27 — and any ceiling inside that margin catches
+both escapes while passing `spread`. `before` sits below both and is caught by the cognitive
+ceiling instead, which is the division of labour the pairing intends.
+
+**The cost is where the decision is.** Unlike the per-function ceilings, which reject 0.5–3.6% of
+real code, a class ceiling low enough to catch the escapes (NOM ≥ 8, WMC ≥ 18) fires on 7.4% of
+OXN's own 176 classes and 6.5–19.2% across the five corpora — because the escapes at NOM 14 sit
+*inside* the legitimate distribution (p95–p99), not outside it. So this is a ratchet before it is
+a ceiling: adopting it re-baselines, and the value is in blocking the *change* from NOM 1 to 14
+rather than in condemning classes that were already large.
+
+**WMC was NOM under another name until this was measured.** `ck_metrics` computes
+`sum(weights.get(name, 1) for name in model.methods)`, section 3.6 above specifies cyclomatic as
+the default weight, `Evidence.complexity` existed to carry it and `run_classes` never filled it —
+so every class in every corpus reported `wmc == nom`. Fixed with the measurement, because the
+table above is meaningless without it.
+
 ---
 
 ## 11. Open decisions

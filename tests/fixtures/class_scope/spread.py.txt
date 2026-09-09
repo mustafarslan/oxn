@@ -1,0 +1,43 @@
+class Router:
+    """The same work, spread across sibling methods. Every ceiling satisfied."""
+
+    def route(self, request):
+        method = request.get("method")
+        if method == "GET":
+            return self._get(request)
+        if method == "POST":
+            return self._post(request)
+        if method == "DELETE":
+            return self._delete(request)
+        return "unknown"
+
+    def _get(self, request):
+        path = request.get("path", "")
+        if path.startswith("/users"):
+            if path.endswith("/profile"):
+                return "user-profile"
+            if "?" in path:
+                return "user-search"
+            return "user-list"
+        if path.startswith("/orders"):
+            if request.get("admin"):
+                return "all-orders"
+            return "own-orders"
+        return "get-other"
+
+    def _post(self, request):
+        path = request.get("path", "")
+        if path.startswith("/users"):
+            if request.get("body"):
+                return "create-user"
+            return "bad-request"
+        if path.startswith("/orders"):
+            if request.get("body"):
+                return "create-order"
+            return "bad-request"
+        return "post-other"
+
+    def _delete(self, request):
+        if request.get("admin"):
+            return "delete"
+        return "forbidden"

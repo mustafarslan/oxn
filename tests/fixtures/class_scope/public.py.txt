@@ -1,0 +1,70 @@
+class Router:
+    """Evasion 2: the same shred with public names."""
+
+    def route(self, request):
+        if self.is_get(request):
+            return self.get(request)
+        if self.is_post(request):
+            return self.post(request)
+        if self.is_delete(request):
+            return self.delete(request)
+        return "unknown"
+
+    def is_get(self, request):
+        return request.get("method") == "GET"
+
+    def is_post(self, request):
+        return request.get("method") == "POST"
+
+    def is_delete(self, request):
+        return request.get("method") == "DELETE"
+
+    def path(self, request):
+        return request.get("path", "")
+
+    def get(self, request):
+        if self.users(request):
+            return self.get_users(request)
+        if self.orders(request):
+            return self.get_orders(request)
+        return "get-other"
+
+    def users(self, request):
+        return self.path(request).startswith("/users")
+
+    def orders(self, request):
+        return self.path(request).startswith("/orders")
+
+    def get_users(self, request):
+        if self.path(request).endswith("/profile"):
+            return "user-profile"
+        if "?" in self.path(request):
+            return "user-search"
+        return "user-list"
+
+    def get_orders(self, request):
+        if request.get("admin"):
+            return "all-orders"
+        return "own-orders"
+
+    def post(self, request):
+        if self.users(request):
+            return self.post_users(request)
+        if self.orders(request):
+            return self.post_orders(request)
+        return "post-other"
+
+    def post_users(self, request):
+        if request.get("body"):
+            return "create-user"
+        return "bad-request"
+
+    def post_orders(self, request):
+        if request.get("body"):
+            return "create-order"
+        return "bad-request"
+
+    def delete(self, request):
+        if request.get("admin"):
+            return "delete"
+        return "forbidden"

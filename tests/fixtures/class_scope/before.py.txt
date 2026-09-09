@@ -1,0 +1,33 @@
+class Router:
+    """One honest method, over the cognitive ceiling."""
+
+    def route(self, request):
+        method = request.get("method")
+        path = request.get("path", "")
+        if method == "GET":
+            if path.startswith("/users"):
+                if path.endswith("/profile"):
+                    return "user-profile"
+                if "?" in path:
+                    return "user-search"
+                return "user-list"
+            if path.startswith("/orders"):
+                if request.get("admin"):
+                    return "all-orders"
+                return "own-orders"
+            return "get-other"
+        if method == "POST":
+            if path.startswith("/users"):
+                if request.get("body"):
+                    return "create-user"
+                return "bad-request"
+            if path.startswith("/orders"):
+                if request.get("body"):
+                    return "create-order"
+                return "bad-request"
+            return "post-other"
+        if method == "DELETE":
+            if request.get("admin"):
+                return "delete"
+            return "forbidden"
+        return "unknown"
