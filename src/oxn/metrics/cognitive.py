@@ -155,13 +155,23 @@ def _ignored(context: _Context, site: _Site) -> bool:
     return True
 
 
+def else_if_inner(node: Node, spec: CognitiveSpec) -> Node | None:
+    """The `if` an `else if` wraps, where the grammar spells it as an else_clause.
+
+    Public because `metrics.size` must ask the same question. `max_nesting_depth` claimed to
+    mean the same thing as a cognitive nesting level and did not: it counted the wrapper and
+    the `if` it holds as two levels where this scores one, so an identical `else if` chain
+    read depth 4 in TypeScript and Rust against 3 in Python, Java and Go.
+    """
+    wrapped = spec.else_if_via_else_clause or spec.alternative_style == "wrapped"
+    if not wrapped or node.type != spec.else_clause_kind:
+        return None
+    return _sole_if(node, spec)
+
+
 def _else_if(context: _Context, site: _Site) -> bool:
     """`else if` where the grammar spells it as an else_clause wrapping an if_statement."""
-    spec = context.spec
-    wrapped = spec.else_if_via_else_clause or spec.alternative_style == "wrapped"
-    if not wrapped or site.kind != spec.else_clause_kind:
-        return False
-    inner = _sole_if(site.node, spec)
+    inner = else_if_inner(site.node, context.spec)
     if inner is None:
         return False
     context.result.add(site.node, 1, "hybrid", "`else if` (hybrid: no nesting increment)")

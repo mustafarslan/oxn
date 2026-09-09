@@ -145,6 +145,11 @@ class SizeSpec:
     return_kinds: frozenset[str] = frozenset()
     #: True when a bare string expression statement is documentation rather than data.
     docstrings_are_comments: bool = False
+    #: True where a function body's final *expression* is its return value, with no keyword
+    #: -- Rust. Such a function leaves through that expression exactly as every other
+    #: language leaves through a `return`, and not counting it made the same logic read four
+    #: exits in Rust against five everywhere else.
+    tail_expression_returns: bool = False
 
 
 @dataclass(frozen=True)

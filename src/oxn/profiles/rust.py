@@ -91,8 +91,12 @@ RUST_METRICS = MetricSpec(
                 "extern_crate_declaration",
             }
         ),
-        return_kinds=frozenset({"return_expression"}),
+        # `?` leaves the function on the error path. Go spells the same control flow
+        # `if err != nil { return err }`, which is counted, so omitting it here made the two
+        # languages incomparable on the most common error-handling shape either has.
+        return_kinds=frozenset({"return_expression", "try_expression"}),
         docstrings_are_comments=False,
+        tail_expression_returns=True,
     ),
     halstead=HalsteadSpec(
         spec_version=1,

@@ -230,3 +230,82 @@ def test_scopes_build_without_error_for_every_language(language: str) -> None:
     root = get_parser(language).parse(sources[language].encode()).root_node
     tree = build_scopes(root, profile)
     assert tree.all_scopes(), f"{language} produced no scopes"
+
+
+# ---- the same agreement, for every metric that is a property of the logic -------------------
+#
+# The matrix above proved cognitive complexity agrees, and nothing proved anything else did.
+# Two of them did not, and both were found by transliterating one function into six languages
+# rather than by reading any of them:
+#
+#   max_nesting_depth   an `else if` read as two levels wherever the grammar wraps it in an
+#                       `else_clause`, so TypeScript and Rust scored 4 where Python, Java and
+#                       Go scored 3 -- on a *gated* ceiling, which means the same code was
+#                       accepted or rejected according to what it was written in.
+#   exit_points         Rust ends a function on a bare expression and leaves through `?`, and
+#                       neither counted, so it scored 4 against everyone else's 5.
+#
+# `sloc`, `lloc` and the Halstead family are deliberately absent: braces are real lines and
+# real tokens, so Python differing there is the measurement working.
+
+STRUCTURAL = ("cyclomatic_complexity", "cognitive_complexity", "max_nesting_depth", "exit_points")
+
+EARLY_RETURNS = {
+    "python": "def f(a, b):\n    if a:\n        return 1\n    if b:\n        return 2\n    return 3\n",
+    "typescript": "function f(a,b){ if(a){ return 1; } if(b){ return 2; } return 3; }",
+    "javascript": "function f(a,b){ if(a){ return 1; } if(b){ return 2; } return 3; }",
+    "go": "package m\nfunc f(a, b bool) int { if a { return 1 }\n if b { return 2 }\n return 3 }\n",
+    "rust": "fn f(a: bool, b: bool) -> i32 { if a { return 1; } if b { return 2; } 3 }",
+    "java": "class C { int f(boolean a, boolean b){ if(a){ return 1; } if(b){ return 2; } return 3; } }",
+}
+
+STRUCTURAL_MATRIX = [
+    ("three levels of nesting", NEST3),
+    ("if / else-if / else", ELSE_IF_CHAIN),
+    ("else-if containing an if", ELSE_IF_NESTED),
+    ("loop containing a branch", LOOP_WITH_BRANCH),
+    ("three exits, one implicit in Rust", EARLY_RETURNS),
+]
+
+
+def _structural(language: str, source: str) -> dict[str, int]:
+    from oxn.metrics import exit_points, max_nesting_depth
+
+    profile, node = first_function(language, source)
+    return {
+        "cyclomatic_complexity": cyclomatic_complexity(node, profile),
+        "cognitive_complexity": cognitive_complexity(node, profile, function_name="f").score,
+        "max_nesting_depth": max_nesting_depth(node, profile),
+        "exit_points": exit_points(node, profile),
+    }
+
+
+@pytest.mark.parametrize(("label", "sources"), STRUCTURAL_MATRIX)
+@pytest.mark.parametrize("metric", STRUCTURAL)
+def test_every_structural_metric_agrees_across_languages(
+    label: str, sources: dict[str, str], metric: str
+) -> None:
+    """One shape, six grammars, one number. Disagreement is the bug, whatever the number is.
+
+    Asserting agreement rather than a value is deliberate: the value is a judgement that the
+    per-metric tests already pin, and *which* number is right does not change the fact that
+    six answers to one question means at least five are wrong.
+    """
+    scored = {language: _structural(language, sources[language])[metric] for language in LANGUAGES}
+    assert len(set(scored.values())) == 1, f"{label}: {metric} disagrees -- {scored}"
+
+
+def test_rust_leaves_through_its_tail_expression_and_through_a_question_mark() -> None:
+    """The two Rust exits written with no `return`, which is why it read one short.
+
+    `?` is not a stylistic detail: Go spells the same control flow `if err != nil { return }`
+    and it has always been counted, so leaving `?` out made the two languages incomparable on
+    the most common error-handling shape either of them has.
+    """
+    from oxn.metrics import exit_points
+
+    profile, node = first_function("rust", "fn f(a: i32) -> i32 { let x = g(a)?; x + 1 }")
+    assert exit_points(node, profile) == 2
+
+    profile, node = first_function("rust", "fn f(a: i32) -> i32 { return a; }")
+    assert exit_points(node, profile) == 1, "an explicit return must not also count a tail"

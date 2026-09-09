@@ -11,10 +11,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from oxn.metrics.cognitive import else_if_inner
+
 if TYPE_CHECKING:  # pragma: no cover
     from tree_sitter import Node
 
     from oxn.profiles.base import LanguageProfile
+    from oxn.profiles.spec import CognitiveSpec
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,29 +94,63 @@ def _is_docstring(node: Node, profile: LanguageProfile) -> bool:
 def max_nesting_depth(node: Node, profile: LanguageProfile) -> int:
     """Deepest block nesting inside a function.
 
-    Reuses the cognitive-complexity nesting set, so "nested 3 deep" means the same thing in
-    a complexity explanation and in this metric.
+    Reuses the cognitive-complexity nesting *rule*, so "nested 3 deep" means the same thing
+    in a complexity explanation and in this metric. Reusing only its set of nesting kinds was
+    not enough, and the gap was measurable: one `else if` chain transliterated into six
+    languages read depth 4 in TypeScript and Rust against 3 in Python, Java and Go, because
+    the two grammars that wrap `else if` in an `else_clause` had the wrapper *and* the `if`
+    it holds counted as separate levels. A gated ceiling that answers differently for the
+    same logic is a ceiling that means nothing across a polyglot repository.
+
+    An `else` branch continues its `if` rather than nesting under it -- Sonar's rule, and the
+    one `_visit_alternative` already applies -- so the branches named by
+    `same_nesting_fields`, and the `if` inside a wrapped `else_clause`, add no level of their
+    own. Their *bodies* still do, which is what keeps a genuinely nested `if` at depth 2.
     """
     spec = profile.metrics.cognitive
     nesting_kinds = spec.structural | spec.hybrid
 
-    def walk(current: Node, depth: int) -> int:
+    def walk(current: Node, depth: int, continues: frozenset[int]) -> int:
         deepest = depth
         for child in current.named_children:
             target = profile.unwrap(child)
             if profile.is_definition(target) and target is not node:
                 continue  # nested definitions own their own depth
-            next_depth = depth + 1 if target.type in nesting_kinds else depth
-            deepest = max(deepest, walk(target, next_depth))
+            deeper = target.type in nesting_kinds and target.id not in continues
+            deepest = max(deepest, walk(target, depth + deeper, _continuations(target, spec)))
         return deepest
 
-    return walk(node, 0)
+    return walk(node, 0, frozenset())
+
+
+def _continuations(node: Node, spec: CognitiveSpec) -> frozenset[int]:
+    """Children that continue this conditional's `else` chain rather than nesting under it.
+
+    Two grammar shapes, one meaning. A wrapped `else if` hands back the `if` inside its
+    `else_clause`; a direct one hands back whatever sits in the `alternative` slot, which is
+    the next `if` in Go and Java and a bare block for a plain `else`.
+    """
+    inner = else_if_inner(node, spec)
+    if inner is not None:
+        return frozenset({inner.id})
+    return frozenset(
+        child.id
+        for field_name in spec.same_nesting_fields
+        for child in node.children_by_field_name(field_name)
+    )
 
 
 def exit_points(node: Node, profile: LanguageProfile) -> int:
-    """Number of ``return``/``raise``-style exits, excluding nested definitions."""
+    """Number of ``return``/``raise``-style exits, excluding nested definitions.
+
+    Plus the one exit that is written with no keyword at all: Rust ends a function on its
+    body's final expression, and a function leaves through that exactly as another language
+    leaves through a `return`. Transliterating one function into six languages read four
+    exits in Rust against five in the other five, and the missing one was the `-1` on the
+    last line.
+    """
     spec = profile.metrics.size
-    count = 0
+    count = 1 if _has_tail_return(node, profile) else 0
     stack = list(node.named_children)
     while stack:
         current = stack.pop()
@@ -124,3 +161,17 @@ def exit_points(node: Node, profile: LanguageProfile) -> int:
             count += 1
         stack.extend(target.named_children)
     return count
+
+
+def _has_tail_return(node: Node, profile: LanguageProfile) -> bool:
+    """True when this callable ends on a bare expression that is its return value.
+
+    The grammar makes it exact rather than a guess: a block's statements are statement nodes,
+    so a final child that is *not* one is the tail expression and nothing else can be.
+    """
+    spec = profile.metrics.size
+    body = node.child_by_field_name(profile.body_field)
+    if not spec.tail_expression_returns or body is None or not body.named_children:
+        return False
+    last = body.named_children[-1]
+    return last.type not in spec.statement_kinds and last.type != "expression_statement"
