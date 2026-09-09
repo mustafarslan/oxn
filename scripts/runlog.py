@@ -163,12 +163,21 @@ class ArmResult:
         }
 
 
-#: Said wherever a rate is printed over a single sample per target, because the rate looks
-#: identical to one that means something.
-SINGLE_SAMPLE_NOTE = (
-    "n=1: one sample per target. `generate` is temperature 0 and not deterministic -- three "
-    "runs of one prompt gave three different rewrites -- so a rate over a single sample is "
-    "not distinguishable from noise. Use --repeat for a rate worth comparing."
+#: Below this, the table says so. A judgement rather than a power analysis -- but not an
+#: arbitrary one: **n=2 was measured to reverse.** Two runs of one configuration (same
+#: target, same arms, same models, same flags) gave `hybrid` 1/2 against `none` 0/2, and
+#: then `none` 2/2 against `hybrid` 0/2. A complete reversal of the ordering, from noise
+#: alone. Five is where the warning stops, and it is a guess about where noise stops
+#: dominating rather than a claim that it does.
+ENOUGH_SAMPLES = 5
+
+#: Said wherever a rate is printed over too few samples, because such a rate renders exactly
+#: like one that means something.
+SMALL_SAMPLE_NOTE = (
+    "`generate` is temperature 0 and not deterministic, and two runs of one configuration "
+    "here reversed outright -- hybrid 1/2 vs none 0/2, then none 2/2 vs hybrid 0/2, same "
+    f"target and same flags. Below n={ENOUGH_SAMPLES} treat an ordering as noise; --repeat "
+    "buys samples, and n is a judgement rather than a power analysis."
 )
 
 #: Said wherever the cost columns are printed, because a number without it is misread.

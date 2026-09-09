@@ -167,7 +167,7 @@ def test_a_rate_says_how_many_samples_it_is_over(harness) -> None:
     rows = [_row(repeat=0), _row(repeat=1, target="b"), _row(repeat=1)]
     (result,) = harness.measures(rows)
     assert result.repeats == 2
-    assert "not distinguishable from noise" in harness.SINGLE_SAMPLE_NOTE
+    assert "reversed outright" in harness.SMALL_SAMPLE_NOTE
 
 
 def test_rows_written_before_repeats_existed_count_as_one_sample(harness) -> None:
@@ -238,3 +238,16 @@ def test_every_arm_of_one_grid_shares_its_run_id(harness) -> None:
     )
     ids = {harness._session(grid, name).run_id for name in grid.arms}
     assert ids == {"20260910T120000"}
+
+
+def test_the_small_sample_warning_is_grounded_in_a_measured_reversal(harness) -> None:
+    """The threshold is a judgement, and the evidence for it is in the note.
+
+    Two runs of one configuration -- same target, same arms, same models, same flags --
+    produced opposite orderings: `hybrid` 1/2 against `none` 0/2, then `none` 2/2 against
+    `hybrid` 0/2. n=2 is therefore *demonstrably* insufficient here, not arguably so, and a
+    reader who is told the number should also be told why it is that number.
+    """
+    assert harness.ENOUGH_SAMPLES > 2, "n=2 was measured to reverse; the bar must exceed it"
+    assert "same flags" in harness.SMALL_SAMPLE_NOTE
+    assert "judgement rather than a power analysis" in harness.SMALL_SAMPLE_NOTE
