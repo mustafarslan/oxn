@@ -1,4 +1,13 @@
 {
+  "class_ceiling_audit": {
+    "both": 64,
+    "in_test_files": 7,
+    "interfaces": 8,
+    "nom_only": 28,
+    "rejected": 115,
+    "wmc_only": 23,
+    "wmc_without_a_hot_method": 56
+  },
   "corpora": {
     "go-kit": "go",
     "java-spring-petclinic": "java",

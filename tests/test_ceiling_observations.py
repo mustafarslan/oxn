@@ -123,3 +123,50 @@ def test_file_sloc_is_the_ceiling_the_measurement_argues_with(observed: dict[str
     }
     assert exceedance["rust-ripgrep"] > 15.0, f"ripgrep moved to {exceedance['rust-ripgrep']}"
     assert exceedance["go-kit"] < 1.0, f"go-kit moved to {exceedance['go-kit']}"
+
+
+# ---- what the class ceilings reject, in code nobody wrote for them ----------------------
+
+
+@pytest.fixture(scope="module")
+def audit() -> dict[str, int]:
+    return json.loads(OBSERVATIONS.read_text())["class_ceiling_audit"]
+
+
+def test_neither_class_ceiling_is_redundant(audit: dict[str, int]) -> None:
+    """Each rejects classes the other accepts, so both earn their place.
+
+    Positioned by one authored control, both ceilings would be exactly the circularity
+    `TRIVIAL_HELPER`'s `fit_when` warns about. This is the other half of the evidence: a
+    census of the five corpora, which nobody wrote to be caught. If either count reaches
+    zero, that ceiling has become a restatement of the other and should be removed rather
+    than kept for symmetry.
+    """
+    assert audit["nom_only"] > 0, "every NOM rejection is also a WMC rejection"
+    assert audit["wmc_only"] > 0, "every WMC rejection is also a NOM rejection"
+
+
+def test_the_weighted_ceiling_sees_what_no_per_function_gate_can(audit: dict[str, int]) -> None:
+    """The God Class shape: every method fine on its own, the accumulation the problem.
+
+    `GraphStore` is the local example -- WMC 64 with a worst method of cyclomatic 6 -- and it
+    is the majority case, not a curiosity. If this fell to zero, `weighted_methods_per_class`
+    would be catching only classes `cyclomatic_complexity` already blocks.
+    """
+    over_wmc = audit["both"] + audit["wmc_only"]
+    assert audit["wmc_without_a_hot_method"] > over_wmc // 2, (
+        f"only {audit['wmc_without_a_hot_method']} of the {over_wmc} classes over the WMC "
+        "ceiling are invisible to the per-function ceilings; the gate may be redundant"
+    )
+
+
+def test_the_known_false_positive_shape_is_small_and_recorded(audit: dict[str, int]) -> None:
+    """A test class with many small test methods is a legitimate shape, and NOM rejects it.
+
+    Seven of the rejections live in test files. That is the honest cost of the ceiling rather
+    than a defect to hide: `oxn.yaml`'s `exclude` and advisory paths are how a project opts
+    its tests out, and the number is pinned here so growth in it is visible.
+    """
+    assert audit["in_test_files"] <= audit["rejected"] // 10, (
+        f"{audit['in_test_files']} of {audit['rejected']} rejections are in test files"
+    )

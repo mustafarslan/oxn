@@ -1427,6 +1427,24 @@ wide margin** — NOM 4 against 14, WMC 17 against 27 — and any ceiling inside
 both escapes while passing `spread`. `before` sits below both and is caught by the cognitive
 ceiling instead, which is the division of labour the pairing intends.
 
+**Both ceilings earn their place, and that half of the evidence is not authored.** Positioned
+by a single control, they would be exactly the circularity §10.3 warns about. So the ceilings
+were also run as a census over the five corpora — code nobody wrote to be caught. They reject
+**115 classes**: 64 by both, **28 by NOM alone** (many small methods, WMC under 25) and **23 by
+WMC alone** (few heavy ones), so neither ceiling is a restatement of the other. And of the 87
+rejected by WMC, **56 contain no method over the per-function cyclomatic ceiling** — every
+method individually fine, the accumulation the whole problem. That is the God Class by
+definition and it is invisible to every other gate OXN has; `GraphStore` is the local example
+at WMC 64 with a worst method of 6. Frozen in `benchmarks/ceiling-observations.json` under
+`class_ceiling_audit` and asserted in `tests/test_ceiling_observations.py`, so a future change
+that makes either ceiling redundant shows up as a failing test rather than as symmetry nobody
+rechecked.
+
+**The known false positive, stated rather than hidden:** 7 of the 115 are test classes. Many
+small test methods is a legitimate shape, and the answer is `oxn.yaml`'s advisory paths, not a
+looser ceiling. 8 more are interfaces, where a large method count is an interface-segregation
+smell rather than a God Class — the same number, a different argument.
+
 **The cost is where the decision is.** Unlike the per-function ceilings, which reject 0.5–3.6% of
 real code, a class ceiling low enough to catch the escapes (NOM ≥ 8, WMC ≥ 18) fires on 7.4% of
 OXN's own 176 classes and 6.5–19.2% across the five corpora — because the escapes at NOM 14 sit

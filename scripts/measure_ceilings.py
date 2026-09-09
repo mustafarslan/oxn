@@ -94,6 +94,9 @@ GATED: tuple[tuple[str, str, tuple[str, ...]], ...] = (
 
 _QUANTILES = (50, 75, 90, 95, 99)
 
+#: Mirrors `thresholds.MAX_CYCLOMATIC_COMPLEXITY`, for the redundancy question only.
+MAX_CYCLOMATIC = 10
+
 
 def _values(db: Path, metric_key: str, kinds: tuple[str, ...], *, named: bool) -> list[float]:
     """Every measured value for one metric, over the entity kinds that metric gates.
@@ -174,6 +177,72 @@ def _populations(
     return {name: _distribution(values, ceiling) for name, values in measured.items() if values}
 
 
+def audit_class_ceilings(ceilings: dict[str, float]) -> dict[str, object]:
+    """What the class ceilings actually reject, and whether either is redundant.
+
+    Both are positioned by a single control (`tests/test_class_scope_evasion.py`), which is
+    the circularity `TRIVIAL_HELPER`'s own `fit_when` warns about: a value fitted to one
+    fixture by the person who chose it. This is the non-circular half -- not another authored
+    fixture but a census of what the ceilings reject in code nobody wrote for them.
+
+    The load-bearing number is `wmc_without_a_hot_method`: classes over the WMC ceiling that
+    contain no method over the *per-function* cyclomatic ceiling. Those are the ones no other
+    gate can see -- every method individually fine, the accumulation the whole problem, which
+    is the God Class shape by definition.
+    """
+    nom_limit, wmc_limit = ceilings["methods_per_class"], ceilings["weighted_methods_per_class"]
+    tally = {
+        "rejected": 0,
+        "both": 0,
+        "nom_only": 0,
+        "wmc_only": 0,
+        "wmc_without_a_hot_method": 0,
+        "in_test_files": 0,
+        "interfaces": 0,
+    }
+    for corpus, _ in BEDS:
+        _audit_corpus(CORPORA / corpus / ".oxn/cache/graph.db", nom_limit, wmc_limit, tally)
+    return tally
+
+
+def _audit_corpus(db: Path, nom_limit: float, wmc_limit: float, tally: dict[str, int]) -> None:
+    """One corpus's contribution to the census above."""
+    with sqlite3.connect(db) as conn:
+        rows = conn.execute(
+            "SELECT e.kind, e.file_path, m.value,"
+            " (SELECT value FROM metrics w WHERE w.entity_id = e.id AND w.metric_key = 'wmc'),"
+            " (SELECT MAX(c.value) FROM entities k JOIN metrics c ON c.entity_id = k.id"
+            "  WHERE k.parent_id = e.id AND c.metric_key = 'cyclomatic_complexity')"
+            " FROM metrics m JOIN entities e ON e.id = m.entity_id WHERE m.metric_key = 'nom'"
+        ).fetchall()
+    for row in rows:
+        for label in _verdicts(row, nom_limit, wmc_limit):
+            tally[label] += 1
+
+
+#: (over the NOM ceiling, over the WMC ceiling) -> which tally the class belongs in. A table
+#: rather than a branch chain: cyclomatic complexity charges for every boolean operator
+#: whether or not it nests, and the question here is a lookup, not a policy.
+_WHICH = {(True, True): "both", (True, False): "nom_only", (False, True): "wmc_only"}
+
+
+def _verdicts(row: tuple, nom_limit: float, wmc_limit: float) -> tuple[str, ...]:
+    """Every tally one class contributes to; empty when both ceilings accept it."""
+    kind, path, nom, wmc, worst = row
+    over_wmc = (wmc or 0) > wmc_limit
+    which = _WHICH.get((nom > nom_limit, over_wmc))
+    if which is None:
+        return ()
+    labels = {
+        "rejected": True,
+        which: True,
+        "wmc_without_a_hot_method": over_wmc and (worst or 0) <= MAX_CYCLOMATIC,
+        "interfaces": kind == "interface",
+        "in_test_files": "test" in path.lower() or "spec" in path.lower(),
+    }
+    return tuple(label for label, hit in labels.items() if hit)
+
+
 def _payload() -> dict[str, object]:
     from oxn import thresholds
     from oxn.config import GATED_METRICS
@@ -184,6 +253,7 @@ def _payload() -> dict[str, object]:
         if rule in {name for name, _, _ in GATED}
     }
     return {
+        "class_ceiling_audit": audit_class_ceilings(ceilings),
         "note": (
             "Exceedance is the headline: the fraction of real code each ceiling rejects. "
             "Percentiles are recorded but are NOT a fitting target -- these distributions "

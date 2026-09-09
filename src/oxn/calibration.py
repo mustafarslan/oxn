@@ -234,9 +234,13 @@ _CEILINGS: tuple[Parameter, ...] = (
             "package, which Go's own rule makes exact -- see `indexer.aggregate_classes`."
         ),
         fit_when=(
-            "more than one evasion pair. Both this and the WMC ceiling are positioned by a "
-            "single control, and a value tuned to straddle one fixture is fitted to it -- "
-            "which is why neither sits at its window's edge"
+            "a second evasion pair. Both this and the WMC ceiling are positioned by a single "
+            "authored control, which is why neither sits at its window's edge. The other "
+            "half of the evidence is not authored: across the five corpora the two ceilings "
+            "reject 115 classes, 28 of them by NOM alone and 23 by WMC alone, so neither is "
+            "a restatement of the other. Seven of the 115 are test classes, which is the "
+            "known false positive -- many small test methods is a legitimate shape, and "
+            "`oxn.yaml`'s advisory paths are the answer rather than a looser ceiling"
         ),
     ),
     Parameter(
@@ -252,7 +256,14 @@ _CEILINGS: tuple[Parameter, ...] = (
             "when work is being spread. Measured cost: 0.27% (go-kit) to 10.28% (httpx), "
             "and 2.0% of OXN's own classes."
         ),
-        fit_when="the same second evasion pair as MAX_METHODS_PER_CLASS",
+        fit_when=(
+            "the same second evasion pair as MAX_METHODS_PER_CLASS. What already argues for "
+            "this one independently: of the 87 classes it rejects across the corpora, 56 "
+            "contain no method over the *per-function* cyclomatic ceiling -- every method "
+            "individually fine and the accumulation the whole problem, which is the God "
+            "Class shape and is invisible to every other gate OXN has. `GraphStore` is the "
+            "local example, WMC 64 with a worst method of 6"
+        ),
     ),
 )
 
