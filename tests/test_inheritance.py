@@ -118,3 +118,25 @@ def test_two_languages_in_one_directory_do_not_share_a_hierarchy() -> None:
     )
     assert hierarchy.child_count("go", "Base") == 0
     assert hierarchy.child_count("rust", "Base") == 2
+
+
+@pytest.mark.parametrize(
+    ("language", "source"),
+    (
+        ("go", "package m\n\ntype Reader interface {\n\tRead() int\n\tClose() error\n}\n"),
+        ("java", "interface Reader { int read(); void close(); }\n"),
+        ("typescript", "interface Reader { read(): number; close(): void; }\n"),
+        ("rust", "pub trait Reader { fn read(&self) -> usize; fn close(&self); }\n"),
+    ),
+)
+def test_an_interface_method_is_a_method_in_every_language(language: str, source: str) -> None:
+    """A method declared without a body still counts, and Go's did not.
+
+    Java counts its abstract `method_declaration` and TypeScript its `method_signature`, so
+    every Go interface read NOM 0 -- and a large method count on an interface is a finding
+    `MAX_METHODS_PER_CLASS`'s own record names as distinct from a God Class: it is an
+    interface-segregation smell, and the ceiling could not see it for one of six languages.
+    """
+    models = _models(language, source)
+    found = {name: sorted(m.lower() for m in model.methods) for name, model in models.items()}
+    assert found == {"Reader": ["close", "read"]}, found

@@ -161,7 +161,22 @@ GO = LanguageProfile(
     extensions=frozenset({".go"}),
     version=3,
     privacy="casing",
-    function_like=frozenset({"function_declaration", "method_declaration", "func_literal"}),
+    # An interface's method, declared without a body. TypeScript counts its
+    # `method_signature` and Java its abstract `method_declaration`, so leaving Go's out made
+    # every Go interface read NOM 0 -- and a large method count on an interface is exactly the
+    # interface-segregation smell `MAX_METHODS_PER_CLASS`'s own record names as a finding
+    # distinct from a God Class. Both spellings: the grammar renamed `method_spec` to
+    # `method_elem`, and a profile that names only the current one breaks silently on an
+    # older grammar rather than loudly.
+    function_like=frozenset(
+        {
+            "function_declaration",
+            "method_declaration",
+            "func_literal",
+            "method_elem",
+            "method_spec",
+        }
+    ),
     # A Go "type" is a struct, an interface or a named alias; `type_declaration` wraps them.
     # `type_spec` alone, not `type_declaration`: the declaration carries no name -- it wraps
     # one *or more* specs, and `type ( Alpha ...; Beta ... )` is one declaration and two
