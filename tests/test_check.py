@@ -317,15 +317,27 @@ def test_the_roadmap_states_the_parameter_count_it_actually_has() -> None:
 
 
 def test_a_measured_parameter_says_how_many_observations_back_it() -> None:
-    """`TRIVIAL_HELPER` is fitted to two examples, and that must be visible, not implied."""
+    """`TRIVIAL_HELPER` is fitted to two examples, and that must be visible, not implied.
+
+    The `else` here used to assert `observations == 0` for everything not `MEASURED`, on the
+    premise that a value either was fitted to data or had none. P10 broke that premise: the
+    ceilings now carry the exceedance measured across five corpora and are still judgements,
+    because measuring what a ceiling *costs* is not the same act as fitting it. `evidence`
+    is what says whether a number was derived; `observations` says how much is known about
+    it. So the invariant worth keeping is the visibility one -- a parameter with
+    observations must say what they showed.
+    """
     from oxn.calibration import Evidence, parameters
 
     for parameter in parameters():
         if parameter.evidence is Evidence.MEASURED:
             assert parameter.observations > 0
             assert parameter.fit_when, "a measured parameter should say what would improve it"
-        else:
-            assert parameter.observations == 0
+        if parameter.observations:
+            assert "Measured" in parameter.provenance or parameter.evidence is Evidence.MEASURED, (
+                f"{parameter.name} claims {parameter.observations} observations without "
+                "saying what they showed"
+            )
 
 
 # ---- finding the project, rather than assuming the working directory --------------------

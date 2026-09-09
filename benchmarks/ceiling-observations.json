@@ -1,0 +1,942 @@
+{
+  "corpora": {
+    "go": "go-kit",
+    "java": "java-spring-petclinic",
+    "python": "python-httpx",
+    "rust": "rust-ripgrep",
+    "typescript": "typescript-nest"
+  },
+  "note": "Exceedance is the headline: the fraction of real code each ceiling rejects. Percentiles are recorded but are NOT a fitting target -- these distributions have median 0, so a p95 ceiling would be 2 in TypeScript and 9 in Go. Read `named` to compare languages and `all_callables` to see what the gate rejects.",
+  "observed": {
+    "cognitive_complexity": {
+      "ceiling": 12.0,
+      "corpora": {
+        "go": {
+          "all_callables": {
+            "ceiling_at_percentile": 97.18,
+            "exceedance": 2.8237,
+            "max": 192.0,
+            "n": 1877,
+            "over_ceiling": 53,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 2.0,
+              "p90": 5.0,
+              "p95": 9.0,
+              "p99": 22.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 96.68,
+            "exceedance": 3.3179,
+            "max": 192.0,
+            "n": 1296,
+            "over_ceiling": 43,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 2.0,
+              "p90": 6.0,
+              "p95": 11.0,
+              "p99": 23.0
+            }
+          }
+        },
+        "java": {
+          "all_callables": {
+            "ceiling_at_percentile": 99.53,
+            "exceedance": 0.4739,
+            "max": 17.0,
+            "n": 211,
+            "over_ceiling": 1,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 0.0,
+              "p90": 1.0,
+              "p95": 5.0,
+              "p99": 10.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 99.51,
+            "exceedance": 0.4878,
+            "max": 17.0,
+            "n": 205,
+            "over_ceiling": 1,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 0.0,
+              "p90": 2.0,
+              "p95": 5.0,
+              "p99": 10.0
+            }
+          }
+        },
+        "python": {
+          "all_callables": {
+            "ceiling_at_percentile": 98.41,
+            "exceedance": 1.5859,
+            "max": 63.0,
+            "n": 1135,
+            "over_ceiling": 18,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 1.0,
+              "p90": 3.0,
+              "p95": 6.0,
+              "p99": 15.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 98.41,
+            "exceedance": 1.5873,
+            "max": 63.0,
+            "n": 1134,
+            "over_ceiling": 18,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 1.0,
+              "p90": 3.0,
+              "p95": 6.0,
+              "p99": 15.0
+            }
+          }
+        },
+        "rust": {
+          "all_callables": {
+            "ceiling_at_percentile": 98.33,
+            "exceedance": 1.6672,
+            "max": 47.0,
+            "n": 3359,
+            "over_ceiling": 56,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 0.0,
+              "p90": 2.0,
+              "p95": 5.0,
+              "p99": 17.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 98.18,
+            "exceedance": 1.8212,
+            "max": 47.0,
+            "n": 3020,
+            "over_ceiling": 55,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 0.0,
+              "p90": 3.0,
+              "p95": 5.0,
+              "p99": 17.0
+            }
+          }
+        },
+        "typescript": {
+          "all_callables": {
+            "ceiling_at_percentile": 99.51,
+            "exceedance": 0.4934,
+            "max": 92.0,
+            "n": 14997,
+            "over_ceiling": 74,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 0.0,
+              "p90": 1.0,
+              "p95": 2.0,
+              "p99": 8.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 99.08,
+            "exceedance": 0.9231,
+            "max": 92.0,
+            "n": 4225,
+            "over_ceiling": 39,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 1.0,
+              "p90": 3.0,
+              "p95": 4.0,
+              "p99": 12.0
+            }
+          }
+        }
+      }
+    },
+    "cyclomatic_complexity": {
+      "ceiling": 10.0,
+      "corpora": {
+        "go": {
+          "all_callables": {
+            "ceiling_at_percentile": 98.56,
+            "exceedance": 1.4385,
+            "max": 193.0,
+            "n": 1877,
+            "over_ceiling": 27,
+            "quantiles": {
+              "p50": 1.0,
+              "p75": 2.0,
+              "p90": 4.0,
+              "p95": 6.0,
+              "p99": 11.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 97.99,
+            "exceedance": 2.0062,
+            "max": 193.0,
+            "n": 1296,
+            "over_ceiling": 26,
+            "quantiles": {
+              "p50": 1.0,
+              "p75": 3.0,
+              "p90": 5.0,
+              "p95": 7.0,
+              "p99": 12.0
+            }
+          }
+        },
+        "java": {
+          "all_callables": {
+            "ceiling_at_percentile": 99.53,
+            "exceedance": 0.4739,
+            "max": 13.0,
+            "n": 211,
+            "over_ceiling": 1,
+            "quantiles": {
+              "p50": 1.0,
+              "p75": 1.0,
+              "p90": 2.0,
+              "p95": 4.0,
+              "p99": 9.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 99.51,
+            "exceedance": 0.4878,
+            "max": 13.0,
+            "n": 205,
+            "over_ceiling": 1,
+            "quantiles": {
+              "p50": 1.0,
+              "p75": 1.0,
+              "p90": 2.0,
+              "p95": 4.0,
+              "p99": 9.0
+            }
+          }
+        },
+        "python": {
+          "all_callables": {
+            "ceiling_at_percentile": 97.97,
+            "exceedance": 2.0264,
+            "max": 48.0,
+            "n": 1135,
+            "over_ceiling": 23,
+            "quantiles": {
+              "p50": 2.0,
+              "p75": 3.0,
+              "p90": 6.0,
+              "p95": 8.0,
+              "p99": 13.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 97.97,
+            "exceedance": 2.0282,
+            "max": 48.0,
+            "n": 1134,
+            "over_ceiling": 23,
+            "quantiles": {
+              "p50": 2.0,
+              "p75": 3.0,
+              "p90": 6.0,
+              "p95": 8.0,
+              "p99": 13.0
+            }
+          }
+        },
+        "rust": {
+          "all_callables": {
+            "ceiling_at_percentile": 98.33,
+            "exceedance": 1.6672,
+            "max": 33.0,
+            "n": 3359,
+            "over_ceiling": 56,
+            "quantiles": {
+              "p50": 1.0,
+              "p75": 1.0,
+              "p90": 3.0,
+              "p95": 6.0,
+              "p99": 13.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 98.15,
+            "exceedance": 1.8543,
+            "max": 33.0,
+            "n": 3020,
+            "over_ceiling": 56,
+            "quantiles": {
+              "p50": 1.0,
+              "p75": 1.0,
+              "p90": 4.0,
+              "p95": 6.0,
+              "p99": 14.0
+            }
+          }
+        },
+        "typescript": {
+          "all_callables": {
+            "ceiling_at_percentile": 99.83,
+            "exceedance": 0.1667,
+            "max": 22.0,
+            "n": 14997,
+            "over_ceiling": 25,
+            "quantiles": {
+              "p50": 1.0,
+              "p75": 1.0,
+              "p90": 2.0,
+              "p95": 2.0,
+              "p99": 5.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 99.53,
+            "exceedance": 0.4734,
+            "max": 22.0,
+            "n": 4225,
+            "over_ceiling": 20,
+            "quantiles": {
+              "p50": 1.0,
+              "p75": 1.0,
+              "p90": 3.0,
+              "p95": 4.0,
+              "p99": 8.0
+            }
+          }
+        }
+      }
+    },
+    "file_sloc": {
+      "ceiling": 500.0,
+      "corpora": {
+        "go": {
+          "all_callables": {
+            "ceiling_at_percentile": 99.61,
+            "exceedance": 0.3906,
+            "max": 936.0,
+            "n": 256,
+            "over_ceiling": 1,
+            "quantiles": {
+              "p50": 55.0,
+              "p75": 113.0,
+              "p90": 180.0,
+              "p95": 266.0,
+              "p99": 392.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 99.61,
+            "exceedance": 0.3906,
+            "max": 936.0,
+            "n": 256,
+            "over_ceiling": 1,
+            "quantiles": {
+              "p50": 55.0,
+              "p75": 113.0,
+              "p90": 180.0,
+              "p95": 266.0,
+              "p99": 392.0
+            }
+          }
+        },
+        "java": {
+          "all_callables": {
+            "ceiling_at_percentile": 100.0,
+            "exceedance": 0.0,
+            "max": 221.0,
+            "n": 50,
+            "over_ceiling": 0,
+            "quantiles": {
+              "p50": 29.0,
+              "p75": 66.0,
+              "p90": 121.0,
+              "p95": 215.0,
+              "p99": 221.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 100.0,
+            "exceedance": 0.0,
+            "max": 221.0,
+            "n": 50,
+            "over_ceiling": 0,
+            "quantiles": {
+              "p50": 29.0,
+              "p75": 66.0,
+              "p90": 121.0,
+              "p95": 215.0,
+              "p99": 221.0
+            }
+          }
+        },
+        "python": {
+          "all_callables": {
+            "ceiling_at_percentile": 90.0,
+            "exceedance": 10.0,
+            "max": 1786.0,
+            "n": 60,
+            "over_ceiling": 6,
+            "quantiles": {
+              "p50": 167.0,
+              "p75": 296.0,
+              "p90": 548.0,
+              "p95": 786.0,
+              "p99": 1786.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 90.0,
+            "exceedance": 10.0,
+            "max": 1786.0,
+            "n": 60,
+            "over_ceiling": 6,
+            "quantiles": {
+              "p50": 167.0,
+              "p75": 296.0,
+              "p90": 548.0,
+              "p95": 786.0,
+              "p99": 1786.0
+            }
+          }
+        },
+        "rust": {
+          "all_callables": {
+            "ceiling_at_percentile": 79.09,
+            "exceedance": 20.9091,
+            "max": 6916.0,
+            "n": 110,
+            "over_ceiling": 23,
+            "quantiles": {
+              "p50": 123.0,
+              "p75": 362.0,
+              "p90": 905.0,
+              "p95": 1288.0,
+              "p99": 3220.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 79.09,
+            "exceedance": 20.9091,
+            "max": 6916.0,
+            "n": 110,
+            "over_ceiling": 23,
+            "quantiles": {
+              "p50": 123.0,
+              "p75": 362.0,
+              "p90": 905.0,
+              "p95": 1288.0,
+              "p99": 3220.0
+            }
+          }
+        },
+        "typescript": {
+          "all_callables": {
+            "ceiling_at_percentile": 98.43,
+            "exceedance": 1.5682,
+            "max": 1154.0,
+            "n": 1913,
+            "over_ceiling": 30,
+            "quantiles": {
+              "p50": 19.0,
+              "p75": 47.0,
+              "p90": 133.0,
+              "p95": 262.0,
+              "p99": 596.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 98.43,
+            "exceedance": 1.5682,
+            "max": 1154.0,
+            "n": 1913,
+            "over_ceiling": 30,
+            "quantiles": {
+              "p50": 19.0,
+              "p75": 47.0,
+              "p90": 133.0,
+              "p95": 262.0,
+              "p99": 596.0
+            }
+          }
+        }
+      }
+    },
+    "function_sloc": {
+      "ceiling": 60.0,
+      "corpora": {
+        "go": {
+          "all_callables": {
+            "ceiling_at_percentile": 98.08,
+            "exceedance": 1.918,
+            "max": 882.0,
+            "n": 1877,
+            "over_ceiling": 36,
+            "quantiles": {
+              "p50": 5.0,
+              "p75": 12.0,
+              "p90": 26.0,
+              "p95": 41.0,
+              "p99": 71.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 97.3,
+            "exceedance": 2.7006,
+            "max": 882.0,
+            "n": 1296,
+            "over_ceiling": 35,
+            "quantiles": {
+              "p50": 7.0,
+              "p75": 15.0,
+              "p90": 32.0,
+              "p95": 45.0,
+              "p99": 76.0
+            }
+          }
+        },
+        "java": {
+          "all_callables": {
+            "ceiling_at_percentile": 99.53,
+            "exceedance": 0.4739,
+            "max": 73.0,
+            "n": 211,
+            "over_ceiling": 1,
+            "quantiles": {
+              "p50": 6.0,
+              "p75": 10.0,
+              "p90": 15.0,
+              "p95": 21.0,
+              "p99": 39.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 99.51,
+            "exceedance": 0.4878,
+            "max": 73.0,
+            "n": 205,
+            "over_ceiling": 1,
+            "quantiles": {
+              "p50": 6.0,
+              "p75": 10.0,
+              "p90": 15.0,
+              "p95": 21.0,
+              "p99": 39.0
+            }
+          }
+        },
+        "python": {
+          "all_callables": {
+            "ceiling_at_percentile": 99.21,
+            "exceedance": 0.793,
+            "max": 88.0,
+            "n": 1135,
+            "over_ceiling": 9,
+            "quantiles": {
+              "p50": 7.0,
+              "p75": 12.0,
+              "p90": 21.0,
+              "p95": 32.0,
+              "p99": 52.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 99.21,
+            "exceedance": 0.7937,
+            "max": 88.0,
+            "n": 1134,
+            "over_ceiling": 9,
+            "quantiles": {
+              "p50": 7.0,
+              "p75": 12.0,
+              "p90": 21.0,
+              "p95": 32.0,
+              "p99": 52.0
+            }
+          }
+        },
+        "rust": {
+          "all_callables": {
+            "ceiling_at_percentile": 98.93,
+            "exceedance": 1.0717,
+            "max": 185.0,
+            "n": 3359,
+            "over_ceiling": 36,
+            "quantiles": {
+              "p50": 5.0,
+              "p75": 12.0,
+              "p90": 22.0,
+              "p95": 32.0,
+              "p99": 62.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 98.84,
+            "exceedance": 1.1589,
+            "max": 185.0,
+            "n": 3020,
+            "over_ceiling": 35,
+            "quantiles": {
+              "p50": 5.0,
+              "p75": 12.0,
+              "p90": 23.0,
+              "p95": 34.0,
+              "p99": 64.0
+            }
+          }
+        },
+        "typescript": {
+          "all_callables": {
+            "ceiling_at_percentile": 96.83,
+            "exceedance": 3.1673,
+            "max": 1133.0,
+            "n": 14997,
+            "over_ceiling": 475,
+            "quantiles": {
+              "p50": 6.0,
+              "p75": 13.0,
+              "p90": 27.0,
+              "p95": 45.0,
+              "p99": 147.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 99.29,
+            "exceedance": 0.7101,
+            "max": 144.0,
+            "n": 4225,
+            "over_ceiling": 30,
+            "quantiles": {
+              "p50": 4.0,
+              "p75": 9.0,
+              "p90": 18.0,
+              "p95": 26.0,
+              "p99": 54.0
+            }
+          }
+        }
+      }
+    },
+    "max_nesting_depth": {
+      "ceiling": 4.0,
+      "corpora": {
+        "go": {
+          "all_callables": {
+            "ceiling_at_percentile": 100.0,
+            "exceedance": 0.0,
+            "max": 4.0,
+            "n": 1877,
+            "over_ceiling": 0,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 1.0,
+              "p90": 1.0,
+              "p95": 2.0,
+              "p99": 3.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 100.0,
+            "exceedance": 0.0,
+            "max": 4.0,
+            "n": 1296,
+            "over_ceiling": 0,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 1.0,
+              "p90": 1.0,
+              "p95": 2.0,
+              "p99": 3.0
+            }
+          }
+        },
+        "java": {
+          "all_callables": {
+            "ceiling_at_percentile": 100.0,
+            "exceedance": 0.0,
+            "max": 4.0,
+            "n": 211,
+            "over_ceiling": 0,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 0.0,
+              "p90": 1.0,
+              "p95": 2.0,
+              "p99": 3.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 100.0,
+            "exceedance": 0.0,
+            "max": 4.0,
+            "n": 205,
+            "over_ceiling": 0,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 0.0,
+              "p90": 1.0,
+              "p95": 2.0,
+              "p99": 3.0
+            }
+          }
+        },
+        "python": {
+          "all_callables": {
+            "ceiling_at_percentile": 99.65,
+            "exceedance": 0.3524,
+            "max": 5.0,
+            "n": 1135,
+            "over_ceiling": 4,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 0.0,
+              "p90": 1.0,
+              "p95": 2.0,
+              "p99": 3.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 99.65,
+            "exceedance": 0.3527,
+            "max": 5.0,
+            "n": 1134,
+            "over_ceiling": 4,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 0.0,
+              "p90": 1.0,
+              "p95": 2.0,
+              "p99": 3.0
+            }
+          }
+        },
+        "rust": {
+          "all_callables": {
+            "ceiling_at_percentile": 99.14,
+            "exceedance": 0.8634,
+            "max": 12.0,
+            "n": 3359,
+            "over_ceiling": 29,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 0.0,
+              "p90": 1.0,
+              "p95": 2.0,
+              "p99": 4.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 99.04,
+            "exceedance": 0.9603,
+            "max": 12.0,
+            "n": 3020,
+            "over_ceiling": 29,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 0.0,
+              "p90": 2.0,
+              "p95": 2.0,
+              "p99": 4.0
+            }
+          }
+        },
+        "typescript": {
+          "all_callables": {
+            "ceiling_at_percentile": 99.89,
+            "exceedance": 0.1134,
+            "max": 7.0,
+            "n": 14997,
+            "over_ceiling": 17,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 0.0,
+              "p90": 0.0,
+              "p95": 1.0,
+              "p99": 2.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 99.74,
+            "exceedance": 0.2604,
+            "max": 7.0,
+            "n": 4225,
+            "over_ceiling": 11,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 0.0,
+              "p90": 1.0,
+              "p95": 2.0,
+              "p99": 3.0
+            }
+          }
+        }
+      }
+    },
+    "parameter_count": {
+      "ceiling": 5.0,
+      "corpora": {
+        "go": {
+          "all_callables": {
+            "ceiling_at_percentile": 99.79,
+            "exceedance": 0.2131,
+            "max": 7.0,
+            "n": 1877,
+            "over_ceiling": 4,
+            "quantiles": {
+              "p50": 1.0,
+              "p75": 2.0,
+              "p90": 3.0,
+              "p95": 3.0,
+              "p99": 4.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 99.69,
+            "exceedance": 0.3086,
+            "max": 7.0,
+            "n": 1296,
+            "over_ceiling": 4,
+            "quantiles": {
+              "p50": 1.0,
+              "p75": 1.0,
+              "p90": 3.0,
+              "p95": 3.0,
+              "p99": 4.0
+            }
+          }
+        },
+        "java": {
+          "all_callables": {
+            "ceiling_at_percentile": 100.0,
+            "exceedance": 0.0,
+            "max": 5.0,
+            "n": 211,
+            "over_ceiling": 0,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 1.0,
+              "p90": 2.0,
+              "p95": 2.0,
+              "p99": 4.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 100.0,
+            "exceedance": 0.0,
+            "max": 5.0,
+            "n": 205,
+            "over_ceiling": 0,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 1.0,
+              "p90": 2.0,
+              "p95": 2.0,
+              "p99": 4.0
+            }
+          }
+        },
+        "python": {
+          "all_callables": {
+            "ceiling_at_percentile": 96.39,
+            "exceedance": 3.6123,
+            "max": 19.0,
+            "n": 1135,
+            "over_ceiling": 41,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 1.0,
+              "p90": 2.0,
+              "p95": 4.0,
+              "p99": 13.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 96.38,
+            "exceedance": 3.6155,
+            "max": 19.0,
+            "n": 1134,
+            "over_ceiling": 41,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 1.0,
+              "p90": 2.0,
+              "p95": 4.0,
+              "p99": 13.0
+            }
+          }
+        },
+        "rust": {
+          "all_callables": {
+            "ceiling_at_percentile": 99.97,
+            "exceedance": 0.0298,
+            "max": 7.0,
+            "n": 3359,
+            "over_ceiling": 1,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 1.0,
+              "p90": 2.0,
+              "p95": 2.0,
+              "p99": 3.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 99.97,
+            "exceedance": 0.0331,
+            "max": 7.0,
+            "n": 3020,
+            "over_ceiling": 1,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 1.0,
+              "p90": 2.0,
+              "p95": 2.0,
+              "p99": 3.0
+            }
+          }
+        },
+        "typescript": {
+          "all_callables": {
+            "ceiling_at_percentile": 99.77,
+            "exceedance": 0.2334,
+            "max": 9.0,
+            "n": 14997,
+            "over_ceiling": 35,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 1.0,
+              "p90": 2.0,
+              "p95": 2.0,
+              "p99": 4.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 99.17,
+            "exceedance": 0.8284,
+            "max": 9.0,
+            "n": 4225,
+            "over_ceiling": 35,
+            "quantiles": {
+              "p50": 1.0,
+              "p75": 2.0,
+              "p90": 2.0,
+              "p95": 3.0,
+              "p99": 5.0
+            }
+          }
+        }
+      }
+    }
+  }
+}
