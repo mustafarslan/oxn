@@ -177,14 +177,17 @@ BEDS: dict[str, Bed] = {
             "comparable setup for the constraint-budgeting arm. arXiv:2605.06445."
         ),
         blocked_on=(
-            "the pinned repository is the specification and nothing else -- 156 Bruno and "
-            "13 Hurl request files under specs/api/, and no implementation at all, since "
-            "the hundred-plus implementations live in their own repositories. The good "
-            "news is that those request collections *are* the verification, so `verify` "
-            "here is knowable rather than inventable: it is `hurl` against a running "
-            "implementation. What has to be chosen and pinned first is which "
-            "implementation, and in which language, since that decides what OXN is even "
-            "governing"
+            "two things, and the second is structural. The pinned repository is the "
+            "specification and nothing else -- 156 Bruno and 13 Hurl request files under "
+            "specs/api/, no implementation, since the hundred-plus implementations live in "
+            "their own repositories -- so which one is under test has to be chosen and "
+            "pinned. And its suite runs against a *live server*: "
+            "`HOST=http://localhost:3000/api ./run-api-tests-hurl.sh`. Every `verify` here "
+            "is a command run in a sandbox and judged by its exit code, which has no place "
+            "to start a server, wait for it to be ready, give it a database, and stop it "
+            "again. Conduit needs that lifecycle before it needs a `verify` line, and "
+            "adding one to satisfy the field would produce a check that fails for the wrong "
+            "reason on every repair"
         ),
     ),
 }

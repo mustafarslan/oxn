@@ -73,6 +73,7 @@ def test_a_bed_with_no_verification_is_refused_rather_than_guessed_at(harness, t
     conduit = harness.BEDS["realworld-conduit"]
     assert not conduit.verify
     assert "no implementation" in conduit.blocked_on
+    assert "live server" in conduit.blocked_on, "the structural half must be recorded too"
 
     fetched = harness.Bed(
         name="fetched-but-unverifiable", corpus="", sources=("src",), blocked_on="nothing decided"
