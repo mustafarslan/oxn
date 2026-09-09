@@ -214,3 +214,55 @@ def test_an_anonymous_callable_is_labelled_one(language: str, source: str) -> No
         if entity.kind.value != "module"
     }
     assert kinds == {"function", "lambda"}, f"{language}: {sorted(kinds)}"
+
+
+@pytest.mark.parametrize(
+    ("language", "stem"),
+    (
+        ("python", "service"),
+        ("python", "statics"),
+        ("python", "god_class"),
+        ("python", "repository"),
+        ("java", "service"),
+        ("java", "bare_fields"),
+        ("typescript", "service"),
+        ("go", "service"),
+        ("rust", "service"),
+        ("rust", "statics"),
+    ),
+)
+def test_both_paths_that_count_methods_agree(language: str, stem: str) -> None:
+    """`oxn classes` and the gate compute NOM separately. Two answers means one is wrong.
+
+    They arrive by different routes -- `resolve.members` from the syntax tree, and
+    `metrics.coupling.package_class_totals` from stored entities -- and nothing had ever made
+    them meet. Asking found two defects at once: Go read 4 against 0, because the package
+    join happens at index time and the member model does it per file; and Rust read 4 against
+    0-plus-an-anonymous-4, because a type's methods were counted per `impl` block. The second
+    was a live evasion of the class ceilings -- `tests/test_impl_block_evasion.py`.
+    """
+    from oxn.graph.builder import build_file
+    from oxn.languages import get_parser
+    from oxn.metrics.coupling import package_class_totals
+    from oxn.metrics.engine import measure_file
+    from oxn.profiles import get_profile
+
+    profile = get_profile(language)
+    data = (FIXTURES / f"{stem}.{_SUFFIX[language]}.txt").read_bytes()
+    tree = get_parser(language).parse(data)
+    entities = list(build_file("m", data, profile, tree.root_node).entities)
+    by_id = {entity.id: entity for entity in entities}
+    cyclomatic = {
+        measured.entity_id: measured.values["cyclomatic_complexity"].value
+        for measured in measure_file(entities, data, profile, tree.root_node)
+        if "cyclomatic_complexity" in measured.values
+    }
+    totals, _fragments = package_class_totals(entities, cyclomatic)
+
+    from_entities = {
+        by_id[entity_id].name: count
+        for entity_id, (count, _weight) in totals.items()
+        if by_id.get(entity_id) and by_id[entity_id].name
+    }
+    from_syntax = {name: len(model.methods) for name, model in _model(language, stem).items()}
+    assert from_entities == from_syntax, f"{language}/{stem}: {from_entities} vs {from_syntax}"

@@ -255,8 +255,8 @@ def aggregate_classes(store: GraphStore, paths: set[str]) -> None:
         measurements = {path: store.measurements_for(path) for path in members}
         if not _has_work(entities, measurements):
             continue
-        totals = package_class_totals(entities, _cyclomatic(measurements))
-        _rewrite(store, members, measurements, totals)
+        totals, fragments = package_class_totals(entities, _cyclomatic(measurements))
+        _rewrite(store, members, measurements, totals, fragments)
 
 
 def _has_work(
@@ -295,6 +295,7 @@ def _rewrite(
     members: list[str],
     measurements: dict[str, dict[str, dict[str, MetricValue]]],
     totals: dict[str, tuple[int, float]],
+    fragments: dict[str, str],
 ) -> None:
     """Write the package-scope totals back through the store's ordinary per-file write.
 
@@ -308,23 +309,40 @@ def _rewrite(
     """
     for path in members:
         found = measurements[path]
-        if not totals.keys() & found.keys():
+        if not (totals.keys() | fragments.keys()) & found.keys():
             continue
         store.put_metrics(
             path,
             [
                 EntityMetrics(
-                    entity_id, "", EntityKind.CLASS, 0, _with_totals(values, totals.get(entity_id))
+                    entity_id,
+                    "",
+                    EntityKind.CLASS,
+                    0,
+                    _with_totals(values, totals.get(entity_id), entity_id in fragments),
                 )
                 for entity_id, values in found.items()
             ],
         )
 
 
+#: The aggregates this pass owns. Written on the type, and taken off anything that turned
+#: out to be a fragment of one.
+_CLASS_AGGREGATES = ("nom", "wmc")
+
+
 def _with_totals(
-    values: dict[str, MetricValue], carried: tuple[int, float] | None
+    values: dict[str, MetricValue], carried: tuple[int, float] | None, is_fragment: bool
 ) -> dict[str, MetricValue]:
-    """One entity's measurements, with the package-scope aggregates substituted in."""
+    """One entity's measurements, with the package-scope aggregates substituted in.
+
+    A fragment loses them outright. `metrics.engine` answers per file and per block, so a
+    Rust `impl` carries a count of the methods written in *it*; once those are counted on the
+    type, leaving the fragment's own would publish two answers to one question and let the
+    smaller be the one a ceiling is compared against.
+    """
+    if is_fragment:
+        return {key: value for key, value in values.items() if key not in _CLASS_AGGREGATES}
     if carried is None:
         return dict(values)
     return {

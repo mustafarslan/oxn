@@ -161,8 +161,12 @@ _OWNER_KINDS = frozenset({EntityKind.CLASS, EntityKind.INTERFACE})
 
 def package_class_totals(
     entities: Sequence[Entity], cyclomatic: Mapping[str, float]
-) -> dict[str, tuple[int, float]]:
+) -> tuple[dict[str, tuple[int, float]], dict[str, str]]:
     """Class entity id -> (NOM, WMC) over a whole package, not one file.
+
+    Returns the totals and, separately, the member-holding blocks that were folded into a
+    named type. The caller needs both: a folded block's own per-file `nom` and `wmc` are now
+    a fraction of its type's and have to be dropped rather than left to disagree.
 
     Every language OXN supports except Go nests a method inside its type's body, so
     containment settles ownership and `metrics.engine` can answer per file. Go declares a
@@ -178,12 +182,39 @@ def package_class_totals(
     compared against a baseline. The ratchet is what makes that fatal rather than untidy.
     """
     by_name, totals = _declared_types(entities)
+    fragments = merged_fragments(entities, by_name)
     for entity in entities:
-        carried = totals.get(_owner_of(entity, by_name) or "")
+        carried = totals.get(_owner_of(entity, by_name, fragments) or "")
         if carried is not None:
             carried[0] += 1
             carried[1] += cyclomatic.get(entity.id, 0.0)
-    return {owner: (int(count), weight) for owner, (count, weight) in totals.items()}
+    return {
+        owner: (int(count), weight)
+        for owner, (count, weight) in totals.items()
+        if owner not in fragments
+    }, fragments
+
+
+def merged_fragments(entities: Sequence[Entity], by_name: Mapping[str, str]) -> dict[str, str]:
+    """Member-holding blocks that are part of a named type -> that type's entity id.
+
+    A Rust `impl` block is an unnamed class entity holding a named type's methods, and a type
+    may have any number of them. Counted per block, `Wide` with seven methods in each of two
+    `impl`s read NOM 7 and walked through a ceiling of 12 that the same fourteen methods in
+    one block failed -- an evasion needing no renaming and no indirection, in the language's
+    most ordinary idiom.
+
+    Only blocks naming a type this package declares. A block whose type is elsewhere keeps
+    its own count, which is a lower bound rather than a zero: the alternative is a type that
+    silently stops being measured because its `impl` moved.
+    """
+    found: dict[str, str] = {}
+    for entity in entities:
+        implements = entity.attrs.get("implements")
+        owner = by_name.get(str(implements)) if implements else None
+        if owner is not None and owner != entity.id:
+            found[entity.id] = owner
+    return found
 
 
 def _declared_types(
@@ -204,18 +235,25 @@ def _declared_types(
     return by_name, totals
 
 
-def _owner_of(entity: Entity, by_name: Mapping[str, str]) -> str | None:
+def _owner_of(
+    entity: Entity, by_name: Mapping[str, str], fragments: Mapping[str, str]
+) -> str | None:
     """The type a method belongs to: the one its receiver names, else the one it sits in.
 
     Receiver first, because only a language that declares methods outside the body has one,
     and there it is the *only* evidence -- containment puts the method in its file's module.
+
+    Containment then answers with the enclosing *block*, which in Rust is an `impl` and not
+    the type, so `fragments` carries the last step. Without it a type's methods were counted
+    once per block.
     """
     if entity.kind is not EntityKind.METHOD:
         return None
     receiver = entity.attrs.get("receiver_type")
     if receiver:
         return by_name.get(str(receiver))
-    return entity.parent_id
+    parent = entity.parent_id or ""
+    return fragments.get(parent, parent) or None
 
 
 def ck_metrics(

@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from oxn.graph.model import Entity, EntityKind, ParsedFile, entity_id
-from oxn.profiles.base import receiver_type
+from oxn.profiles.base import implemented_type, receiver_type
 
 if TYPE_CHECKING:  # pragma: no cover
     from tree_sitter import Node
@@ -36,6 +36,27 @@ _ANONYMOUS_KINDS = frozenset(
     {"lambda", "arrow_function", "function_expression", "func_literal", "closure_expression"}
 )
 _INTERFACE_KINDS = frozenset({"interface_declaration", "type_alias_declaration"})
+
+
+def _kind_attrs(definition: Node, kind: EntityKind, profile: LanguageProfile) -> dict[str, object]:
+    """What an entity records because of *what it is*, rather than where it sits.
+
+    Both entries are carried rather than resolved, and for one reason: the other half of each
+    is in a sibling file that this tree cannot see. A Go method names its receiver's type and
+    a Rust `impl` block names the type it belongs to, and either may be declared elsewhere in
+    the package -- `metrics.coupling.package_class_totals` joins them once every file is in.
+
+    Module-level because `_Skeleton` is at its own `weighted_methods_per_class` ceiling, and
+    adding the second of these to it is what said so.
+    """
+    if kind in {EntityKind.FUNCTION, EntityKind.METHOD, EntityKind.LAMBDA}:
+        receiver = receiver_type(definition, profile.receiver_field)
+        parameters: dict[str, object] = {"parameters": profile.parameter_names(definition)}
+        return parameters if receiver is None else {**parameters, "receiver_type": receiver}
+    if kind in {EntityKind.CLASS, EntityKind.INTERFACE}:
+        implemented = implemented_type(definition, profile.implements_field)
+        return {"implements": implemented} if implemented else {}
+    return {}
 
 
 def content_sha(source: bytes) -> str:
@@ -194,14 +215,8 @@ class _Skeleton:
         attrs: dict[str, object] = {
             "node_kind": definition.type,
             "def_range": [definition.start_byte, definition.end_byte],
+            **_kind_attrs(definition, kind, self.profile),
         }
-        if kind in {EntityKind.FUNCTION, EntityKind.METHOD, EntityKind.LAMBDA}:
-            attrs["parameters"] = self.profile.parameter_names(definition)
-            receiver = receiver_type(definition, self.profile.receiver_field)
-            if receiver is not None:
-                # Carried rather than resolved here: the type may be declared in another
-                # file of the same package, which one file's tree cannot see.
-                attrs["receiver_type"] = receiver
         if child is not definition:
             attrs["wrapped_by"] = child.type
         if _is_abstract(definition, self.profile):

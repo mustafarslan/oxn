@@ -1,0 +1,24 @@
+pub struct Wide {
+    a: A,
+    b: B,
+}
+
+impl Wide {
+    pub fn m01(&self) { self.a.x(); }
+    pub fn m02(&self) { self.a.x(); }
+    pub fn m03(&self) { self.a.x(); }
+    pub fn m04(&self) { self.a.x(); }
+    pub fn m05(&self) { self.a.x(); }
+    pub fn m06(&self) { self.a.x(); }
+    pub fn m07(&self) { self.a.x(); }
+}
+
+impl Show for Wide {
+    fn t01(&self) { self.b.y(); }
+    fn t02(&self) { self.b.y(); }
+    fn t03(&self) { self.b.y(); }
+    fn t04(&self) { self.b.y(); }
+    fn t05(&self) { self.b.y(); }
+    fn t06(&self) { self.b.y(); }
+    fn t07(&self) { self.b.y(); }
+}

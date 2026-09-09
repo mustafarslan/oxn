@@ -230,6 +230,23 @@ def receiver_type(node: Node, field: str) -> str | None:
     return parts[-1].lstrip("*").split("[")[0] or None if parts else None
 
 
+def implemented_type(node: Node, field: str) -> str:
+    """The bare name of the type a member-holding block belongs to -- Rust's `impl Service`.
+
+    Module-level beside `receiver_type`, for the same reason and because both the member
+    model and the package aggregate must answer it identically: a type whose methods are
+    counted one way by `oxn classes` and another by the gate has two method counts, and the
+    smaller one is an evasion.
+
+    `impl Display for Service` names the type in this field and the trait in another, so both
+    forms answer `Service`. Generic arguments are dropped, so `impl<'b, R> Reader<'b, R>` and
+    `struct Reader` are one type -- the same normalisation `receiver_type` applies to Go.
+    """
+    named = node.child_by_field_name(field) if field else None
+    written = named.text.decode("utf-8", "replace") if named is not None and named.text else ""
+    return written.split("<")[0].strip()
+
+
 def decorator_texts(node: Node, wrappers: Container[str]) -> tuple[str, ...]:
     """The decorators attached to a definition, exactly as written.
 

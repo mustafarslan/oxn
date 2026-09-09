@@ -231,7 +231,14 @@ _CEILINGS: tuple[Parameter, ...] = (
             "395 named. **Go needs a receiver join**, since a method there is a top-level "
             "declaration rather than a member of its type: without it every struct measured "
             "NOM 0 and the ceiling was silently inert for the language. The join is by "
-            "package, which Go's own rule makes exact -- see `indexer.aggregate_classes`."
+            "package, which Go's own rule makes exact -- see `indexer.aggregate_classes`. "
+            "**Rust needs an `impl` join** for the same reason and with sharper teeth: a "
+            "type's methods were counted per block, so fourteen split seven and seven "
+            "walked through this ceiling that the same fourteen failed in one block. That "
+            "is a cheaper evasion than any of the shred shapes -- it costs a newline and "
+            "the word `impl`, and the result is more idiomatic than the version that fails. "
+            "It was found by making the two paths that both compute NOM agree, and the "
+            "check that found it is kept."
         ),
         fit_when=(
             "a second evasion pair. Both this and the WMC ceiling are positioned by a single "

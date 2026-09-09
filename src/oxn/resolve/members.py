@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from oxn.profiles.base import receiver_type
+from oxn.profiles.base import implemented_type, receiver_type
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Iterator
@@ -255,26 +255,9 @@ def _iter_classes(root: Node, profile: LanguageProfile) -> Iterator[tuple[Node, 
         stack.extend(node.named_children)
         target = profile.unwrap(node)
         if target.type in profile.class_like:
-            name = profile.entity_name(target) or _implemented_type(target, profile)
+            name = profile.entity_name(target) or implemented_type(target, profile.implements_field)
             if name:
                 yield target, name
-
-
-def _implemented_type(node: Node, profile: LanguageProfile) -> str:
-    """The type an unnamed member-holding block belongs to -- Rust's `impl Service`.
-
-    `impl Display for Service` names the type in the same field and the trait in another, so
-    both forms answer `Service`, and a type's inherent and trait methods land in one model.
-    That matches what the gate counts, which is the point: two answers to "how many methods
-    does this type have" is worse than either.
-    """
-    if not profile.implements_field:
-        return ""
-    named = node.child_by_field_name(profile.implements_field)
-    # `impl<'b, R: io::Read> LineBufferReader<'b, R>` names the same type as `struct
-    # LineBufferReader`, and keeping the arguments made them two models -- eight methods on
-    # one and none on the other. `receiver_type` drops Go's `[...]` for the same reason.
-    return _text(named).split("<")[0].strip() if named is not None else ""
 
 
 def _iter_methods(body: Node, profile: LanguageProfile) -> Iterator[tuple[Node, str]]:

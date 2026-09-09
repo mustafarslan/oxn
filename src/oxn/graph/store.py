@@ -47,8 +47,9 @@ if TYPE_CHECKING:  # pragma: no cover
 #: differently**, for the same reason: `graph.builder` is not in the key either. Version 7 is
 #: the curried-callable fix -- a callable whose body *is* another callable yielded one entity
 #: where it should yield two. Version 8 labels Go's `func_literal` and Rust's
-#: `closure_expression` as lambdas rather than as functions.
-SCHEMA_VERSION = 8
+#: `closure_expression` as lambdas rather than as functions. Version 9 records
+#: `attrs["implements"]`, which is what lets a Rust type's `impl` blocks total together.
+SCHEMA_VERSION = 9
 
 DEFAULT_CACHE_PATH = Path(".oxn/cache/graph.db")
 
