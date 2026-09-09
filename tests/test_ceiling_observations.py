@@ -52,6 +52,18 @@ def test_the_measurement_used_the_ceilings_that_are_actually_enforced(
         )
 
 
+#: Ceilings whose population is *every* entity of the gated kind rather than the named ones.
+#:
+#: For callables, `named` is the comparable row: anonymous density runs from 0.1% of httpx's
+#: to 69.3% of nest's, so it is the only row two languages can be compared on. For classes the
+#: same filter measures the wrong thing, because the anonymous entities are where the methods
+#: are: a Rust `impl` block is an unnamed class entity holding every method of its type, so
+#: ripgrep reads 840 class entities against 395 named ones and its exceedance falls from 3.10%
+#: to 0.25% under the filter. Go is starker -- all 379 of go-kit's structs are unnamed, so the
+#: named row does not exist. The gate applies no name filter, so neither does this.
+_WHOLE_POPULATION = frozenset({"methods_per_class", "weighted_methods_per_class"})
+
+
 def test_calibration_quotes_the_population_it_measured(observed: dict[str, dict]) -> None:
     """`observations` must be the count behind the sentence next to it, not a round number."""
     from oxn.calibration import parameters
@@ -62,10 +74,11 @@ def test_calibration_quotes_the_population_it_measured(observed: dict[str, dict]
         rule = by_threshold.get(parameter.name)
         if rule is None:
             continue
+        population = "all_callables" if rule in _WHOLE_POPULATION else "named"
         measured = sum(
-            corpus["named"]["n"]
+            corpus[population]["n"]
             for corpus in observed[rule]["corpora"].values()
-            if "named" in corpus
+            if population in corpus
         )
         assert parameter.observations == measured, (
             f"{parameter.name} claims {parameter.observations} observations; the frozen "

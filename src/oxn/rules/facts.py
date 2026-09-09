@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from oxn.config import CALLABLE_KINDS, FILE_KINDS, GATED_METRICS
+from oxn.config import CALLABLE_KINDS, CLASS_KINDS, FILE_KINDS, GATED_METRICS
 from oxn.rules.model import Facts
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -78,9 +78,10 @@ def _ceilings(facts: Facts, settings: Config, path: str, layer: str | None) -> N
 
 
 def _constants(facts: Facts) -> None:
-    """The closed tables: which kinds are callables, which are files."""
+    """The closed tables: which kinds are callables, which are files, which own methods."""
     facts.add("callable", *[(kind,) for kind in sorted(CALLABLE_KINDS)])
     facts.add("file_kind", *[(kind,) for kind in sorted(FILE_KINDS)])
+    facts.add("class_kind", *[(kind,) for kind in sorted(CLASS_KINDS)])
 
 
 def graph_facts(facts: Facts, graph: DependencyGraph, settings: Config) -> None:

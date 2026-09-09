@@ -30,6 +30,8 @@ BASELINE_NAME = Path(".oxn") / "baseline.json"
 #: length ceilings mean something here and nowhere else.
 CALLABLE_KINDS: frozenset[str] = frozenset({"function", "method", "lambda"})
 FILE_KINDS: frozenset[str] = frozenset({"file", "module"})
+#: Entities that own methods. The class aggregates mean something here and nowhere else.
+CLASS_KINDS: frozenset[str] = frozenset({"class", "interface"})
 
 
 def _find_project(start: Path) -> Path:
@@ -84,6 +86,15 @@ GATED_METRICS: dict[str, Gate] = {
     "parameter_count": Gate("parameter_count", "MAX_PARAMETERS", CALLABLE_KINDS),
     "function_sloc": Gate("sloc", "MAX_FUNCTION_SLOC", CALLABLE_KINDS),
     "file_sloc": Gate("sloc", "MAX_FILE_SLOC", FILE_KINDS),
+    # The class aggregates, and the reason they are here rather than only in `oxn classes`:
+    # `shredding` clusters a function with the *private* helpers *only it calls*, and both
+    # premises are evadable -- give the helpers public names, or a second call site, and the
+    # cluster disappears while the work stays spread. Measured in
+    # `tests/test_class_scope_evasion.py`: two of the three evasions walk through the gate,
+    # and both aggregates separate them from a legitimate decomposition by a wide margin.
+    # Exact and file-local, so they may block under ADR-0002.
+    "methods_per_class": Gate("nom", "MAX_METHODS_PER_CLASS", CLASS_KINDS),
+    "weighted_methods_per_class": Gate("wmc", "MAX_WEIGHTED_METHODS_PER_CLASS", CLASS_KINDS),
     # Anti-gaming, and deliberately sharing the cognitive ceiling rather than owning a
     # number of its own: the rule exists to stop that ceiling being satisfied by splitting
     # instead of simplifying, so the two must move together. Only cluster roots carry the

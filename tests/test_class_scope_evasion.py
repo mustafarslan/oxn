@@ -102,14 +102,34 @@ def test_shredding_catches_the_shapes_it_was_calibrated_on(project: Path, varian
 
 
 @pytest.mark.parametrize("variant", ESCAPES)
-def test_shredding_cannot_catch_a_public_or_shared_shred(project: Path, variant: str) -> None:
-    """The gap, asserted so that closing it is a visible change rather than a silent one.
+def test_shredding_still_cannot_see_a_public_or_shared_shred(project: Path, variant: str) -> None:
+    """The gap itself, which the class aggregates cover rather than remove.
 
-    If one of these starts failing, `shredding` has grown a new premise -- read why before
-    deleting the case, because the class aggregate's whole justification is these two rows.
+    `shredding` clusters a function with the *private* helpers *only it calls*. These two
+    variants defeat one premise each, so the rule has nothing to total and is silent -- and
+    it should stay silent. If it starts firing here, it has grown a premise, and the class
+    aggregate's justification below is worth re-reading before this case is deleted.
     """
+    _, rules = _check(project, variant)
+    assert "shredding" not in rules, f"{variant}: shredding now fires; its premises changed"
+
+
+@pytest.mark.parametrize("variant", ESCAPES)
+def test_the_class_aggregates_catch_what_shredding_cannot(project: Path, variant: str) -> None:
+    """The gate closing the gap, end to end, which is what the ceilings were added for."""
     exit_code, rules = _check(project, variant)
-    assert exit_code == 0, f"{variant} is now caught by {sorted(rules)}; the gap may have closed"
+    assert exit_code != 0, f"{variant} passed the gate"
+    assert {"methods_per_class", "weighted_methods_per_class"} <= rules, sorted(rules)
+
+
+def test_the_good_refactoring_stays_under_both_class_ceilings(project: Path) -> None:
+    """The false-positive side of the same gate, and the reason the ceilings are not tighter.
+
+    `spread` is the decomposition anyone would want: a router split by HTTP verb. It sits at
+    NOM 4 and WMC 17 against ceilings of 12 and 25, so the margin is wide rather than lucky.
+    """
+    exit_code, rules = _check(project, "spread")
+    assert exit_code == 0, f"the good refactoring is blocked by {sorted(rules)}"
 
 
 def test_the_class_aggregate_separates_the_escapes_from_the_refactoring() -> None:
@@ -140,3 +160,40 @@ def test_wmc_is_weighted_and_is_not_a_method_count() -> None:
     nom, wmc, _ = _aggregates("before")
     assert nom == 1, "the honest version is a single method"
     assert wmc > nom, f"WMC {wmc} should carry the method's complexity, not count it"
+
+
+# ---- the ratchet, which is how these ceilings are meant to be adopted -------------------
+
+
+def test_a_baselined_class_may_stay_but_may_not_grow(project: Path) -> None:
+    """Why these are a ratchet before they are a ceiling.
+
+    NOM 12 rejects 4.3%-9.5% of classes across the five corpora, against 0.5%-3.6% for the
+    per-function ceilings, because the evasions sit *inside* the legitimate distribution
+    rather than beyond it. A project adopting them records what it already has and is held to
+    not making it worse -- which is exactly `.oxn/baseline.json`, and is checked here because
+    a ratchet nobody tested is a ceiling with extra steps.
+    """
+    from oxn.check import run_check, write_baseline
+    from oxn.config import Config
+
+    (project / "m.py").write_text(_source("public"))
+    settings = Config.load()
+    write_baseline(run_check(["m.py"], config=settings, use_baseline=False), settings.baseline_path)
+
+    accepted = run_check(["m.py"], config=settings)
+    assert accepted.exit_code == 0, "the recorded class should stop failing the build"
+
+    worse = _source("public").replace(
+        "    def route(self, request):",
+        "    def extra(self, request):\n"
+        "        if request:\n"
+        "            return 1\n"
+        "        return 0\n"
+        "\n"
+        "    def route(self, request):",
+    )
+    (project / "m.py").write_text(worse)
+    assert run_check(["m.py"], config=settings).exit_code != 0, (
+        "a baselined class that grows another method must fail again -- that is the ratchet"
+    )

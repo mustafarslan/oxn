@@ -211,6 +211,47 @@ _CEILINGS: tuple[Parameter, ...] = (
             "a language property, and this is the ceiling that should become per-language"
         ),
     ),
+    Parameter(
+        name="MAX_METHODS_PER_CLASS",
+        value=float(thresholds.MAX_METHODS_PER_CLASS),
+        evidence=Evidence.JUDGEMENT,
+        observations=3861,
+        provenance=(
+            "12, a round number inside a window a control defines rather than a percentile. "
+            "The two shred shapes `shredding` cannot see -- public helper names, and helpers "
+            "given a second caller -- score NOM 14, while the legitimate decomposition of the "
+            "same work scores 4, so anything in 5..13 separates them. Measured across 3,861 "
+            "classes: rejects 2.25% (nest) to 7.48% (httpx), and 0.7% of OXN's own 149. "
+            "Higher than the per-function ceilings because the evasions sit inside the "
+            "legitimate distribution rather than beyond it, which is why this is a ratchet "
+            "first. **The population is every class entity, not the named ones**, because "
+            "the unnamed ones are where the methods are: a Rust `impl` block is an unnamed "
+            "class holding its type's methods, and ripgrep reads 840 class entities against "
+            "395 named. **Inert for Go**: a Go method is a top-level declaration carrying "
+            "its receiver, so all 379 of go-kit's structs measure NOM 0 and none can ever "
+            "violate -- they sit in the denominator above and deflate it."
+        ),
+        fit_when=(
+            "more than one evasion pair. Both this and the WMC ceiling are positioned by a "
+            "single control, and a value tuned to straddle one fixture is fitted to it -- "
+            "which is why neither sits at its window's edge"
+        ),
+    ),
+    Parameter(
+        name="MAX_WEIGHTED_METHODS_PER_CLASS",
+        value=float(thresholds.MAX_WEIGHTED_METHODS_PER_CLASS),
+        evidence=Evidence.JUDGEMENT,
+        observations=3861,
+        provenance=(
+            "25, positioned like its sibling: the escapes score WMC 27 and the legitimate "
+            "decomposition 17, so 18..26 separates them. Weighted by *cyclomatic* complexity "
+            "per docs/metrics.md section 3.6 and for a measured reason -- cognitive weights "
+            "fall under extraction, so a cognitive WMC would report an improvement exactly "
+            "when work is being spread. Measured cost: 1.65% (nest) to 10.28% (httpx), and "
+            "2.0% of OXN's own classes. Inert for Go for the reason its sibling records."
+        ),
+        fit_when="the same second evasion pair as MAX_METHODS_PER_CLASS",
+    ),
 )
 
 #: Parameters about *judgement* rather than size, and the only ones OXN has fitted to

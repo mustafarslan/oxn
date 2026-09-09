@@ -38,7 +38,13 @@ if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Collection, Iterable, Iterator
 
 #: Bump on any change to the statements below. A mismatch rebuilds the cache.
-SCHEMA_VERSION = 5
+#:
+#: **Also bump when the metric engine starts emitting a new key.** The per-file cache key is
+#: `(path, content_sha, profile_version, grammar_version, schema_version)` and a new metric
+#: changes none of the first four, so an unchanged file keeps rows that predate the metric and
+#: the gate sees nothing. That is how `nom` and `wmc` first landed: three rows in the whole
+#: repository, one file, and a clean `oxn check --deep` that had checked almost nothing.
+SCHEMA_VERSION = 6
 
 DEFAULT_CACHE_PATH = Path(".oxn/cache/graph.db")
 

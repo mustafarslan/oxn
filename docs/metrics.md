@@ -1434,6 +1434,26 @@ OXN's own 176 classes and 6.5–19.2% across the five corpora — because the es
 a ceiling: adopting it re-baselines, and the value is in blocking the *change* from NOM 1 to 14
 rather than in condemning classes that were already large.
 
+**Shipped as `methods_per_class: 12` and `weighted_methods_per_class: 25`**, both inside the
+window the control defines (NOM 5..13, WMC 18..26) and deliberately not at its edges, since a
+value tuned to straddle one fixture is fitted to that fixture. Measured across 3,861 class
+entities they reject 2.25%–7.48% and 1.65%–10.28%, and 0.7%/2.0% of OXN's own 149 classes —
+which became four baselined entries, `GraphStore` (NOM 27, WMC 64) among them.
+
+Two containment facts decide what the population is, and both are language-specific:
+
+* **The unnamed class entities are where the methods are.** A Rust `impl` block is an unnamed
+  class holding its type's methods, so ripgrep reads 840 class entities against 395 named ones,
+  and filtering to named ones drops its exceedance from 3.10% to 0.25% — measuring the struct
+  declarations rather than the code. The gate applies no name filter and neither does the
+  calibration record, which is the opposite of the choice made for the callable ceilings, where
+  anonymous density (0.1% of httpx, 69.3% of nest) makes `named` the only comparable row.
+* **Both ceilings are inert for Go.** A Go method is a top-level declaration carrying its
+  receiver rather than a member of its type — the same fact ADR-0002 records for `by_file` —
+  so all 379 of go-kit's structs measure NOM 0 and none can ever violate. They sit in the
+  denominator above and deflate it. Closing this needs receiver-based ownership, not a
+  different threshold.
+
 **WMC was NOM under another name until this was measured.** `ck_metrics` computes
 `sum(weights.get(name, 1) for name in model.methods)`, section 3.6 above specifies cyclomatic as
 the default weight, `Evidence.complexity` existed to carry it and `run_classes` never filled it —

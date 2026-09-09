@@ -36,10 +36,28 @@ MAX_PARAMETERS: Final[int] = 5
 #: Deep nesting is the single strongest readability signal cognitive complexity encodes.
 MAX_NESTING_DEPTH: Final[int] = 4
 
-#: Function and file length, in source lines. Conventional rather than derived; P10's
-#: percentile calibration is expected to replace both with corpus-derived values.
+#: Function and file length, in source lines. Conventional rather than derived. P10 measured
+#: what they cost rather than replacing them: see `oxn.calibration`, and ROADMAP's P10
+#: amendment for why a corpus percentile is not a ceiling.
 MAX_FUNCTION_SLOC: Final[int] = 60
 MAX_FILE_SLOC: Final[int] = 500
+
+#: Class aggregates, and the pair `docs/metrics.md` section 10.5 asks for so that work spread
+#: across a class is caught rather than only work spread across one function's helpers.
+#:
+#: Both sit inside a window a control defines rather than at a percentile: the two evasions
+#: `shredding` cannot see -- a shred with public names, and a shred whose helpers gained a
+#: second caller -- score NOM 14 and WMC 27, while the legitimate decomposition of the same
+#: work scores 4 and 17 (`tests/test_class_scope_evasion.py`). Anything in 5..13 and 18..26
+#: separates them; these are the round numbers in that window, deliberately not its edges,
+#: because a value tuned to straddle one fixture is fitted to that fixture.
+#:
+#: Unlike the per-function ceilings, which reject 0.5-3.6% of real code, these reject
+#: 4.3-9.5% and 1.7-13.1% across the five corpora -- the evasions sit *inside* the legitimate
+#: distribution, not outside it. They are therefore a **ratchet** first: `.oxn/baseline.json`
+#: absorbs the classes that were already large, and what blocks is a class getting worse.
+MAX_METHODS_PER_CLASS: Final[int] = 12
+MAX_WEIGHTED_METHODS_PER_CLASS: Final[int] = 25
 
 # ---- Anti-gaming: satisfying a ceiling without simplifying anything --------------------
 #

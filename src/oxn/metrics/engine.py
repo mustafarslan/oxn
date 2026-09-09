@@ -24,6 +24,8 @@ if TYPE_CHECKING:  # pragma: no cover
 
 #: Entities that carry function-shaped metrics.
 CALLABLE_KINDS = frozenset({EntityKind.FUNCTION, EntityKind.METHOD, EntityKind.LAMBDA})
+#: Entities that carry the class aggregates.
+CLASS_KINDS = frozenset({EntityKind.CLASS, EntityKind.INTERFACE})
 
 
 def measure_file(
@@ -53,7 +55,51 @@ def measure_file(
         results.append(measured)
 
     _mark_shredding(results, units, profile)
+    _mark_class_aggregates(results, entities)
     return results
+
+
+def _mark_class_aggregates(results: list[EntityMetrics], entities: list[Entity]) -> None:
+    """Record NOM and WMC on every class, the way `_mark_shredding` records its total.
+
+    Both are **file-local and exact**, which is what lets them gate at all: a class's method
+    list is a containment fact this tree settles, so ADR-0002's rule that only an exact
+    measurement may block is satisfied without any resolution.
+
+    LCOM4 is deliberately absent. It needs the field-access model, which needs the scope
+    tree, which `measure_file` is not given; it stays in `oxn classes`, reported and ungated.
+    """
+    totals = _class_totals(results, entities)
+    for measured in results:
+        found = totals.get(measured.entity_id)
+        if found is not None:
+            measured.add(MetricValue("nom", found[0]))
+            measured.add(MetricValue("wmc", found[1]))
+
+
+def _class_totals(
+    results: list[EntityMetrics], entities: list[Entity]
+) -> dict[str, tuple[int, float]]:
+    """Class entity id -> (method count, summed cyclomatic complexity).
+
+    WMC is weighted by *cyclomatic* complexity, per `docs/metrics.md` section 3.6 and for the
+    reason `tests/test_class_scope_evasion.py` measures: cognitive weights fall under
+    extraction, so a cognitive WMC reports an improvement exactly when work is being spread.
+
+    Every class gets an entry, including one with no methods. A metric that is absent for the
+    easy cases and present for the hard ones is a metric whose absence means two things.
+    """
+    parents = {entity.id: entity.parent_id for entity in entities}
+    totals = {entity.id: [0, 0.0] for entity in entities if entity.kind in CLASS_KINDS}
+    for measured in results:
+        owner = parents.get(measured.entity_id)
+        if measured.kind is not EntityKind.METHOD or owner is None:
+            continue
+        carried = totals.get(owner)
+        if carried is not None:
+            carried[0] += 1
+            carried[1] += measured.get("cyclomatic_complexity") or 0.0
+    return {owner: (int(count), weight) for owner, (count, weight) in totals.items()}
 
 
 def _unit(entity: Entity, measured: EntityMetrics, node: Node, profile: LanguageProfile) -> Unit:

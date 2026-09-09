@@ -80,6 +80,7 @@ BEDS: tuple[tuple[str, str], ...] = (
 #: here as a diff, instead of silently re-scoping a frozen measurement.
 CALLABLE = ("function", "method", "lambda")
 FILE = ("module", "file")
+CLASS = ("class", "interface")
 GATED: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("cognitive_complexity", "cognitive_complexity", CALLABLE),
     ("cyclomatic_complexity", "cyclomatic_complexity", CALLABLE),
@@ -87,6 +88,8 @@ GATED: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("parameter_count", "parameter_count", CALLABLE),
     ("function_sloc", "sloc", CALLABLE),
     ("file_sloc", "sloc", FILE),
+    ("methods_per_class", "nom", CLASS),
+    ("weighted_methods_per_class", "wmc", CLASS),
 )
 
 _QUANTILES = (50, 75, 90, 95, 99)

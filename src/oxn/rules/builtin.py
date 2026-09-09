@@ -33,14 +33,21 @@ def ceiling_rules(settings: Config) -> list[Rule]:
 
     The metric key and the kind guard are what differ. `function_sloc` and `file_sloc` share
     the metric `sloc` and are two rules precisely because the guard differs -- 60 lines is a
-    statement about a function, and applying it to a module flags every file there is.
+    statement about a function, and applying it to a module flags every file there is. The
+    class aggregates add a third guard for the same reason.
     """
     return [_ceiling_rule(name, GATED_METRICS[name]) for name in settings.ceilings]
 
 
+#: Gate kinds -> the closed table in `facts.py` that admits them. A ceiling means something
+#: different for a function, a file and a class, and the guard is what says which.
+_GUARDS = (("function", "callable"), ("module", "file_kind"), ("class", "class_kind"))
+
+
 def _ceiling_rule(name: str, gate: object) -> Rule:
     metric_key = gate.metric  # type: ignore[attr-defined]
-    guard = "callable" if "function" in gate.kinds else "file_kind"  # type: ignore[attr-defined]
+    kinds = gate.kinds  # type: ignore[attr-defined]
+    guard = next(table for marker, table in _GUARDS if marker in kinds)
     return Rule(
         name=name,
         body=(

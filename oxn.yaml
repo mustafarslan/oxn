@@ -16,6 +16,11 @@ ceilings:
   parameter_count: 5
   function_sloc: 60
   file_sloc: 500
+  # The class aggregates. A ratchet before a ceiling: they catch the two shred shapes
+  # `shredding` cannot see (public helper names, helpers with a second caller), and the
+  # classes already above them are baselined rather than condemned. See thresholds.py.
+  methods_per_class: 12
+  weighted_methods_per_class: 25
 
 # OXN's own architecture. The order is outermost first: a layer may depend on every layer
 # after it and on none before it.
