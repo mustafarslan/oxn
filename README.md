@@ -216,11 +216,32 @@ baseline is empty**, so `plan` returns nothing unless you lower `--ceiling`.
 python scripts/dogfood.py plan               # what is over the ceiling, and why
 python scripts/dogfood.py repair --limit 3   # attempt repairs, write diffs for review
 python scripts/dogfood.py repair --dry-run   # exercise the loop with no model calls
-python scripts/dogfood.py report             # convergence across all attempts so far
+python scripts/dogfood.py report             # convergence, and the arm table
 ```
 
+The same loop is the evaluation harness, along three axes it varies independently:
+
+```sh
+--bed   self | go-kit | rust-ripgrep | python-httpx | typescript-nest | java-spring-petclinic
+--arm   none | claude-md | mcp | hooks | hybrid | hybrid-budget
+--backend  ollama | claude-code | dry-run
+```
+
+A **bed** is where targets come from and *how a repair is checked there* — `go test` and
+`go vet` for Go, `cargo clippy` for Rust, this project's pytest/ruff/mypy for itself. A check
+a bed does not declare is skipped rather than failed, since a Go module has no type checker;
+a declared check whose tool is missing is a failure, because then the repair was not verified.
+
+An **arm** is which of OXN's three channels the agent gets: the rules `oxn init` writes into
+`CLAUDE.md`, the increment trail `explain_violation` returns over MCP, and the hook rejecting
+an edit for the agent to answer. `none` is the control and gets one attempt — without a
+rejection there is nothing to retry against, and extra rounds would be re-rolls of the dice
+scored as though feedback had helped.
+
 Two models, deliberately different: **glm-5.3** writes the repair, **deepseek-v4-pro**
-assesses it. A model grading its own output is not an independent check.
+assesses it. A model grading its own output is not an independent check. `--backend
+claude-code` drives `claude -p` instead, which is the arm that decides what a result means:
+Claude Code under OXN's own hooks is the agent the tool exists to govern.
 
 **The judge never overrules the deterministic gauntlet.** A candidate that fails tests,
 types, lint, or the shredding detector is rejected before a judge sees it — because "the
