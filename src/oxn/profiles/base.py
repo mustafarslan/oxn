@@ -272,10 +272,26 @@ def _bound_name(node: Node) -> Node | None:
     if parent is None:
         return None
     for binding_field in _BINDING_FIELDS:
-        bound = parent.child_by_field_name(binding_field)
-        if bound is not None and bound.type == "identifier" and bound != node:
+        bound = _sole_identifier(parent.child_by_field_name(binding_field))
+        if bound is not None and bound != node:
             return bound
     return None
+
+
+def _sole_identifier(bound: Node | None) -> Node | None:
+    """A plain identifier, seen through a wrapper holding exactly one.
+
+    Go wraps the *name* of `g := func() {}` in an `expression_list` exactly as it wraps the
+    value, so the `var Fn = func() {}` form took its name and the short form did not -- one
+    language disagreeing with itself. Only when it is the sole child, so that
+    `a, b := 1, func() {}`, where names bind positionally and `a` is not this function's
+    name, stays correctly anonymous.
+    """
+    if bound is None:
+        return None
+    if bound.type != "identifier" and len(bound.named_children) == 1:
+        bound = bound.named_children[0]
+    return bound if bound.type == "identifier" else None
 
 
 def _first_identifier(node: Node) -> str:

@@ -178,3 +178,39 @@ def test_java_bare_access_does_not_invent_cohesion() -> None:
 
     measured = cohesion(_model("java", "bare_fields")["Service"])
     assert measured.lcom4 == 3, f"lcom4 {measured.lcom4}"
+
+
+@pytest.mark.parametrize(
+    ("language", "source"),
+    (
+        ("python", "def run():\n    f = lambda x: x * 2\n    return f(3)\n"),
+        (
+            "go",
+            "package p\n\nfunc Run() {\n\tf := func(x int) int { return x * 2 }\n\t_ = f(3)\n}\n",
+        ),
+        ("rust", "pub fn run() {\n    let f = |x: i32| x * 2;\n    let _ = f(3);\n}\n"),
+        ("typescript", "function run() {\n  const f = (x: number) => x * 2;\n  return f(3);\n}\n"),
+    ),
+)
+def test_an_anonymous_callable_is_labelled_one(language: str, source: str) -> None:
+    """Go's `func_literal` and Rust's `closure_expression` read as ordinary functions.
+
+    Gating did not change -- a lambda is a callable kind and was always measured -- but the
+    label was false, and Rust's took the name of whatever it was bound to, which put
+    `let f = |x| ...` into the *named* function population as `f`. Any consumer selecting on
+    kind saw two of five languages wrongly.
+    """
+    from oxn.graph.builder import build_file
+    from oxn.languages import get_parser
+    from oxn.profiles import get_profile
+
+    profile = get_profile(language)
+    data = source.encode()
+    tree = get_parser(language).parse(data)
+    assert not tree.root_node.has_error, f"the {language} snippet does not parse"
+    kinds = {
+        entity.kind.value
+        for entity in build_file("m", data, profile, tree.root_node).entities
+        if entity.kind.value != "module"
+    }
+    assert kinds == {"function", "lambda"}, f"{language}: {sorted(kinds)}"

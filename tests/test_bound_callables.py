@@ -16,6 +16,12 @@ with precision-when-certain still 100%.
 What stays anonymous stays anonymous on purpose: an inline callback (`items.map(x => x.id)`)
 has no name to be called by, and 1,551 of nest's remaining 1,785 unentitied call sites are
 exactly that.
+
+**A name is not a kind.** These callables are anonymous *definitions* that a binding gives a
+name to, and they are labelled `lambda` in every language that has them -- which Go and Rust
+were not, reading as ordinary functions until the two node kinds were added to the builder's
+anonymous set. The row for Go's `:=` is here because the `var` form was named and the short
+form was not, so one language disagreed with itself.
 """
 
 from __future__ import annotations
@@ -45,8 +51,13 @@ def named(language: str, source: str) -> list[tuple[str, str | None]]:
         ("typescript", "const fn = function () {};\n", [("lambda", "fn")]),
         ("python", "outer = lambda: 1\n", [("lambda", "outer")]),
         # Go puts the value inside an `expression_list`, so the declarator is a grandparent.
-        ("go", "package m\nvar Fn = func() {}\n", [("function", "Fn")]),
-        ("rust", "fn f() { let g = |x| x; }\n", [("function", "f"), ("function", "g")]),
+        ("go", "package m\nvar Fn = func() {}\n", [("lambda", "Fn")]),
+        (
+            "go",
+            "package m\nfunc h() { g := func() {} ; _ = g }\n",
+            [("function", "h"), ("lambda", "g")],
+        ),
+        ("rust", "fn f() { let g = |x| x; }\n", [("function", "f"), ("lambda", "g")]),
     ],
 )
 def test_a_callable_bound_to_a_name_takes_it(

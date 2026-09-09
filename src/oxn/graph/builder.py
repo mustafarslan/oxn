@@ -27,7 +27,14 @@ if TYPE_CHECKING:  # pragma: no cover
 
 #: Node kinds that mean "method" rather than "function" when they appear inside a type.
 _METHOD_KINDS = frozenset({"method_definition", "method_signature", "abstract_method_signature"})
-_ANONYMOUS_KINDS = frozenset({"lambda", "arrow_function", "function_expression"})
+#: Anonymous callables, in every language that has them. Go's `func_literal` and Rust's
+#: `closure_expression` were missing, so both read as ordinary functions -- and Rust's took
+#: the name of whatever it was bound to, which put `let write = |k| ...` into the *named*
+#: function population as `write`. Gating does not change (`lambda` is a callable kind
+#: either way); what changes is that the label is now true.
+_ANONYMOUS_KINDS = frozenset(
+    {"lambda", "arrow_function", "function_expression", "func_literal", "closure_expression"}
+)
 _INTERFACE_KINDS = frozenset({"interface_declaration", "type_alias_declaration"})
 
 
