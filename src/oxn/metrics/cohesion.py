@@ -7,12 +7,19 @@ which**:
 * **LCOM1** -- Chidamber & Kemerer, *OOPSLA 1991*: method pairs sharing no field.
 * **LCOM2** -- CK, *IEEE TSE* 20(6), 1994: ``max(0, |P| - |Q|)``.
 * **LCOM3** -- Li & Henry, *JSS* 23(2), 1993: connected components of the field-sharing graph.
-  Note a known property rather than a defect: a constructor touching every field joins every
-  cluster, so a class that is really two classes still reports one component if its
-  ``__init__`` initialises both halves. LCOM4's call edges have the same effect. This is
-  what the definitions say; it is the reason LCOM\* is the headline number.
 * **LCOM4** -- Hitz & Montazeri, 1995: LCOM3 *plus* intra-class call edges. The actionable
   one: "this class splits cleanly into 3 pieces".
+
+Both component variants **exclude constructors**, which is a departure from the definitions
+as published and was carried here for a while as "a known property rather than a defect": a
+constructor touching every field shares one with every method, so it joins every cluster
+through itself. A control pair settled it -- `tests/fixtures/cohesion_shapes` holds a wide
+repository and a five-collaborator God Class at the same method count, and with constructors
+counted the God Class reported *one* component, the same answer as the repository, which is
+the false negative landing precisely on the shape the metric exists to find. Excluded, it
+reports five, and they are its five collaborators. LCOM1, LCOM2 and LCOM\* still count
+constructors: they are ratios over pairs rather than a partition, the argument above does not
+transfer, and no control here measures them.
 * **LCOM\\*** (LCOM5) -- Henderson-Sellers, 1996: normalised to roughly ``[0, 1]``, so it is
   the one to compare across classes.
 
@@ -26,6 +33,7 @@ has been counted.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import combinations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -124,37 +132,68 @@ class _DisjointSet:
         return len({self.find(name) for name in self.parent})
 
 
+#: Method names that initialise a class rather than use it. Java's constructor is the
+#: class's own name and is matched separately; Go has none. Rust's `new` is deliberately
+#: absent -- it is a naming convention for an associated function, not a constructor the
+#: language knows about, so excluding it would drop a real method from the scan.
+_CONSTRUCTOR_NAMES = frozenset({"__init__", "__new__", "constructor"})
+
+
+def _participants(model: ClassModel) -> list[str]:
+    """The methods the component scan runs over: everything but the constructors.
+
+    A class whose *only* method is its constructor keeps it, because the alternative is
+    reporting zero components for a class that plainly has one.
+    """
+    constructors = {
+        name for name in model.methods if name in _CONSTRUCTOR_NAMES or name == model.name
+    }
+    return sorted(set(model.methods) - constructors) or sorted(model.methods)
+
+
 def _components(model: ClassModel, *, include_calls: bool) -> int:
     """Connected components of the method graph.
 
     Two methods are joined when they touch a common field, and -- for LCOM4 -- when one
     calls the other. A class that is really two classes shows up as two components.
+
+    **Constructors are excluded**, and `tests/test_wide_repository.py` is why. A constructor
+    that assigns every field shares a field with every method, so it joins every component
+    through itself and a five-collaborator God Class reads as one cohesive unit -- the false
+    negative landing exactly on the shape these variants exist to find. Excluding it is the
+    difference between "this class is fine" and five components that name its five seams.
+
+    Both variants share the exclusion rather than LCOM4 taking it alone: LCOM4 is LCOM3 plus
+    edges, edges can only merge components, so `lcom4 <= lcom3` holds by definition and a
+    filter on one side alone would break it.
     """
     if not model.methods:
         return 0
 
-    groups = _DisjointSet(sorted(model.methods))
-    _join_shared_fields(model, groups)
+    names = _participants(model)
+    groups = _DisjointSet(names)
+    _join_shared_fields(model, names, groups)
     if include_calls:
-        _join_callers(model, groups)
+        _join_callers(model, names, groups)
     return groups.count()
 
 
-def _join_shared_fields(model: ClassModel, groups: _DisjointSet) -> None:
+def _join_shared_fields(model: ClassModel, names: list[str], groups: _DisjointSet) -> None:
     """Two methods that touch a common field belong to the same component (LCOM1-5)."""
-    for first, second in model.method_pairs():
+    for first, second in combinations(names, 2):
         if model.methods[first].touches & model.methods[second].touches:
             groups.union(first, second)
 
 
-def _join_callers(model: ClassModel, groups: _DisjointSet) -> None:
+def _join_callers(model: ClassModel, names: list[str], groups: _DisjointSet) -> None:
     """LCOM4 additionally joins a method to the siblings it calls.
 
     Only siblings: a call to something outside the class says nothing about *this* class's
     cohesion, which is why the membership test is against the group rather than the name.
+    A call *to* a constructor finds nothing in the group, which is the exclusion holding.
     """
-    for name, access in model.methods.items():
-        for callee in access.calls:
+    for name in names:
+        for callee in model.methods[name].calls:
             if callee in groups:
                 groups.union(name, callee)
 

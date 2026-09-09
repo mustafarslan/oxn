@@ -967,6 +967,18 @@ it ships early** — see the roadmap phase ordering.
    *any* resolution level. Permanently APPROX.
 4. **Properties and accessors** hide field access behind a method call — `LCOM4`, which adds call
    edges, is much more robust here than LCOM1/2.
+5. **A constructor that assigns every field** shares a field with every method and so joins every
+   component through itself. This one is not a resolution limit — it is what LCOM3 and LCOM4 say as
+   published, and it is a false negative on the shape they exist to find. Measured against a matched
+   control pair (`tests/fixtures/cohesion_shapes`, a wide repository and a five-collaborator God
+   Class at the same method count), the God Class reported **one** component, the identical answer
+   to the repository. **OXN excludes constructors from the component scan** — Python `__init__` and
+   `__new__`, TS/JS `constructor`, Java's method named for its class; Go has none, and Rust's `new`
+   is a convention rather than a constructor, so it stays in. Excluded, the God Class reports five
+   components and they *are* its five collaborators. The exclusion is shared by LCOM3 and LCOM4
+   rather than taken by LCOM4 alone, because edges can only merge components and `LCOM4 ≤ LCOM3`
+   must hold. LCOM1, LCOM2 and LCOM\* are ratios over pairs rather than a partition; the argument
+   does not transfer and they still count constructors.
 
 **Exactness.** **EXACT** for explicitly-qualified field access at L0; **EXACT in-repo** at L1
 (inheritance); never exact under metaprogramming.
@@ -1138,7 +1150,8 @@ zero-install resolver is, per language — and produces a publishable table for 
   the number of runs; wrapping a construct in one extra `if` increases the score by exactly
   (1 + the number of B3 structures inside).
 - Halstead: `N = N₁+N₂`; consistent variable renaming leaves n₁, n₂, N₁, N₂ unchanged.
-- `LCOM* ∈ [0,1]` for m > 1; `LCOM4 ≥ 1`.
+- `LCOM* ∈ [0,1]` for m > 1; `LCOM4 ≥ 1`; `LCOM4 ≤ LCOM3`, since call edges only merge components
+  — which is why the constructor exclusion above is applied to both and never to one.
 - Graph: every node in exactly one SCC; the condensation is a DAG; `propagation_cost ∈ [1/N, 1]`;
   `CCD ≥ N`.
 - **Cross-language transliteration equivalence:** the same algorithm hand-written in all five

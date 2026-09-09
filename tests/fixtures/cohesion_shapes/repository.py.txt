@@ -1,0 +1,48 @@
+"""A wide repository: one connection, one schema, one method per query."""
+
+
+class ArticleStore:
+    def __init__(self, conn):
+        self._conn = conn
+
+    def put_article(self, row):
+        self._conn.execute("INSERT INTO articles VALUES (?, ?)", row)
+
+    def put_author(self, row):
+        self._conn.execute("INSERT INTO authors VALUES (?, ?)", row)
+
+    def put_tag(self, row):
+        self._conn.execute("INSERT INTO tags VALUES (?, ?)", row)
+
+    def article(self, key):
+        return self._conn.execute("SELECT * FROM articles WHERE id = ?", (key,)).fetchone()
+
+    def author(self, key):
+        return self._conn.execute("SELECT * FROM authors WHERE id = ?", (key,)).fetchone()
+
+    def tags_for(self, key):
+        return self._conn.execute("SELECT * FROM tags WHERE article = ?", (key,)).fetchall()
+
+    def articles_by(self, author):
+        return self._conn.execute("SELECT * FROM articles WHERE author = ?", (author,)).fetchall()
+
+    def recent(self, limit):
+        return self._conn.execute("SELECT * FROM articles ORDER BY at DESC LIMIT ?", (limit,))
+
+    def drafts(self):
+        return self._conn.execute("SELECT * FROM articles WHERE published IS NULL").fetchall()
+
+    def forget_article(self, key):
+        self._conn.execute("DELETE FROM articles WHERE id = ?", (key,))
+
+    def forget_author(self, key):
+        self._conn.execute("DELETE FROM authors WHERE id = ?", (key,))
+
+    def forget_tags(self, key):
+        self._conn.execute("DELETE FROM tags WHERE article = ?", (key,))
+
+    def counts(self):
+        return dict(self._conn.execute("SELECT kind, count(*) FROM articles GROUP BY kind"))
+
+    def close(self):
+        self._conn.close()

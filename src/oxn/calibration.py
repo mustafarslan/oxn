@@ -240,7 +240,23 @@ _CEILINGS: tuple[Parameter, ...] = (
             "reject 115 classes, 28 of them by NOM alone and 23 by WMC alone, so neither is "
             "a restatement of the other. Seven of the 115 are test classes, which is the "
             "known false positive -- many small test methods is a legitimate shape, and "
-            "`oxn.yaml`'s advisory paths are the answer rather than a looser ceiling"
+            "`oxn.yaml`'s advisory paths are the answer rather than a looser ceiling. A "
+            "second false positive was found by measuring rather than by argument: the "
+            "**wide repository**, a class whose method count is a query catalogue over one "
+            "connection. OXN's own `GraphStore` is it -- NOM 26, WMC 62, no method above "
+            "cyclomatic 6 -- and it reads exactly like the God Class above until LCOM4 is "
+            "asked: LCOM4 2, whose second component is `__enter__`, a one-line `return "
+            "self`. Every other method touches `self._conn` or routes through "
+            "`_transaction`, so it is one thing with 26 doors. Splitting it by subject "
+            "buys nothing: the parts would share the connection, and a facade over them "
+            "returns the same count. **LCOM4 is the discriminator between the two shapes**, "
+            "and a count on its own cannot tell them apart -- which is why these two "
+            "ceilings are a ratchet and not a gate. That claim cost a defect to make true: "
+            "written against a matched control pair it read 1 component for *both*, because "
+            "a constructor assigning every field joins every component through itself. "
+            "Constructors are now excluded from the component scan, and the God Class "
+            "reports the five collaborators it actually has -- `metrics.cohesion` and "
+            "`tests/test_wide_repository.py` carry the argument"
         ),
     ),
     Parameter(
@@ -261,8 +277,9 @@ _CEILINGS: tuple[Parameter, ...] = (
             "this one independently: of the 87 classes it rejects across the corpora, 56 "
             "contain no method over the *per-function* cyclomatic ceiling -- every method "
             "individually fine and the accumulation the whole problem, which is the God "
-            "Class shape and is invisible to every other gate OXN has. `GraphStore` is the "
-            "local example, WMC 64 with a worst method of 6"
+            "Class shape and is invisible to every other gate OXN has. That shape is not "
+            "the only one over this ceiling, though, and `GraphStore` is the counter-example "
+            "rather than the example -- see MAX_METHODS_PER_CLASS on the wide repository"
         ),
     ),
 )

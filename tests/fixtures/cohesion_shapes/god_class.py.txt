@@ -1,0 +1,52 @@
+"""A God Class: the same method count over field groups that never meet."""
+
+
+class ArticleService:
+    def __init__(self, conn, settings, cache, meter, mailer):
+        self._conn = conn
+        self._settings = settings
+        self._cache = cache
+        self._meter = meter
+        self._mailer = mailer
+
+    def put_article(self, row):
+        self._conn.execute("INSERT INTO articles VALUES (?, ?)", row)
+
+    def article(self, key):
+        return self._conn.execute("SELECT * FROM articles WHERE id = ?", (key,)).fetchone()
+
+    def forget_article(self, key):
+        self._conn.execute("DELETE FROM articles WHERE id = ?", (key,))
+
+    def retry_budget(self):
+        return int(self._settings["retries"])
+
+    def timeout(self):
+        return float(self._settings["timeout"])
+
+    def reload_settings(self, values):
+        self._settings.update(values)
+
+    def cached(self, key):
+        return self._cache.get(key)
+
+    def remember(self, key, value):
+        self._cache[key] = value
+
+    def evict(self, key):
+        self._cache.pop(key, None)
+
+    def count_render(self):
+        self._meter.increment("render")
+
+    def count_miss(self):
+        self._meter.increment("miss")
+
+    def report_latency(self, ms):
+        self._meter.observe("latency", ms)
+
+    def notify_author(self, address, body):
+        self._mailer.send(address, body)
+
+    def notify_editors(self, body):
+        self._mailer.broadcast("editors", body)
