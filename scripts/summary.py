@@ -55,19 +55,21 @@ def _arm_table(rows: list[dict[str, Any]]) -> None:
     comparison, and putting one on screen invites reading a single arm's convergence rate as
     though it meant something on its own -- the control is what makes it mean anything.
     """
-    from runlog import COST_NOTE, measures
+    from runlog import COST_NOTE, SINGLE_SAMPLE_NOTE, measures
 
     found = measures(rows)
     if len(found) < 2:
         return
     say(f"\n{BOLD}arms{RESET}")
-    say(f"  {'arm':16s}{'backend':12s}{'conv':>6s}{'att/t':>7s}{'ok':>4s}{'chars':>9s}")
+    say(f"  {'arm':16s}{'backend':12s}{'n':>3s}{'conv':>6s}{'att/t':>7s}{'ok':>4s}{'chars':>9s}")
     for result in found:
         say(
-            f"  {result.arm:16s}{result.backend:12s}"
+            f"  {result.arm:16s}{result.backend:12s}{result.repeats:>3d}"
             f"{result.convergence_rate:>5.0%} {result.attempts_per_target:>6.1f}"
             f"{result.correct:>4d}{result.prompt_chars + result.reply_chars:>9,d}"
         )
+    if any(result.repeats < 2 for result in found):
+        say(f"  {DIM}{SINGLE_SAMPLE_NOTE}{RESET}")
     say(f"  {DIM}{COST_NOTE}{RESET}")
 
 

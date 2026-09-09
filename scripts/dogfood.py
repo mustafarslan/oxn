@@ -110,6 +110,9 @@ class Session:
     #: decides what the result means is Claude Code under OXN's own hooks -- so this is a
     #: name resolved by `scripts.actors` rather than a fixed client.
     backend: str = "ollama"
+    #: How many times to attempt each target. One sample of a stochastic process is an
+    #: anecdote; the arm table prints this so a reader can tell which they have.
+    repeats: int = 1
     #: Which of OXN's three channels the actor is given. `scripts.arms` holds the table;
     #: `hybrid` is what the harness did before the arms existed.
     arm: str = "hybrid"
@@ -120,15 +123,18 @@ class Session:
 
 def repair(targets: list[Target], session: Session, where: Bed = SELF) -> list[Attempt]:
     """Attempt to repair each target, verifying every candidate before judging it."""
-    actor, judge = _clients(session)
+    crew = Crew(*_clients(session))
     if not session.dry_run:
-        say(f"{DIM}actor {actor.model}  judge {judge.model}  at {actor.host}{RESET}")
+        say(f"{DIM}actor {crew.actor.model}  judge {crew.judge.model}  at {crew.actor.host}{RESET}")
 
     DIFFS.mkdir(parents=True, exist_ok=True)
     attempts: list[Attempt] = []
-    for target in targets:
-        say(f"\n{BOLD}{target.leaf}{RESET} {DIM}{target.path} scores {target.score:.0f}{RESET}")
-        attempts.extend(_repair_one(target, session, actor, judge, where))
+    for sample in range(max(1, session.repeats)):
+        for target in targets:
+            of = f" {DIM}[{sample + 1}/{session.repeats}]{RESET}" if session.repeats > 1 else ""
+            where_at = f"{DIM}{target.path} scores {target.score:.0f}{RESET}"
+            say(f"\n{BOLD}{target.leaf}{RESET} {where_at}{of}")
+            attempts.extend(_repair_one(target, session, crew, where, sample))
 
     if session.dry_run:
         # The fake client emits fixed junk, so these rows would be indistinguishable from
@@ -137,6 +143,19 @@ def repair(targets: list[Target], session: Session, where: Bed = SELF) -> list[A
     else:
         _append_log(attempts)
     return attempts
+
+
+@dataclass(frozen=True, slots=True)
+class Crew:
+    """Who answers, and who grades. They are built together and used together.
+
+    A record because they were two positional arguments threaded through every layer, and
+    the parameter ceiling objected the moment a sixth was needed -- correctly: `_repair_one`
+    was taking a target plus five facts about the run, and only one of them was the target.
+    """
+
+    actor: Any
+    judge: Any
 
 
 def _clients(session: Session) -> tuple[Any, Any]:
@@ -156,7 +175,7 @@ def _clients(session: Session) -> tuple[Any, Any]:
 
 
 def _repair_one(
-    target: Target, session: Session, actor: Any, judge: Any, where: Bed = SELF
+    target: Target, session: Session, crew: Crew, where: Bed = SELF, sample: int = 0
 ) -> list[Attempt]:
     """Every attempt at one target, stopping at acceptance or at the retry budget.
 
@@ -176,8 +195,8 @@ def _repair_one(
         say(f"{DIM}  creating sandbox...{RESET}")
         sandbox.create()
         run = Run(
-            actor=actor,
-            judge=judge,
+            actor=crew.actor,
+            judge=crew.judge,
             sandbox=sandbox,
             target=target,
             profile=profile,
@@ -187,6 +206,7 @@ def _repair_one(
             arm=arm(session.arm),
             backend="dry-run" if session.dry_run else session.backend,
             checks=where.verify,
+            repeat=sample,
         )
         feedback = ""
         for index in range(1, _attempts_for(session) + 1):
@@ -226,6 +246,8 @@ class Run:
     #: The bed's own checks. Carried rather than looked up, so the loop cannot verify one
     #: bed's repair with another's toolchain.
     checks: tuple[tuple[str, ...], ...] = ()
+    #: Which sample of this (arm, target) this run is. See `runlog.Attempt.repeat`.
+    repeat: int = 0
 
 
 def _one_attempt(run: Run, index: int, feedback: str) -> Attempt | None:
@@ -291,6 +313,7 @@ def _one_attempt(run: Run, index: int, feedback: str) -> Attempt | None:
         next_feedback=_feedback(gauntlet),
         arm=run.arm.name,
         backend=run.backend,
+        repeat=run.repeat,
         prompt_chars=len(prompt),
         reply_chars=len(reply),
     )
@@ -322,6 +345,7 @@ def _failed(attempt: _Try, *, error: str, next_feedback: str, **extra: str) -> A
         next_feedback=next_feedback,
         arm=attempt.run.arm.name,
         backend=attempt.run.backend,
+        repeat=attempt.run.repeat,
         **extra,
     )
 
@@ -424,6 +448,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--ceiling", type=int, default=12)
     parser.add_argument("--limit", type=int, default=3)
     parser.add_argument("--retries", type=int, default=3)
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="samples per target. One is an anecdote; the arm table prints which you have",
+    )
     parser.add_argument("--dry-run", action="store_true", help="exercise the loop with no model")
     parser.add_argument(
         "--bed",
@@ -480,6 +510,7 @@ def main(argv: list[str] | None = None) -> int:
             allow_extraction=args.allow_extraction,
             backend=args.backend,
             arm=args.arm,
+            repeats=args.repeat,
             model=args.model,
             judge_model=args.judge_model,
             host=args.host,

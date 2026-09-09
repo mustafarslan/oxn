@@ -56,6 +56,12 @@ class Attempt:
     #: pile and no arm can be compared to any other -- which is the entire experiment.
     arm: str = ""
     backend: str = ""
+    #: Which repeat of this (arm, target) produced it. `generate` is temperature 0 and
+    #: explicitly not deterministic -- `oxn.llm` records three materially different rewrites
+    #: from one prompt -- so a convergence rate over a single sample per target is not
+    #: distinguishable from noise, and the measures say how many samples are behind a rate
+    #: rather than printing it bare.
+    repeat: int = 0
     #: Characters in and out. **A proxy for token cost, and named as one**: P11 asks for
     #: tokens, `OllamaClient.generate` returns a string, and threading `eval_count` out of it
     #: would change the actor protocol every backend implements. Characters are comparable
@@ -113,6 +119,9 @@ class ArmResult:
     arm: str
     backend: str
     targets: int
+    #: Samples per target behind the rates below. One is an anecdote about a stochastic
+    #: process; the table prints this so a reader cannot mistake which they are looking at.
+    repeats: int
     converged: int
     attempts: int
     #: Accepted repairs whose test run passed. Equal to `converged` unless the gate ever
@@ -136,6 +145,7 @@ class ArmResult:
             "arm": self.arm,
             "backend": self.backend,
             "targets": self.targets,
+            "repeats": self.repeats,
             "converged": self.converged,
             "convergence_rate": round(self.convergence_rate, 4),
             "attempts": self.attempts,
@@ -146,6 +156,14 @@ class ArmResult:
             "seconds": round(self.seconds, 1),
         }
 
+
+#: Said wherever a rate is printed over a single sample per target, because the rate looks
+#: identical to one that means something.
+SINGLE_SAMPLE_NOTE = (
+    "n=1: one sample per target. `generate` is temperature 0 and not deterministic -- three "
+    "runs of one prompt gave three different rewrites -- so a rate over a single sample is "
+    "not distinguishable from noise. Use --repeat for a rate worth comparing."
+)
 
 #: Said wherever the cost columns are printed, because a number without it is misread.
 COST_NOTE = (
@@ -178,6 +196,7 @@ def _result(arm: str, backend: str, rows: list[dict[str, Any]]) -> ArmResult:
         arm=arm or "(unrecorded)",
         backend=backend or "(unrecorded)",
         targets=len(by_target),
+        repeats=len({row.get("repeat", 0) for row in rows}),
         converged=_converged(by_target),
         attempts=len(rows),
         correct=_functionally_correct(rows),

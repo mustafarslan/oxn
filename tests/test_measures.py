@@ -36,6 +36,7 @@ def _row(**over):
         "prompt_chars": 100,
         "reply_chars": 50,
         "seconds": 1.0,
+        "repeat": 0,
     }
     return {**row, **over}
 
@@ -152,3 +153,38 @@ def test_an_unloggable_value_is_refused_rather_than_stringified(harness) -> None
 
     with _pytest.raises(TypeError):
         harness._jsonable(object())
+
+
+def test_a_rate_says_how_many_samples_it_is_over(harness) -> None:
+    """One sample per target is an anecdote about a stochastic process, and looks identical.
+
+    `oxn.llm.generate` is temperature 0 and says so in its own docstring: three runs of the
+    identical repair prompt returned three materially different rewrites. A convergence rate
+    from one sample per cell therefore cannot be distinguished from noise, and it renders
+    exactly like one that can -- which is why the count is a column rather than a footnote.
+    """
+    rows = [_row(repeat=0), _row(repeat=1, target="b"), _row(repeat=1)]
+    (result,) = harness.measures(rows)
+    assert result.repeats == 2
+    assert "not distinguishable from noise" in harness.SINGLE_SAMPLE_NOTE
+
+
+def test_rows_written_before_repeats_existed_count_as_one_sample(harness) -> None:
+    """The log predates the field, and `.get` defaulting to 0 must not read as zero samples."""
+    row = _row()
+    del row["repeat"]
+    (result,) = harness.measures([row])
+    assert result.repeats == 1
+
+
+def test_repeats_do_not_inflate_the_target_count(harness) -> None:
+    """Five samples of one target is one target, five times -- not five targets.
+
+    Counting them as targets would make an arm look broader than it was tested, and would
+    divide the convergence rate by the wrong denominator in the flattering direction.
+    """
+    rows = [_row(repeat=n) for n in range(5)]
+    (result,) = harness.measures(rows)
+    assert result.targets == 1
+    assert result.repeats == 5
+    assert result.attempts == 5
