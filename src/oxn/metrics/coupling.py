@@ -27,7 +27,7 @@ from oxn.graph.model import EntityKind
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Mapping, Sequence
 
-    from oxn.graph.model import EntityMetrics
+    from oxn.graph.model import Entity, EntityMetrics
     from oxn.resolve.members import ClassModel
     from oxn.resolve.symbols import ProjectSymbols
 
@@ -153,6 +153,69 @@ def method_weights(measured: Sequence[EntityMetrics]) -> dict[str, dict[str, int
         if value is not None:
             weights.setdefault(parts[-2], {})[parts[-1]] = int(value.value)
     return weights
+
+
+#: Entities that can own methods.
+_OWNER_KINDS = frozenset({EntityKind.CLASS, EntityKind.INTERFACE})
+
+
+def package_class_totals(
+    entities: Sequence[Entity], cyclomatic: Mapping[str, float]
+) -> dict[str, tuple[int, float]]:
+    """Class entity id -> (NOM, WMC) over a whole package, not one file.
+
+    Every language OXN supports except Go nests a method inside its type's body, so
+    containment settles ownership and `metrics.engine` can answer per file. Go declares a
+    method at file scope with a receiver -- `func (c *Counter) Inc()` -- so the type may be
+    declared in a sibling file and one tree cannot see it.
+
+    **The join is by package, and that is a language guarantee rather than a heuristic.** Go
+    requires a method to be declared in the same package as its receiver type, and a package
+    is a directory. Measured on go-kit, all 376 methods sit in the same *file* as their type
+    and none crosses the test/non-test boundary, so package scope costs nothing today -- but
+    a file-scoped answer would change value when a package was split across files, and an
+    aggregate whose value depends on which file the gate happened to measure cannot be
+    compared against a baseline. The ratchet is what makes that fatal rather than untidy.
+    """
+    by_name, totals = _declared_types(entities)
+    for entity in entities:
+        carried = totals.get(_owner_of(entity, by_name) or "")
+        if carried is not None:
+            carried[0] += 1
+            carried[1] += cyclomatic.get(entity.id, 0.0)
+    return {owner: (int(count), weight) for owner, (count, weight) in totals.items()}
+
+
+def _declared_types(
+    entities: Sequence[Entity],
+) -> tuple[dict[str, str], dict[str, list[float]]]:
+    """Every type this package declares, indexed by name and seeded with empty totals.
+
+    First declaration wins a duplicated name. Two types with one name in a package does not
+    compile in Go, so the case is a parse artifact rather than something to resolve.
+    """
+    by_name: dict[str, str] = {}
+    totals: dict[str, list[float]] = {}
+    for entity in entities:
+        if entity.kind in _OWNER_KINDS:
+            totals[entity.id] = [0, 0.0]
+            if entity.name:
+                by_name.setdefault(entity.name, entity.id)
+    return by_name, totals
+
+
+def _owner_of(entity: Entity, by_name: Mapping[str, str]) -> str | None:
+    """The type a method belongs to: the one its receiver names, else the one it sits in.
+
+    Receiver first, because only a language that declares methods outside the body has one,
+    and there it is the *only* evidence -- containment puts the method in its file's module.
+    """
+    if entity.kind is not EntityKind.METHOD:
+        return None
+    receiver = entity.attrs.get("receiver_type")
+    if receiver:
+        return by_name.get(str(receiver))
+    return entity.parent_id
 
 
 def ck_metrics(

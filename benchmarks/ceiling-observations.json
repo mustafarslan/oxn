@@ -790,15 +790,29 @@
           "all_callables": {
             "ceiling_at_percentile": 100.0,
             "exceedance": 0.0,
-            "max": 0.0,
-            "n": 379,
+            "max": 9.0,
+            "n": 365,
             "over_ceiling": 0,
             "quantiles": {
               "p50": 0.0,
-              "p75": 0.0,
-              "p90": 0.0,
-              "p95": 0.0,
-              "p99": 0.0
+              "p75": 2.0,
+              "p90": 4.0,
+              "p95": 5.0,
+              "p99": 8.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 100.0,
+            "exceedance": 0.0,
+            "max": 9.0,
+            "n": 365,
+            "over_ceiling": 0,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 2.0,
+              "p90": 4.0,
+              "p95": 5.0,
+              "p99": 8.0
             }
           }
         },
@@ -1084,17 +1098,31 @@
       "corpora": {
         "go-kit": {
           "all_callables": {
-            "ceiling_at_percentile": 100.0,
-            "exceedance": 0.0,
-            "max": 0.0,
-            "n": 379,
-            "over_ceiling": 0,
+            "ceiling_at_percentile": 99.73,
+            "exceedance": 0.274,
+            "max": 163.0,
+            "n": 365,
+            "over_ceiling": 1,
             "quantiles": {
               "p50": 0.0,
-              "p75": 0.0,
-              "p90": 0.0,
-              "p95": 0.0,
-              "p99": 0.0
+              "p75": 3.0,
+              "p90": 8.0,
+              "p95": 13.0,
+              "p99": 22.0
+            }
+          },
+          "named": {
+            "ceiling_at_percentile": 99.73,
+            "exceedance": 0.274,
+            "max": 163.0,
+            "n": 365,
+            "over_ceiling": 1,
+            "quantiles": {
+              "p50": 0.0,
+              "p75": 3.0,
+              "p90": 8.0,
+              "p95": 13.0,
+              "p99": 22.0
             }
           }
         },

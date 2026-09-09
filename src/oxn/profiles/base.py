@@ -84,6 +84,10 @@ class LanguageProfile:
     parameter_kinds: frozenset[str] = frozenset()
     #: Parameter kinds that are a receiver (``self``, ``this``) rather than a parameter.
     receiver_kinds: frozenset[str] = frozenset()
+    #: Field naming the *type a callable is a method of*, where the grammar puts it outside
+    #: any class body. Go alone needs this: `func (c *Counter) Inc()` is a top-level
+    #: declaration, so containment cannot say it belongs to `Counter` and the receiver must.
+    receiver_field: str = ""
     #: Names that make a method's *first* parameter its receiver, where the grammar gives
     #: the receiver no node kind of its own. Rust has `self_parameter` and needs none of
     #: this; Python spells the receiver as an ordinary identifier, so without these a
@@ -205,6 +209,23 @@ class LanguageProfile:
 #: Fields under which a declaration holds the name it binds. `name` covers a TypeScript
 #: `variable_declarator` and a Go `var_spec`, `left` a Python assignment, `pattern` a Rust
 #: `let`. The same three `_binding_targets` walks, and for the same reason.
+def receiver_type(node: Node, field: str) -> str | None:
+    """The bare name of the type a callable is a method of, or ``None``.
+
+    Module-level rather than a `LanguageProfile` method for a reason the gate supplied: that
+    class sits at its `weighted_methods_per_class` ceiling, and adding a sixth branch to it
+    failed the check. `_bound_name` below is there for the same shape of reason.
+
+    Pointer and value receivers name the same type -- `(c *Counter)` and `(c Counter)` are
+    both methods of `Counter` -- so the receiver's own variable name, a leading `*` and any
+    type parameters are all dropped.
+    """
+    receiver = node.child_by_field_name(field) if field else None
+    written = receiver.text.decode("utf-8", "replace") if receiver and receiver.text else ""
+    parts = written.strip("()").strip().split()
+    return parts[-1].lstrip("*").split("[")[0] or None if parts else None
+
+
 _BINDING_FIELDS = ("name", "left", "pattern")
 
 

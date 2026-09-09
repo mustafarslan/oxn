@@ -215,21 +215,23 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_METHODS_PER_CLASS",
         value=float(thresholds.MAX_METHODS_PER_CLASS),
         evidence=Evidence.JUDGEMENT,
-        observations=3861,
+        observations=3847,
         provenance=(
             "12, a round number inside a window a control defines rather than a percentile. "
             "The two shred shapes `shredding` cannot see -- public helper names, and helpers "
             "given a second caller -- score NOM 14, while the legitimate decomposition of the "
-            "same work scores 4, so anything in 5..13 separates them. Measured across 3,861 "
-            "classes: rejects 2.25% (nest) to 7.48% (httpx), and 0.7% of OXN's own 149. "
+            "same work scores 4, so anything in 5..13 separates them. Measured across 3,847 "
+            "classes: rejects 0.00% (go-kit, whose largest type has 9 methods) to 7.48% "
+            "(httpx), and 0.7% of OXN's own 149. "
             "Higher than the per-function ceilings because the evasions sit inside the "
             "legitimate distribution rather than beyond it, which is why this is a ratchet "
             "first. **The population is every class entity, not the named ones**, because "
             "the unnamed ones are where the methods are: a Rust `impl` block is an unnamed "
             "class holding its type's methods, and ripgrep reads 840 class entities against "
-            "395 named. **Inert for Go**: a Go method is a top-level declaration carrying "
-            "its receiver, so all 379 of go-kit's structs measure NOM 0 and none can ever "
-            "violate -- they sit in the denominator above and deflate it."
+            "395 named. **Go needs a receiver join**, since a method there is a top-level "
+            "declaration rather than a member of its type: without it every struct measured "
+            "NOM 0 and the ceiling was silently inert for the language. The join is by "
+            "package, which Go's own rule makes exact -- see `indexer.aggregate_classes`."
         ),
         fit_when=(
             "more than one evasion pair. Both this and the WMC ceiling are positioned by a "
@@ -241,14 +243,14 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_WEIGHTED_METHODS_PER_CLASS",
         value=float(thresholds.MAX_WEIGHTED_METHODS_PER_CLASS),
         evidence=Evidence.JUDGEMENT,
-        observations=3861,
+        observations=3847,
         provenance=(
             "25, positioned like its sibling: the escapes score WMC 27 and the legitimate "
             "decomposition 17, so 18..26 separates them. Weighted by *cyclomatic* complexity "
             "per docs/metrics.md section 3.6 and for a measured reason -- cognitive weights "
             "fall under extraction, so a cognitive WMC would report an improvement exactly "
-            "when work is being spread. Measured cost: 1.65% (nest) to 10.28% (httpx), and "
-            "2.0% of OXN's own classes. Inert for Go for the reason its sibling records."
+            "when work is being spread. Measured cost: 0.27% (go-kit) to 10.28% (httpx), "
+            "and 2.0% of OXN's own classes."
         ),
         fit_when="the same second evasion pair as MAX_METHODS_PER_CLASS",
     ),

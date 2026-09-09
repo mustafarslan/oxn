@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from oxn.graph.model import Entity, EntityKind, ParsedFile, entity_id
+from oxn.profiles.base import receiver_type
 
 if TYPE_CHECKING:  # pragma: no cover
     from tree_sitter import Node
@@ -129,6 +130,11 @@ class _Skeleton:
             return EntityKind.LAMBDA
         if node.type in _METHOD_KINDS or inside_type:
             return EntityKind.METHOD
+        # A declared receiver makes it a method wherever the grammar puts it. Without this
+        # every Go method was a `function`, so `_class_totals` skipped it and both class
+        # ceilings were silently inert for the language.
+        if receiver_type(node, self.profile.receiver_field) is not None:
+            return EntityKind.METHOD
         return EntityKind.FUNCTION
 
     def _visit(self, node: Node, parent: Entity, prefix: str, inside_type: bool) -> None:
@@ -173,6 +179,11 @@ class _Skeleton:
         }
         if kind in {EntityKind.FUNCTION, EntityKind.METHOD, EntityKind.LAMBDA}:
             attrs["parameters"] = self.profile.parameter_names(definition)
+            receiver = receiver_type(definition, self.profile.receiver_field)
+            if receiver is not None:
+                # Carried rather than resolved here: the type may be declared in another
+                # file of the same package, which one file's tree cannot see.
+                attrs["receiver_type"] = receiver
         if child is not definition:
             attrs["wrapped_by"] = child.type
         if _is_abstract(definition, self.profile):

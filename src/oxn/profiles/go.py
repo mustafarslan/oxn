@@ -159,11 +159,17 @@ GO = LanguageProfile(
     name="go",
     grammar="go",
     extensions=frozenset({".go"}),
-    version=2,
+    version=3,
     privacy="casing",
     function_like=frozenset({"function_declaration", "method_declaration", "func_literal"}),
     # A Go "type" is a struct, an interface or a named alias; `type_declaration` wraps them.
-    class_like=frozenset({"type_declaration", "type_spec"}),
+    # `type_spec` alone, not `type_declaration`: the declaration carries no name -- it wraps
+    # one *or more* specs, and `type ( Alpha ...; Beta ... )` is one declaration and two
+    # types. Recording the outer node produced a single unnamed class per block, which is
+    # why every Go struct measured NOM 0 and both class ceilings were inert for the
+    # language. `_visit` descends through a non-definition node and tests its children, so
+    # dropping the outer kind is all that is needed here.
+    class_like=frozenset({"type_spec"}),
     wrappers={},
     name_field="name",
     body_field="body",
@@ -171,6 +177,10 @@ GO = LanguageProfile(
     parameter_kinds=frozenset({"parameter_declaration", "variadic_parameter_declaration"}),
     # Go's receiver is syntactic and explicit, unlike Python's first parameter.
     receiver_kinds=frozenset(),
+    # ...and it is also what makes a method a method. Every other language OXN supports
+    # nests methods inside the type's body, so containment answers the question; Go declares
+    # them at file scope, which is why `Counter.Inc` needs the receiver to find its owner.
+    receiver_field="receiver",
     comment_kinds=frozenset({"comment"}),
     string_kinds=frozenset({"interpreted_string_literal", "raw_string_literal"}),
     abstract_markers=frozenset(),

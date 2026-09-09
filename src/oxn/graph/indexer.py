@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from oxn.graph.builder import build_file, content_sha
+from oxn.graph.model import Entity, EntityKind, EntityMetrics, MetricValue
 from oxn.graph.sources import iter_source_files
 from oxn.graph.store import DEFAULT_CACHE_PATH, GraphStore
 from oxn.profiles import profile_for_path
@@ -196,6 +197,7 @@ class Indexer:
             for stale in self.store.known_paths() - seen:
                 self.store.forget(stale)
 
+        aggregate_classes(self.store, seen)
         return report
 
     def close(self) -> None:
@@ -223,3 +225,110 @@ def _grammar_version() -> str:
         return version("tree-sitter-language-pack")
     except PackageNotFoundError:  # pragma: no cover
         return "unknown"
+
+
+#: Entities that can own methods; mirrors `metrics.coupling`, which does the join.
+_OWNER_KINDS = frozenset({EntityKind.CLASS, EntityKind.INTERFACE})
+
+
+def aggregate_classes(store: GraphStore, paths: set[str]) -> None:
+    """Recompute every class aggregate at *package* scope, once all files are indexed.
+
+    `metrics.engine` answers per file, which is exact wherever a method is nested in its
+    type's body -- every language OXN supports except Go. Go declares a method at file scope
+    carrying a receiver, so a type's methods can sit in a sibling file and one tree cannot
+    see them; left per-file, `Counter` reads NOM 0 and both class ceilings are inert for the
+    language.
+
+    They are recomputed for *every* language rather than only Go, so that one definition
+    reaches the gate. A ceiling is compared against `.oxn/baseline.json`, and an aggregate
+    whose value depends on which file the gate happened to be measuring cannot be compared
+    against anything -- "worse" would be a comparison between two different numbers.
+
+    Module-level rather than a method on `Indexer`: the class it would join is already at
+    its own `weighted_methods_per_class` ceiling, and this is one of the rules that says so.
+    """
+    from oxn.metrics.coupling import package_class_totals
+
+    for members in _by_package(paths).values():
+        entities = [entity for path in members for entity in store.entities_for(path)]
+        measurements = {path: store.measurements_for(path) for path in members}
+        if not _has_work(entities, measurements):
+            continue
+        totals = package_class_totals(entities, _cyclomatic(measurements))
+        _rewrite(store, members, measurements, totals)
+
+
+def _has_work(
+    entities: list[Entity], measurements: dict[str, dict[str, dict[str, MetricValue]]]
+) -> bool:
+    """Whether this package has both a type to own methods and measurements to attribute.
+
+    The second half is not paranoia: an indexer built with `measure=False` stores no metrics,
+    and writing totals derived from nothing would replace real values with zeros.
+    """
+    return any(entity.kind in _OWNER_KINDS for entity in entities) and any(measurements.values())
+
+
+def _cyclomatic(
+    measurements: dict[str, dict[str, dict[str, MetricValue]]],
+) -> dict[str, float]:
+    """Entity id -> cyclomatic complexity, across a whole package. WMC's weight."""
+    return {
+        entity_id: values["cyclomatic_complexity"].value
+        for found in measurements.values()
+        for entity_id, values in found.items()
+        if "cyclomatic_complexity" in values
+    }
+
+
+def _by_package(paths: set[str]) -> dict[str, list[str]]:
+    """Group indexed files by the directory that holds them, which is Go's package."""
+    grouped: dict[str, list[str]] = {}
+    for path in paths:
+        grouped.setdefault(path.rpartition("/")[0], []).append(path)
+    return grouped
+
+
+def _rewrite(
+    store: GraphStore,
+    members: list[str],
+    measurements: dict[str, dict[str, dict[str, MetricValue]]],
+    totals: dict[str, tuple[int, float]],
+) -> None:
+    """Write the package-scope totals back through the store's ordinary per-file write.
+
+    Rebuilding each file's `EntityMetrics` rather than patching two rows is what keeps this
+    off `GraphStore`'s public surface: `put_metrics` already replaces a file's measurements,
+    and adding a second write path for two keys would have grown the very class this metric
+    exists to bound -- it is baselined at 27 methods, and the attempt failed the gate.
+
+    `put_metrics` reads only `entity_id` and `values`, so the remaining fields are
+    placeholders rather than a claim about what each entity is.
+    """
+    for path in members:
+        found = measurements[path]
+        if not totals.keys() & found.keys():
+            continue
+        store.put_metrics(
+            path,
+            [
+                EntityMetrics(
+                    entity_id, "", EntityKind.CLASS, 0, _with_totals(values, totals.get(entity_id))
+                )
+                for entity_id, values in found.items()
+            ],
+        )
+
+
+def _with_totals(
+    values: dict[str, MetricValue], carried: tuple[int, float] | None
+) -> dict[str, MetricValue]:
+    """One entity's measurements, with the package-scope aggregates substituted in."""
+    if carried is None:
+        return dict(values)
+    return {
+        **values,
+        "nom": MetricValue("nom", carried[0]),
+        "wmc": MetricValue("wmc", carried[1]),
+    }

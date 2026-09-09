@@ -1436,8 +1436,8 @@ rather than in condemning classes that were already large.
 
 **Shipped as `methods_per_class: 12` and `weighted_methods_per_class: 25`**, both inside the
 window the control defines (NOM 5..13, WMC 18..26) and deliberately not at its edges, since a
-value tuned to straddle one fixture is fitted to that fixture. Measured across 3,861 class
-entities they reject 2.25%–7.48% and 1.65%–10.28%, and 0.7%/2.0% of OXN's own 149 classes —
+value tuned to straddle one fixture is fitted to that fixture. Measured across 3,847 class
+entities they reject 0.00%–7.48% and 0.27%–10.28%, and 0.7%/2.0% of OXN's own 149 classes —
 which became four baselined entries, `GraphStore` (NOM 27, WMC 64) among them.
 
 Two containment facts decide what the population is, and both are language-specific:
@@ -1448,11 +1448,22 @@ Two containment facts decide what the population is, and both are language-speci
   declarations rather than the code. The gate applies no name filter and neither does the
   calibration record, which is the opposite of the choice made for the callable ceilings, where
   anonymous density (0.1% of httpx, 69.3% of nest) makes `named` the only comparable row.
-* **Both ceilings are inert for Go.** A Go method is a top-level declaration carrying its
-  receiver rather than a member of its type — the same fact ADR-0002 records for `by_file` —
-  so all 379 of go-kit's structs measure NOM 0 and none can ever violate. They sit in the
-  denominator above and deflate it. Closing this needs receiver-based ownership, not a
-  different threshold.
+* **Go needed receiver-based ownership, and now has it** *(2026-09-09)*. A Go method is a
+  top-level declaration carrying its receiver rather than a member of its type — the same fact
+  ADR-0002 records for `by_file` — so all 379 of go-kit's structs measured NOM 0 and both
+  ceilings were **silently inert for the language**: a clean pass having checked nothing. Three
+  things were wrong and all three were needed. A `type_declaration` carries no name (the
+  `type_spec` it wraps does), so every Go type was an unnamed entity and a grouped
+  `type ( Alpha …; Beta … )` collapsed into one. A `method_declaration` classified as
+  `function`, because the method node kinds were TypeScript's and Java's and a Go type has no
+  body to be "inside". And the join has to be by **package**, not by file: Go requires a method
+  to be declared in the same package as its receiver type, and go-kit never exercises the split
+  — all 376 of its methods sit in the same file as their type, none crossing the test/non-test
+  boundary — but a file-scoped aggregate would report a different number the day a package was
+  split across files, and a ceiling is compared against `.oxn/baseline.json`. An aggregate that
+  means different things on different days cannot be compared against anything. go-kit now
+  reads 494 method entities where it read none, a largest type of 9 methods, and `wmc` rejects
+  0.27% of its types. `tests/test_go_class_ownership.py` holds the cross-file case.
 
 **WMC was NOM under another name until this was measured.** `ck_metrics` computes
 `sum(weights.get(name, 1) for name in model.methods)`, section 3.6 above specifies cyclomatic as
