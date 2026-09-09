@@ -245,8 +245,14 @@ def test_scopes_build_without_error_for_every_language(language: str) -> None:
 #   exit_points         Rust ends a function on a bare expression and leaves through `?`, and
 #                       neither counted, so it scored 4 against everyone else's 5.
 #
-# `sloc`, `lloc` and the Halstead family are deliberately absent: braces are real lines and
-# real tokens, so Python differing there is the measurement working.
+# `sloc`, `lloc` and the Halstead family are deliberately absent, and for one reason: they
+# measure the text rather than the logic. Braces are real lines and real tokens, a Rust type
+# annotation is a real operand, and an expression-oriented language genuinely has a different
+# number of statements in it -- so Python reading 12 lines where Java reads 18 is the
+# measurement working. That is not a licence for anything: `lloc` counted Rust's `return a;`
+# twice, once as the `expression_statement` and once as the `return_expression` inside it, and
+# `tests/test_metrics_size.py` holds that. A double count is a defect in any language; a
+# different answer about different text is not.
 
 STRUCTURAL = ("cyclomatic_complexity", "cognitive_complexity", "max_nesting_depth", "exit_points")
 
@@ -309,3 +315,21 @@ def test_rust_leaves_through_its_tail_expression_and_through_a_question_mark() -
 
     profile, node = first_function("rust", "fn f(a: i32) -> i32 { return a; }")
     assert exit_points(node, profile) == 1, "an explicit return must not also count a tail"
+
+
+def test_a_statement_wrapping_only_a_statement_is_one_logical_line() -> None:
+    """Rust writes `return a;` as a `return_expression` inside an `expression_statement`.
+
+    Both kinds are counted, so a function whose whole body was one `return` reported three
+    logical lines against Go's and Python's two. The rule is general rather than a Rust
+    special case -- a statement that is the *sole* content of another statement adds nothing
+    but syntax -- and the sole-child requirement is what stops it swallowing a real one.
+    """
+    from oxn.metrics import line_counts
+
+    profile, node = first_function("rust", "fn f(a: i32) -> i32 { let b = a; return b; }")
+    rust = line_counts(node, b"fn f(a: i32) -> i32 { let b = a; return b; }", profile)
+
+    source = b"package m\n\nfunc f(a int) int {\n\tb := a\n\treturn b\n}\n"
+    profile, node = first_function("go", source.decode())
+    assert rust.lloc == line_counts(node, source, profile).lloc == 3

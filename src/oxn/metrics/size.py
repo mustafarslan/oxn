@@ -17,7 +17,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from tree_sitter import Node
 
     from oxn.profiles.base import LanguageProfile
-    from oxn.profiles.spec import CognitiveSpec
+    from oxn.profiles.spec import CognitiveSpec, SizeSpec
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +53,7 @@ def line_counts(node: Node, source: bytes, profile: LanguageProfile) -> LineCoun
     stack = [node]
     while stack:
         current = stack.pop()
-        if current.type in spec.statement_kinds:
+        if current.type in spec.statement_kinds and not _wrapped_statement(current, spec):
             lloc += 1
         is_comment = current.type in profile.comment_kinds or (
             spec.docstrings_are_comments and _is_docstring(current, profile)
@@ -75,6 +75,21 @@ def line_counts(node: Node, source: bytes, profile: LanguageProfile) -> LineCoun
         blank=blank,
         lloc=lloc,
     )
+
+
+def _wrapped_statement(node: Node, spec: SizeSpec) -> bool:
+    """True when this statement is the whole of another statement, and so is not a second one.
+
+    Rust's `return a;` is a `return_expression` inside an `expression_statement`, and both
+    kinds are counted, so a function whose entire body was one `return` reported three
+    logical lines against Go's and Python's two. Requiring it to be the parent's *sole* named
+    child is what keeps this from swallowing a real statement: a block holding three of them
+    is three, and only a wrapper that adds nothing but syntax is dropped.
+    """
+    parent = node.parent
+    if parent is None or parent.type not in spec.statement_kinds:
+        return False
+    return len(parent.named_children) == 1
 
 
 def _non_empty_only(candidates: set[int], source: bytes, first: int, last: int) -> set[int]:

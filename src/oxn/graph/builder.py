@@ -25,8 +25,20 @@ if TYPE_CHECKING:  # pragma: no cover
 
     from oxn.profiles.base import LanguageProfile
 
-#: Node kinds that mean "method" rather than "function" when they appear inside a type.
-_METHOD_KINDS = frozenset({"method_definition", "method_signature", "abstract_method_signature"})
+#: Node kinds that mean "method" rather than "function" wherever they appear. Go's two
+#: spellings for an interface's method are here rather than resting on `inside_type`,
+#: because a Go interface is a `type_spec` holding its members under `type` and not under
+#: `body`, so the descent never marks them as inside anything. Left as functions, the gate
+#: read every Go interface at NOM 0 while `oxn classes` read the real count.
+_METHOD_KINDS = frozenset(
+    {
+        "method_definition",
+        "method_signature",
+        "abstract_method_signature",
+        "method_elem",
+        "method_spec",
+    }
+)
 #: Anonymous callables, in every language that has them. Go's `func_literal` and Rust's
 #: `closure_expression` were missing, so both read as ordinary functions -- and Rust's took
 #: the name of whatever it was bound to, which put `let write = |k| ...` into the *named*
@@ -35,7 +47,10 @@ _METHOD_KINDS = frozenset({"method_definition", "method_signature", "abstract_me
 _ANONYMOUS_KINDS = frozenset(
     {"lambda", "arrow_function", "function_expression", "func_literal", "closure_expression"}
 )
-_INTERFACE_KINDS = frozenset({"interface_declaration", "type_alias_declaration"})
+#: A declaration that is an interface by its own node kind. Rust's `trait` is one: it
+#: declares a contract and holds no state, which is what the label means, and leaving it out
+#: put every Rust trait in the God-Class population rather than the interface-segregation one.
+_INTERFACE_KINDS = frozenset({"interface_declaration", "type_alias_declaration", "trait_item"})
 
 
 def _kind_attrs(definition: Node, kind: EntityKind, profile: LanguageProfile) -> dict[str, object]:
@@ -57,6 +72,21 @@ def _kind_attrs(definition: Node, kind: EntityKind, profile: LanguageProfile) ->
         implemented = implemented_type(definition, profile.implements_field)
         return {"implements": implemented} if implemented else {}
     return {}
+
+
+#: Kinds a class-like node may *hold* to make it an interface. Go writes `type R interface
+#: {...}` as a `type_spec` whose `type` child says which it is, so the node kind alone
+#: cannot tell a struct from an interface -- and the class ceilings record an interface as a
+#: finding of its own, an interface-segregation smell rather than a God Class.
+_INTERFACE_HOLDERS = frozenset({"interface_type"})
+
+
+def _is_interface(definition: Node) -> bool:
+    """True when a class-like node declares an interface rather than a class."""
+    if definition.type in _INTERFACE_KINDS:
+        return True
+    holder = definition.child_by_field_name("type")
+    return holder is not None and holder.type in _INTERFACE_HOLDERS
 
 
 def content_sha(source: bytes) -> str:
@@ -153,7 +183,7 @@ class _Skeleton:
 
     def _classify(self, node: Node, inside_type: bool) -> EntityKind:
         if node.type in self.profile.class_like:
-            return EntityKind.INTERFACE if node.type in _INTERFACE_KINDS else EntityKind.CLASS
+            return EntityKind.INTERFACE if _is_interface(node) else EntityKind.CLASS
         if node.type in _ANONYMOUS_KINDS:
             return EntityKind.LAMBDA
         if node.type in _METHOD_KINDS or inside_type:

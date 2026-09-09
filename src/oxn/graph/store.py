@@ -50,8 +50,9 @@ if TYPE_CHECKING:  # pragma: no cover
 #: `closure_expression` as lambdas rather than as functions. Version 9 records
 #: `attrs["implements"]`, which is what lets a Rust type's `impl` blocks total together.
 #: Version 10 records a Go interface's `method_spec`s, which were no entity at all, so every
-#: Go interface measured NOM 0.
-SCHEMA_VERSION = 10
+#: Go interface measured NOM 0. Version 11 labels those as methods rather than functions,
+#: without which the gate still read NOM 0, and labels a Go interface `interface`.
+SCHEMA_VERSION = 11
 
 DEFAULT_CACHE_PATH = Path(".oxn/cache/graph.db")
 
