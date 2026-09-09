@@ -670,7 +670,7 @@ the first commit and gets the tool disabled (§10.3, Mode B).
 | Python | `import_statement` (`dotted_name`, `aliased_import`), `import_from_statement` (`relative_import` + `import_prefix` dot count, `wildcard_import`) | dynamic: `importlib.import_module(...)`, `__import__` → `kind=dynamic`, `resolved=false` |
 | TS/JS | `import_statement` (`source`), `export_statement` with `source` (re-export), `call_expression` with callee `import` (dynamic), `require(...)`, `import_require_clause` | `import type` / `export type` → **`kind=type_only`** — no runtime coupling, which matters for Martin metrics and layering rules |
 | Go | `import_declaration` → `import_spec` (string path, optional name) | `_` alias → `kind=side_effect`; `.` alias → dot-import |
-| Rust | `use_declaration` (`scoped_use_list`, `use_wildcard`, `use_as_clause`), `mod_item` (defines the module tree), `extern_crate_declaration` | `crate::`/`super::`/`self::` resolved against the `mod` tree |
+| Rust | `use_declaration` (`scoped_use_list`, `use_wildcard`, `use_as_clause`), `extern_crate_declaration`; `mod_item` shapes the module tree but is **not itself an import edge** — see below | `crate::`/`super::`/`self::` resolved against the `mod` tree: 451 of 451 placed on ripgrep |
 | Java | `import_declaration` (`scoped_identifier`, `asterisk`, `static`), `package_declaration` | package = directory path |
 
 **Specifier → module resolution** — the largest bug source in the whole catalogue:
@@ -688,6 +688,16 @@ the first commit and gets the tool disabled (§10.3, Mode B).
 manual repair. Silent dropping turns a layer-violation gate into a false-negative machine.
 
 **Exactness.** EXACT for static imports; dynamic imports and re-export chains are APPROX and flagged.
+**Rust's `mod b;` declares containment, not dependency, and carries no edge.** It is what pulls
+`b.rs` into the crate, so the argument for an edge is real — but the graph is about coupling, and a
+parent module listing its children is the Rust spelling of a directory listing. Nothing is lost by
+omitting it: intra-crate paths resolve *against* the module tree without being edges in it, and on
+ripgrep every one of 451 `crate::`/`super::`/`self::` specifiers is placed, with the 394 unplaced
+being external crates. The one shape that under-reports is a file whose only outgoing reference is a
+`mod` declaration — a bare `lib.rs` — which has no outgoing edges at all. Measured rather than
+assumed, and stated here because the row above listed `mod_item` as an import kind for a while when
+it is not one.
+
 **Build-vs-adopt.** Free: **grimp/import-linter** (BSD-2, Python, Rust core, very good); **pydeps**
 (BSD); **dependency-cruiser** (MIT, JS/TS, excellent — also cycles and DSM); **madge** (MIT);
 **jdeps** (JDK, bytecode); **tach** (MIT, Python boundaries).
