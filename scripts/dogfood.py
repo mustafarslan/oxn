@@ -54,6 +54,7 @@ from actor import (
     ask_actor,
     ask_judge,
 )
+from arms import Arm, arm
 from gauntlet import (
     SCRATCH,
     GauntletResult,
@@ -225,6 +226,9 @@ class Session:
     #: decides what the result means is Claude Code under OXN's own hooks -- so this is a
     #: name resolved by `scripts.actors` rather than a fixed client.
     backend: str = "ollama"
+    #: Which of OXN's three channels the actor is given. `scripts.arms` holds the table;
+    #: `hybrid` is what the harness did before the arms existed.
+    arm: str = "hybrid"
     model: str = ""
     judge_model: str = ""
     host: str = ""
@@ -294,9 +298,10 @@ def _repair_one(target: Target, session: Session, actor: Any, judge: Any) -> lis
             before=before,
             ceiling=session.ceiling,
             allow_extraction=session.allow_extraction,
+            arm=arm(session.arm),
         )
         feedback = ""
-        for index in range(1, session.retries + 1):
+        for index in range(1, _attempts_for(session) + 1):
             attempt = _one_attempt(run, index, feedback)
             if attempt is None:
                 say(f"{RED}  cannot locate {target.leaf}{RESET}")
@@ -326,6 +331,8 @@ class Run:
     before: Any
     ceiling: int
     allow_extraction: bool
+    #: The channels this run opens, and therefore whether a retry means anything.
+    arm: Arm
 
 
 def _one_attempt(run: Run, index: int, feedback: str) -> Attempt | None:
@@ -347,6 +354,7 @@ def _one_attempt(run: Run, index: int, feedback: str) -> Attempt | None:
                 file_source=original_file.decode(errors="replace"),
                 feedback=feedback,
                 allow_extraction=run.allow_extraction,
+                arm=run.arm,
             ),
         )
     except Exception as error:  # noqa: BLE001 - a model failure is a data point, not a crash
@@ -485,11 +493,28 @@ def _append_log(attempts: list[Attempt]) -> None:
 # ---- reporting ------------------------------------------------------------------------------
 
 
+def _attempts_for(session: Session) -> int:
+    """How many times this arm may answer.
+
+    An arm with no enforcement channel gets one attempt. There is nothing to retry *against*
+    without the gate's rejection, so extra rounds would be re-rolls of the dice, and a run
+    that scored them would credit advice with what was really just more samples.
+    """
+    return session.retries if arm(session.arm).enforcement else 1
+
+
 def _backend_names() -> tuple[str, ...]:
     """The registered backends, so `--help` lists what exists rather than what was typed."""
-    from actors import names
+    from actors import backend_names
 
-    return names()
+    return backend_names()
+
+
+def _arm_names() -> tuple[str, ...]:
+    """The registered arms, so `--help` lists the experiment rather than a guess."""
+    from arms import arm_names
+
+    return arm_names()
 
 
 def plan(ceiling: int, limit: int) -> None:
@@ -499,7 +524,12 @@ def plan(ceiling: int, limit: int) -> None:
             say(f"{DIM}          {line}{RESET}")
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parser() -> argparse.ArgumentParser:
+    """The command line, which is the experiment's dial panel.
+
+    Its own function because it grew into one: `--arm` and `--backend` are the two axes P11
+    varies, and every arm and backend added widens this and nothing else. `main` dispatches.
+    """
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -513,6 +543,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=3)
     parser.add_argument("--retries", type=int, default=3)
     parser.add_argument("--dry-run", action="store_true", help="exercise the loop with no model")
+    parser.add_argument(
+        "--arm",
+        default="hybrid",
+        choices=_arm_names(),
+        help="which of OXN's channels the actor gets. `none` is the control",
+    )
     parser.add_argument(
         "--backend",
         default="ollama",
@@ -529,7 +565,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--host", default="", help="Ollama host (default: $OXN_OLLAMA_HOST)")
     parser.add_argument("--skip", action="append", default=[], help="qualified name to skip")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
 
     if args.command == "plan":
         plan(args.ceiling, args.limit)
@@ -550,6 +590,7 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
             allow_extraction=args.allow_extraction,
             backend=args.backend,
+            arm=args.arm,
             model=args.model,
             judge_model=args.judge_model,
             host=args.host,

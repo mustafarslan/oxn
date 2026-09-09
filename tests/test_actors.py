@@ -28,8 +28,8 @@ def actors():
 
 def test_every_backend_the_help_offers_can_actually_be_built(actors) -> None:
     """`--choices` and the registry are the same list, or `--help` advertises a dead name."""
-    assert set(actors.names()) == {"ollama", "claude-code", "dry-run"}
-    assert set(actors.names()) == set(actors.JUDGE_REGISTRY)
+    assert set(actors.backend_names()) == {"ollama", "claude-code", "dry-run"}
+    assert set(actors.backend_names()) == set(actors.JUDGE_REGISTRY)
 
 
 def test_an_unknown_backend_is_refused_rather_than_defaulted(actors) -> None:

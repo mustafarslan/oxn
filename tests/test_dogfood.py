@@ -12,6 +12,7 @@ import importlib.util
 import sys
 import types
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -23,7 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 #: these tests are about the harness rather than about any one of them. The fixture merges
 #: them, so a test names what it is testing instead of where the code happens to live this
 #: week.
-HARNESS_MODULES = ("gauntlet", "actor", "actors", "dogfood")
+HARNESS_MODULES = ("gauntlet", "actor", "actors", "arms", "dogfood")
 
 
 def load_harness():
@@ -457,15 +458,28 @@ def test_the_fake_client_defines_the_function_it_was_asked_for(harness) -> None:
 
 
 def _prompt(harness, *, allow: bool) -> str:
+    """One prompt with every channel open, so only the extraction rule varies.
+
+    Built through `_guidance_block` rather than by formatting the template directly: the
+    rules moved into their own block when the arms arrived, and a test that reassembles the
+    prompt by hand stops testing the prompt the actor is actually sent.
+    """
+    ask = harness.Ask(
+        target=SimpleNamespace(leaf="f", score=35.0, trail=["x"]),
+        ceiling=12,
+        file_source="pass",
+        allow_extraction=allow,
+        arm=harness.arm("hybrid"),
+    )
     return str(
         harness.ACTOR_PROMPT.format(
             ceiling=12,
             score=35,
-            trail="  x",
+            context=harness._context_block(ask),
+            guidance=harness._guidance_block(ask),
             file_source="pass",
             name="f",
             feedback="",
-            extraction=harness.ALLOW_EXTRACTION if allow else harness.NO_EXTRACTION,
         )
     )
 

@@ -70,7 +70,7 @@ def build(name: str, model: str = "", host: str = "") -> Actor:
     return found.build(model, host)
 
 
-def names() -> tuple[str, ...]:
+def backend_names() -> tuple[str, ...]:
     """Every registered backend, for `--help` and for the arm table."""
     return tuple(sorted(_REGISTRY))
 

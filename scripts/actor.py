@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover
+    from arms import Arm
     from dogfood import Target
     from gauntlet import GauntletResult
 
@@ -33,18 +34,7 @@ markdown fences, no surrounding code."""
 
 ACTOR_PROMPT = """This function exceeds a cognitive-complexity ceiling of {ceiling}.
 It currently scores {score}.
-
-The tool's breakdown of where the score comes from:
-{trail}
-
-Rules you must follow, because the point is readable code and not a lower number:
-{extraction}- DO reduce nesting: early returns and guard clauses, flattening `else` after `return`,
-  replacing nested conditionals with a dispatch table or a lookup where that reads better.
-- Preserve behaviour exactly. Every existing test must still pass.
-- Keep the signature, the name, and any decorators identical.
-- Keep the docstring, updating it only if the behaviour description would otherwise be wrong.
-- Match the surrounding code's style. Comments explain *why*, never *what*.
-
+{context}{guidance}
 Here is the whole file for context:
 
 ```python
@@ -54,6 +44,25 @@ Here is the whole file for context:
 Reply with the complete replacement for `{name}` only. It must contain a
 `def {name}(...)` -- a reply that omits it deletes the function.
 {feedback}"""
+
+#: OXN's own account of where the score comes from -- the increment trail
+#: `explain_violation` returns. The `mcp` arm is this channel and nothing else.
+CONTEXT_BLOCK = """
+The tool's breakdown of where the score comes from:
+{trail}
+"""
+
+#: The rules `oxn init` writes into `CLAUDE.md`. The `claude-md` arm is this channel alone,
+#: which is the arm that asks whether written guidance survives contact with a metric.
+GUIDANCE_BLOCK = """
+Rules you must follow, because the point is readable code and not a lower number:
+{extraction}- DO reduce nesting: early returns and guard clauses, flattening `else` after `return`,
+  replacing nested conditionals with a dispatch table or a lookup where that reads better.
+- Preserve behaviour exactly. Every existing test must still pass.
+- Keep the signature, the name, and any decorators identical.
+- Keep the docstring, updating it only if the behaviour description would otherwise be wrong.
+- Match the surrounding code's style. Comments explain *why*, never *what*.
+"""
 
 
 #: The two arms of the extraction experiment. The banning arm was the harness's only
@@ -97,6 +106,9 @@ class Ask:
     file_source: str
     feedback: str = ""
     allow_extraction: bool = False
+    #: Which of OXN's three channels this run opens. `None` means all of them, which is what
+    #: the harness did before the arms existed and is what `hybrid` now names.
+    arm: Arm | None = None
 
 
 def ask_actor(client: Any, ask: Ask) -> tuple[str, str]:
@@ -108,14 +120,38 @@ def ask_actor(client: Any, ask: Ask) -> tuple[str, str]:
     prompt = ACTOR_PROMPT.format(
         ceiling=ask.ceiling,
         score=int(ask.target.score),
-        trail="\n".join(f"  {line}" for line in ask.target.trail) or "  (unavailable)",
+        context=_context_block(ask),
+        guidance=_guidance_block(ask),
         file_source=ask.file_source,
         name=ask.target.leaf,
         feedback=FEEDBACK.format(failures=ask.feedback) if ask.feedback else "",
-        extraction=ALLOW_EXTRACTION if ask.allow_extraction else NO_EXTRACTION,
     )
     reply = client.generate(prompt, system=ACTOR_SYSTEM)
     return _strip_fences(reply, ask.target.leaf), reply
+
+
+def _context_block(ask: Ask) -> str:
+    """The score's breakdown, as much of it as this arm opens.
+
+    An arm without the context channel sends none: the actor is told the function is over
+    budget and left to find out why, which is what "no MCP" means.
+    """
+    lines = list(ask.target.trail)
+    if ask.arm is not None:
+        lines = ask.arm.trail(lines)
+        if not ask.arm.context:
+            return ""
+    body = "\n".join(f"  {line}" for line in lines) or "  (unavailable)"
+    return CONTEXT_BLOCK.format(trail=body)
+
+
+def _guidance_block(ask: Ask) -> str:
+    """The written rules, or nothing where the arm closes that channel."""
+    if ask.arm is not None and not ask.arm.guidance:
+        return ""
+    return GUIDANCE_BLOCK.format(
+        extraction=ALLOW_EXTRACTION if ask.allow_extraction else NO_EXTRACTION
+    )
 
 
 #: The checks that either passed or did not, and what to say when they did not. A table
