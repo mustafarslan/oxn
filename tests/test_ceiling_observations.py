@@ -55,7 +55,7 @@ def test_the_measurement_used_the_ceilings_that_are_actually_enforced(
 #: Ceilings whose population is *every* entity of the gated kind rather than the named ones.
 #:
 #: For callables, `named` is the comparable row: anonymous density runs from 0.1% of httpx's
-#: to 69.3% of nest's, so it is the only row two languages can be compared on. For classes the
+#: to 69.4% of nest's, so it is the only row two languages can be compared on. For classes the
 #: same filter measures the wrong thing, because the anonymous entities are where the methods
 #: are: a Rust `impl` block is an unnamed class entity holding every method of its type, so
 #: ripgrep reads 840 class entities against 395 named ones and its exceedance falls from 3.10%

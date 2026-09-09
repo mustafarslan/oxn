@@ -44,7 +44,11 @@ if TYPE_CHECKING:  # pragma: no cover
 #: changes none of the first four, so an unchanged file keeps rows that predate the metric and
 #: the gate sees nothing. That is how `nom` and `wmc` first landed: three rows in the whole
 #: repository, one file, and a clean `oxn check --deep` that had checked almost nothing.
-SCHEMA_VERSION = 6
+#:
+#: **And when the builder starts recording an entity it used to miss**, for the same reason:
+#: `graph.builder` is not in the key either. Version 7 is the curried-callable fix -- a
+#: callable whose body *is* another callable yielded one entity where it should yield two.
+SCHEMA_VERSION = 7
 
 DEFAULT_CACHE_PATH = Path(".oxn/cache/graph.db")
 

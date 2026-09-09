@@ -24,8 +24,8 @@ lookup in borrowed authority.
 
 **The corpus-percentile route was measured. Which percentile matters more than it sounds.**
 
-*Unweighted*, over entities, it is unusable. These distributions have median 0: 69.3% of
-nest's callables are anonymous arrow functions and 92.8% of those score zero cognitive
+*Unweighted*, over entities, it is unusable. These distributions have median 0: 69.4% of
+nest's callables are anonymous arrow functions and 92.7% of those score zero cognitive
 complexity, so the 95th percentile is **2 in TypeScript and 9 in Go**. A ceiling fitted
 there would reject most ordinary functions in either language.
 
@@ -123,8 +123,8 @@ class Parameter:
 #: corpora of `benchmarks/manifest.yaml` -- httpx, go-kit, ripgrep, petclinic, nest -- which
 #: is 10,256 functions and methods, or 2,389 files for `MAX_FILE_SLOC`. Anonymous callables
 #: are excluded from the comparison because their density is not comparable (0.1% of httpx's
-#: callables, 69.3% of nest's); `benchmarks/ceiling-observations.json` carries both rows, and
-#: they disagree where it matters: TypeScript's `function_sloc` exceedance is 3.17% over all
+#: callables, 69.4% of nest's); `benchmarks/ceiling-observations.json` carries both rows, and
+#: they disagree where it matters: TypeScript's `function_sloc` exceedance is 3.16% over all
 #: callables and 0.67% over named ones, so nest's long callables are inline callbacks.
 _CEILINGS: tuple[Parameter, ...] = (
     Parameter(

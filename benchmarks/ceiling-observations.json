@@ -133,11 +133,11 @@
         },
         "typescript-nest": {
           "all_callables": {
-            "ceiling_at_percentile": 99.51,
-            "exceedance": 0.4934,
+            "ceiling_at_percentile": 99.5,
+            "exceedance": 0.4993,
             "max": 92.0,
-            "n": 14997,
-            "over_ceiling": 74,
+            "n": 15020,
+            "over_ceiling": 75,
             "quantiles": {
               "p50": 0.0,
               "p75": 0.0,
@@ -289,10 +289,10 @@
         "typescript-nest": {
           "all_callables": {
             "ceiling_at_percentile": 99.83,
-            "exceedance": 0.1667,
+            "exceedance": 0.1731,
             "max": 22.0,
-            "n": 14997,
-            "over_ceiling": 25,
+            "n": 15020,
+            "over_ceiling": 26,
             "quantiles": {
               "p50": 1.0,
               "p75": 1.0,
@@ -598,10 +598,10 @@
         },
         "typescript-nest": {
           "all_callables": {
-            "ceiling_at_percentile": 96.83,
-            "exceedance": 3.1673,
+            "ceiling_at_percentile": 96.84,
+            "exceedance": 3.1625,
             "max": 1133.0,
-            "n": 14997,
+            "n": 15020,
             "over_ceiling": 475,
             "quantiles": {
               "p50": 6.0,
@@ -754,9 +754,9 @@
         "typescript-nest": {
           "all_callables": {
             "ceiling_at_percentile": 99.89,
-            "exceedance": 0.1134,
+            "exceedance": 0.1132,
             "max": 7.0,
-            "n": 14997,
+            "n": 15020,
             "over_ceiling": 17,
             "quantiles": {
               "p50": 0.0,
@@ -1064,9 +1064,9 @@
         "typescript-nest": {
           "all_callables": {
             "ceiling_at_percentile": 99.77,
-            "exceedance": 0.2334,
+            "exceedance": 0.233,
             "max": 9.0,
-            "n": 14997,
+            "n": 15020,
             "over_ceiling": 35,
             "quantiles": {
               "p50": 0.0,

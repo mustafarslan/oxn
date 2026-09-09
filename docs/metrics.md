@@ -1200,7 +1200,7 @@ rating via calibrated boundaries. Report the profile alongside the rating so the
 
   **Measured, 2026-09-09** (`scripts/measure_ceilings.py`, five `use: threshold` corpora). The LOC
   weighting is load-bearing and not a detail: *un*weighted, these distributions have median 0 —
-  69.3% of nest's callables are anonymous arrow functions and 92.8% of those score 0 — so an
+  69.4% of nest's callables are anonymous arrow functions and 92.7% of those score 0 — so an
   unweighted p95 for cognitive complexity is 2 in TypeScript against 9 in Go. Weighted as Alves
   et al. specify, the boundaries are sane and OXN's existing ceilings already sit on them:
   cognitive 12 at P79 (go-kit) to P98 (petclinic), cyclomatic 10 at P86–P99, nesting 4 at
@@ -1447,7 +1447,7 @@ Two containment facts decide what the population is, and both are language-speci
   and filtering to named ones drops its exceedance from 3.10% to 0.25% — measuring the struct
   declarations rather than the code. The gate applies no name filter and neither does the
   calibration record, which is the opposite of the choice made for the callable ceilings, where
-  anonymous density (0.1% of httpx, 69.3% of nest) makes `named` the only comparable row.
+  anonymous density (0.1% of httpx, 69.4% of nest) makes `named` the only comparable row.
 * **Go needed receiver-based ownership, and now has it** *(2026-09-09)*. A Go method is a
   top-level declaration carrying its receiver rather than a member of its type — the same fact
   ADR-0002 records for `by_file` — so all 379 of go-kit's structs measured NOM 0 and both
@@ -1464,6 +1464,16 @@ Two containment facts decide what the population is, and both are language-speci
   means different things on different days cannot be compared against anything. go-kit now
   reads 494 method entities where it read none, a largest type of 9 methods, and `wmc` rejects
   0.27% of its types. `tests/test_go_class_ownership.py` holds the cross-file case.
+
+**A curried callable was one entity, not two** *(2026-09-09)*. `_descend` handed a callable's
+body to `_visit`, which iterates a node's *children* — so the body was never itself tested for
+being a definition. That is the same thing for nearly every shape (an arrow whose body is a
+call, a closure inside a block), and differs for exactly the curried one, where the body *is*
+the next callable: `const add = (a) => (b) => a + b` and `add = lambda a: lambda b: a + b` each
+produced a single entity. The inner callable was unmeasured, ungated, and missing from every
+corpus count. Cost of the miss: 23 callables across nest's 15,020 and one in OXN's own source,
+none in the other four corpora — small, but it made "nest has 14,997 callables" an artefact of
+where the walk stopped rather than a measurement. `tests/test_curried_callables.py`.
 
 **WMC was NOM under another name until this was measured.** `ck_metrics` computes
 `sum(weights.get(name, 1) for name in model.methods)`, section 3.6 above specifies cyclomatic as

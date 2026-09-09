@@ -138,13 +138,24 @@ class _Skeleton:
         return EntityKind.FUNCTION
 
     def _visit(self, node: Node, parent: Entity, prefix: str, inside_type: bool) -> None:
-        """Every child: either a definition to record, or a node to look inside."""
+        """Every child of `node`, considered in turn. `node` itself is not reconsidered."""
         for child in node.named_children:
-            definition = self.profile.unwrap(child)
-            if self.profile.is_definition(definition):
-                self._record(child, definition, parent, prefix, inside_type)
-            else:
-                self._visit(child, parent, prefix, inside_type)
+            self._consider(child, parent, prefix, inside_type)
+
+    def _consider(self, child: Node, parent: Entity, prefix: str, inside_type: bool) -> None:
+        """One node: record it if it is a definition, otherwise look inside it.
+
+        Split out of `_visit` because a callable's *body* has to be asked this question too,
+        and `_visit(body)` only ever asked it of the body's children. A body that is itself a
+        definition was therefore skipped and only its contents were walked -- so
+        `const add = (a) => (b) => a + b` produced one entity, and `lambda a: lambda b: a + b`
+        likewise. Curried callables were invisible to every metric and every ceiling.
+        """
+        definition = self.profile.unwrap(child)
+        if self.profile.is_definition(definition):
+            self._record(child, definition, parent, prefix, inside_type)
+        else:
+            self._visit(child, parent, prefix, inside_type)
 
     def _record(
         self, child: Node, definition: Node, parent: Entity, prefix: str, inside_type: bool
@@ -193,16 +204,12 @@ class _Skeleton:
     def _descend(self, definition: Node, entity: Entity, qualified: str, kind: EntityKind) -> None:
         body = definition.child_by_field_name(self.profile.body_field)
         if body is not None:
-            self._visit(
-                body,
-                entity,
-                qualified,
-                inside_type=kind in {EntityKind.CLASS, EntityKind.INTERFACE},
-            )
+            inside_type = kind in {EntityKind.CLASS, EntityKind.INTERFACE}
+            self._consider(body, entity, qualified, inside_type)
             return
         # Arrow functions and lambdas have expression bodies, not a body field.
         for grandchild in definition.named_children:
-            self._visit(grandchild, entity, qualified, inside_type=False)
+            self._consider(grandchild, entity, qualified, inside_type=False)
 
 
 def _is_abstract(node: Node, profile: LanguageProfile) -> bool:

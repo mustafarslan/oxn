@@ -6,7 +6,7 @@ them to *corpus percentiles*, and the measurement below is the argument for not 
 
 **An unweighted percentile of these distributions is not a ceiling.** Metric distributions
 over real code are dominated by trivial callables: the median cognitive complexity is 0 in all
-five corpora, and 92.8% of nest's 10,396 anonymous callables score 0. So "the 95th percentile"
+five corpora, and 92.7% of nest's 10,419 anonymous callables score 0. So "the 95th percentile"
 is 2 in TypeScript and 9 in Go, and would reject most ordinary functions in either.
 
 **LOC-weighted, the method is fine and it agrees with the ceilings we have.** Alves, Ypma &
@@ -27,12 +27,12 @@ number anyone arguing about a ceiling actually wants. It is not stable, and sayi
 be the same overclaim: `file_sloc` ranges 0% to 20.9%, and that spread is the finding rather
 than noise around it.
 
-**Two populations, because anonymous callables are not evenly distributed.** 69.3% of nest's
+**Two populations, because anonymous callables are not evenly distributed.** 69.4% of nest's
 callables are anonymous arrow functions and 0.1% of httpx's are lambdas -- a 700x difference
 in what the denominator is made of. Both rows are reported and both are needed:
 `all_callables` is what the gate actually rejects, since `config.CALLABLE_KINDS` gates
 lambdas too; `named` is the only row two languages can be compared on. They disagree where it
-matters -- TypeScript's `function_sloc` exceedance is 3.17% over all callables and 0.71% over
+matters -- TypeScript's `function_sloc` exceedance is 3.16% over all callables and 0.67% over
 named ones, so the excess is long inline callbacks, not long functions.
 
     python scripts/measure_ceilings.py            # re-measure and write the observations
