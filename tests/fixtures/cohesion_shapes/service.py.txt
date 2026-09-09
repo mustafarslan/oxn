@@ -1,0 +1,16 @@
+class Service:
+    def __init__(self, db, cache):
+        self._db = db
+        self._cache = cache
+
+    def save(self, k):
+        self._db.write(k)
+
+    def load(self, k):
+        return self._db.read(k)
+
+    def put(self, k):
+        self._cache.set(k)
+
+    def evict(self, k):
+        self._cache.drop(k)

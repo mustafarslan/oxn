@@ -1,0 +1,8 @@
+pub struct Service { db: Db, cache: Cache }
+
+impl Service {
+    pub fn save(&self, k: &str) { self.db.write(k); }
+    pub fn load(&self, k: &str) -> String { self.db.read(k) }
+    pub fn put(&self, k: &str) { self.cache.set(k); }
+    pub fn evict(&self, k: &str) { self.cache.drop(k); }
+}

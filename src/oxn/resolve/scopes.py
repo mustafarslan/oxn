@@ -209,7 +209,10 @@ def _enter(
     if scope_kind in {"function", "lambda"}:
         inner.receiver = _bind_parameters(target, inner, context.profile, context.spec, class_name)
 
-    next_class = inner.owner if scope_kind == "class" else class_name
+    # A nameless class scope inherits rather than erases. TypeScript opens one for the
+    # `class_body` inside `class_declaration`, so reading `inner.owner` unconditionally
+    # blanked the class name for every method in the file and left them all receiverless.
+    next_class = (inner.owner or class_name) if scope_kind == "class" else class_name
     if scope_kind == "class" and inner.owner:
         context.tree.class_members.setdefault(inner.owner, {})
 
@@ -247,10 +250,11 @@ def _bind_parameters(
 ) -> str | None:
     """Declare a callable's parameters; return its receiver name if it is a method.
 
-    The receiver is the *actual* first parameter, read from the source. Assuming ``self``
-    silently breaks every codebase that spells it differently, and Python has no syntactic
-    receiver at all.
+    Two questions, and `_receiver_name` answers the second: which parameters this callable
+    binds, and what the receiver is called. They meet only at `takes_receiver`, because a
+    language that passes no receiver must not have parameter zero bound as one.
     """
+    takes_receiver = _passes_receiver(spec, class_name)
     names = profile.parameter_names(node)
     for index, name in enumerate(names):
         if not name:
@@ -258,17 +262,38 @@ def _bind_parameters(
         scope.declare(
             Binding(
                 name,
-                "receiver" if (index == 0 and class_name) else "parameter",
+                "receiver" if (index == 0 and takes_receiver) else "parameter",
                 node.start_point[0] + 1,
                 node.start_byte,
                 node.end_byte,
             )
         )
-    if class_name and names and spec.style == "python":
-        return names[0]
-    if class_name and spec.style == "ecmascript":
-        return "this"
-    return None
+    return _receiver_name(spec, names, class_name)
+
+
+def _passes_receiver(spec: ScopeSpec, class_name: str | None) -> bool:
+    """True when this language hands a method its receiver as parameter zero.
+
+    False for a plain function, and false for Java, TypeScript and JavaScript, where the
+    receiver is implicit -- and there it matters twice over, because binding parameter zero
+    as a receiver is what made Java's `save(String k)` treat `k` as one.
+    """
+    return bool(class_name) and not spec.implicit_receiver
+
+
+def _receiver_name(spec: ScopeSpec, names: list[str], class_name: str | None) -> str | None:
+    """What a method's receiver is called here, or `None` when this is not a method.
+
+    Where the language passes it, the receiver is the *actual* first parameter read from the
+    source: assuming ``self`` silently breaks every codebase that spells it differently.
+    Where it does not, ``spec`` names the implicit one, and naming it is what lets `this.db`
+    be found at all.
+    """
+    if not class_name:
+        return None
+    if spec.implicit_receiver:
+        return spec.implicit_receiver
+    return names[0] if names and spec.style == "python" else None
 
 
 def _bind_from(

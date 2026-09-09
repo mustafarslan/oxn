@@ -140,6 +140,7 @@ JAVA_METRICS = MetricSpec(
         call_kinds=frozenset({"method_invocation"}),
     ),
     scopes=ScopeSpec(
+        implicit_receiver="this",
         style="java",
         scope_kinds={
             "program": "module",

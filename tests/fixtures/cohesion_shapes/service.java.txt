@@ -1,0 +1,9 @@
+class Service {
+    private Db db;
+    private Cache cache;
+    Service(Db db, Cache cache) { this.db = db; this.cache = cache; }
+    void save(String k) { this.db.write(k); }
+    String load(String k) { return this.db.read(k); }
+    void put(String k) { this.cache.set(k); }
+    void evict(String k) { this.cache.drop(k); }
+}

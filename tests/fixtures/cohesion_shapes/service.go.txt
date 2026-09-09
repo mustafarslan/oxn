@@ -1,0 +1,11 @@
+package svc
+
+type Service struct {
+	db    Db
+	cache Cache
+}
+
+func (s *Service) Save(k string) { s.db.Write(k) }
+func (s *Service) Load(k string) string { return s.db.Read(k) }
+func (s *Service) Put(k string) { s.cache.Set(k) }
+func (s *Service) Evict(k string) { s.cache.Drop(k) }

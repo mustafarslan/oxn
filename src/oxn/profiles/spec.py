@@ -228,6 +228,16 @@ class ScopeSpec:
     alias_kinds: frozenset[str] = frozenset()
     #: Statements that rebind a name to an outer scope.
     rebinding_kinds: frozenset[str] = frozenset()
+    #: The receiver's name where the language does not pass it as a parameter -- ``this``
+    #: in Java, TypeScript and JavaScript. Empty where the receiver *is* parameter zero
+    #: (Python's ``self``, Rust's ``&self``), which is the case the binder handles by
+    #: reading the name from the source rather than assuming one.
+    #:
+    #: It also decides whether parameter zero is a receiver at all. Without it Java's
+    #: ``save(String k)`` bound ``k`` as the receiver, so `this.db` matched nothing and
+    #: every Java class read as maximally incohesive -- LCOM\* 1.25 on a class with two
+    #: clean halves, stamped EXACT.
+    implicit_receiver: str = ""
     #: Node kind for attribute access, used to find ``self.x`` field writes.
     attribute_kind: str = "attribute"
     #: Field on the attribute node holding the receiver.

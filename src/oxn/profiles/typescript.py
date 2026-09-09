@@ -155,6 +155,7 @@ _TS_METRICS = MetricSpec(
         call_kinds=frozenset({"call_expression"}),
     ),
     scopes=ScopeSpec(
+        implicit_receiver="this",
         style="ecmascript",
         scope_kinds={
             "program": "module",
