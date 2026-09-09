@@ -955,7 +955,13 @@ it ships early** — see the roadmap phase ordering.
   properties (`constructor(private x: T)`) which *define* fields.
 - **Java:** `field_access` with `this`, **plus bare identifiers that resolve to fields** — this needs
   L0 scope resolution to exclude locals and parameters that shadow the field. Without it, LCOM is
-  simply wrong.
+  simply wrong. *Implemented*, `ScopeSpec.bare_field_access`. It is not optional in practice: Spring
+  style writes `vets.findAll()`, and reading only the qualified form put petclinic's
+  `VetControllerTests` at LCOM\* 1.125 — above 1, this document's own signal for "the fields are
+  never touched" — while stamping it EXACT. With bare access it reads 0.875 and LCOM4 5 → 2. The
+  shadowing controls are in `tests/fixtures/cohesion_shapes/bare_fields.java.txt`: a constructor
+  parameter and a local, both named for a field, neither counted. A declaration's own name is also
+  excluded, without which `void save(...)` recorded the method as accessing itself.
 - **Go:** methods are `method_declaration` with a receiver; the "class" is the receiver's named type
   (**impl spread across files → needs L1**); field access is `selector_expression` on the receiver.
   The receiver is written outside the parameter list, so it reaches no parameter scan and is read

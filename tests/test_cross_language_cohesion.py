@@ -147,3 +147,34 @@ def test_a_go_method_binds_the_receiver_it_declares() -> None:
     service = _model("go")["Service"]
     assert {access.receiver for access in service.methods.values()} == {"s"}
     assert service.methods["Save"].touches == {"db"}
+
+
+def test_java_reaches_a_field_written_without_this() -> None:
+    """Spring style writes `vets.findAll()`, and reading only `this.vets` measured nothing.
+
+    On petclinic's `VetControllerTests` this moved LCOM* from 1.125 -- above 1, the "no
+    method touches any field" signature -- to 0.875, and LCOM4 from 5 to 2.
+
+    Two controls sit in the fixture, and both are shadowing rather than syntax. The
+    constructor's `this.db = db` has a *parameter* named `db` on its right-hand side, and
+    `shadowed()` declares a local of the same name: neither may count as a field access, and
+    only an L0 lookup can tell. A text match would have scored both.
+    """
+    service = _model("java", "bare_fields")["Service"]
+    assert service.methods["save"].touches == {"db"}, "a bare field read must be found"
+    assert service.methods["evict"].touches == {"cache"}
+    assert service.methods["shadowed"].touches == set(), "a local shadows the field"
+    assert service.methods["delegates"].calls == {"save"}, "a bare sibling call joins LCOM4"
+
+
+def test_java_bare_access_does_not_invent_cohesion() -> None:
+    """The fixture still splits in two, so the new reads are the right reads.
+
+    Three components, not two: `delegates` calls `save` and joins the `db` half, while
+    `shadowed` touches nothing this class owns and is correctly alone. Over-matching would
+    show up as *fewer* components than that, by inventing a field the two halves share.
+    """
+    from oxn.metrics.cohesion import cohesion
+
+    measured = cohesion(_model("java", "bare_fields")["Service"])
+    assert measured.lcom4 == 3, f"lcom4 {measured.lcom4}"

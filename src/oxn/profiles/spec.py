@@ -245,6 +245,14 @@ class ScopeSpec:
     #: Decorators that mean "no receiver despite sitting in a class" -- Python's
     #: ``@staticmethod``. Matched as substrings, since a decorator may be written qualified.
     static_markers: frozenset[str] = frozenset()
+    #: True where a member may be written without its receiver -- Java's `vets.findAll()`
+    #: for `this.vets.findAll()`. Reading only the qualified form left Spring-style code
+    #: measuring nothing: `VetControllerTests` reported LCOM* 1.125, above 1, which is this
+    #: project's own signal for "no method touches any field" -- and stamped it EXACT.
+    #:
+    #: It costs an L0 lookup per candidate rather than a text match, because a parameter or
+    #: local of the same name shadows the field and must not be counted as one.
+    bare_field_access: bool = False
     #: Node kind for attribute access, used to find ``self.x`` field writes.
     attribute_kind: str = "attribute"
     #: Field on the attribute node holding the receiver.

@@ -137,7 +137,7 @@ def _one_class(
     method_nodes = _methods_of(parts, profile)
     method_names = {name for _, name in method_nodes}
 
-    context = _Members(profile, scopes, spec, method_names)
+    context = _Members(profile, scopes, spec, method_names, frozenset(model.fields | method_names))
     for method_node, method_name in method_nodes:
         model.methods[method_name] = _method_access(context, method_node, method_name)
         if _is_property(method_node, profile):
@@ -211,6 +211,9 @@ class _Members:
     spec: ScopeSpec
     #: The class's own method names, so a call to a sibling is not mistaken for a field.
     method_names: set[str]
+    #: Every name the class supplies -- its declared fields and its methods. Only needed
+    #: where a member may be written bare, since then the name alone is the only clue.
+    members: frozenset[str] = frozenset()
 
 
 def _method_access(context: _Members, method_node: Node, method_name: str) -> MethodAccess:
@@ -364,14 +367,55 @@ def _receiver_of(method: Node, profile: LanguageProfile, scopes: ScopeTree) -> s
 
 
 def _collect_accesses(context: _Members, method: Node, receiver: str, access: MethodAccess) -> None:
-    """Record every ``receiver.name`` in the method, classified as read, write or call."""
+    """Record every access to this class's own members, classified as read, write or call."""
     stack = [method]
     while stack:
         node = stack.pop()
         stack.extend(node.named_children)
-        name = _receiver_attribute(node, context.spec, receiver)
+        name = _receiver_attribute(node, context.spec, receiver) or _bare_member(context, node)
         if name:
             _classify_access(context, node, name, access)
+
+
+def _bare_member(context: _Members, node: Node) -> str:
+    """A member written without its receiver -- Java's `vets.findAll()`, not `this.vets`.
+
+    Three conditions, and the third is why this needs L0 rather than a text match:
+
+    * the language allows the bare form at all -- Python and Go do not, and asking there
+      would turn every local sharing a field's name into a field access;
+    * the name is one this class actually supplies;
+    * nothing nearer has bound it. `Scope.lookup` walks *past* class scopes by design, so a
+      name resolving to nothing is one the class supplies, and a name resolving to a
+      parameter or a local is a shadow.
+
+    The `x` and `name` halves of an already-qualified `x.name` are skipped: the receiver
+    form handled them, and counting `other.vets` as this class's field would be worse than
+    missing it.
+    """
+    if not context.spec.bare_field_access or node.type != context.spec.identifier_kind:
+        return ""
+    name = _text(node)
+    if name not in context.members or _is_declaration_name(context, node):
+        return ""
+    return "" if context.scopes.resolve(name, node.start_byte) else name
+
+
+def _is_declaration_name(context: _Members, node: Node) -> bool:
+    """True when this identifier is naming something rather than using it.
+
+    Two shapes, and the first is not obvious: `void save(...)` writes `save` as a bare
+    identifier that is in the class's own member list and resolves to nothing, so it was
+    recorded as the method accessing itself. The second is the `x` or `name` of an already
+    qualified `x.name`, which the receiver form has handled and where counting `other.vets`
+    as this class's field would be worse than missing it.
+    """
+    parent = node.parent
+    if parent is None:
+        return False
+    if parent.type == context.spec.attribute_kind:
+        return True
+    return context.profile.unwrap(parent).type in context.profile.function_like
 
 
 def _receiver_attribute(node: Node, spec: ScopeSpec, receiver: str) -> str:

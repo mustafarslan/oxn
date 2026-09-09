@@ -141,6 +141,7 @@ JAVA_METRICS = MetricSpec(
     ),
     scopes=ScopeSpec(
         implicit_receiver="this",
+        bare_field_access=True,
         style="java",
         scope_kinds={
             "program": "module",
