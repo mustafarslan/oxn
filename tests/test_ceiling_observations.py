@@ -64,9 +64,11 @@ def test_the_measurement_used_the_ceilings_that_are_actually_enforced(
 #: methods onto the named type. The gate applies no name filter, so neither does this.
 #:
 #: Nothing here re-measures: these tests hold the frozen record against the live ceilings and
-#: against `calibration.py`. They therefore cannot notice that the record predates the `impl`
-#: join and the Java, TypeScript, Go and Rust receiver fixes, all of which move class
-#: populations. Re-running `scripts/measure_ceilings.py` is the only thing that can.
+#: against `calibration.py`, so they cannot notice a record that has gone stale. That is not
+#: hypothetical -- it happened, twice over. The record predated the `impl` join and four
+#: receiver fixes while every test here passed, and the measurement script itself was reading
+#: corpus caches two schema versions behind and reporting them as current. The script refuses
+#: a mismatched schema now; re-running it remains the only thing that can refresh this.
 _WHOLE_POPULATION = frozenset({"methods_per_class", "weighted_methods_per_class"})
 
 

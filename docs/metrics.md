@@ -1504,7 +1504,7 @@ rather than in condemning classes that were already large.
 
 **Shipped as `methods_per_class: 12` and `weighted_methods_per_class: 25`**, both inside the
 window the control defines (NOM 5..13, WMC 18..26) and deliberately not at its edges, since a
-value tuned to straddle one fixture is fitted to that fixture. Measured across 3,847 class
+value tuned to straddle one fixture is fitted to that fixture. Measured across 3,415 class
 entities they reject 0.00%–7.48% and 0.27%–10.28%, and 0.7%/2.0% of OXN's own 149 classes —
 which became four baselined entries, `GraphStore` (NOM 27, WMC 64) among them.
 

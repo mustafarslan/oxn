@@ -1,12 +1,12 @@
 {
   "class_ceiling_audit": {
-    "both": 64,
+    "both": 68,
     "in_test_files": 7,
     "interfaces": 8,
     "nom_only": 28,
-    "rejected": 115,
-    "wmc_only": 23,
-    "wmc_without_a_hot_method": 56
+    "rejected": 117,
+    "wmc_only": 21,
+    "wmc_without_a_hot_method": 77
   },
   "corpora": {
     "go-kit": "go",
@@ -36,16 +36,16 @@
             }
           },
           "named": {
-            "ceiling_at_percentile": 96.68,
-            "exceedance": 3.3179,
+            "ceiling_at_percentile": 96.83,
+            "exceedance": 3.1688,
             "max": 192.0,
-            "n": 1296,
+            "n": 1357,
             "over_ceiling": 43,
             "quantiles": {
               "p50": 0.0,
               "p75": 2.0,
               "p90": 6.0,
-              "p95": 11.0,
+              "p95": 10.0,
               "p99": 23.0
             }
           }
@@ -191,10 +191,10 @@
             }
           },
           "named": {
-            "ceiling_at_percentile": 97.99,
-            "exceedance": 2.0062,
+            "ceiling_at_percentile": 98.08,
+            "exceedance": 1.916,
             "max": 193.0,
-            "n": 1296,
+            "n": 1357,
             "over_ceiling": 26,
             "quantiles": {
               "p50": 1.0,
@@ -501,16 +501,16 @@
             }
           },
           "named": {
-            "ceiling_at_percentile": 97.3,
-            "exceedance": 2.7006,
+            "ceiling_at_percentile": 97.42,
+            "exceedance": 2.5792,
             "max": 882.0,
-            "n": 1296,
+            "n": 1357,
             "over_ceiling": 35,
             "quantiles": {
               "p50": 7.0,
-              "p75": 15.0,
-              "p90": 32.0,
-              "p95": 45.0,
+              "p75": 14.0,
+              "p90": 31.0,
+              "p95": 43.0,
               "p99": 76.0
             }
           }
@@ -659,7 +659,7 @@
             "ceiling_at_percentile": 100.0,
             "exceedance": 0.0,
             "max": 4.0,
-            "n": 1296,
+            "n": 1357,
             "over_ceiling": 0,
             "quantiles": {
               "p50": 0.0,
@@ -702,11 +702,11 @@
         },
         "python-httpx": {
           "all_callables": {
-            "ceiling_at_percentile": 99.65,
-            "exceedance": 0.3524,
+            "ceiling_at_percentile": 99.82,
+            "exceedance": 0.1762,
             "max": 5.0,
             "n": 1135,
-            "over_ceiling": 4,
+            "over_ceiling": 2,
             "quantiles": {
               "p50": 0.0,
               "p75": 0.0,
@@ -716,11 +716,11 @@
             }
           },
           "named": {
-            "ceiling_at_percentile": 99.65,
-            "exceedance": 0.3527,
+            "ceiling_at_percentile": 99.82,
+            "exceedance": 0.1764,
             "max": 5.0,
             "n": 1134,
-            "over_ceiling": 4,
+            "over_ceiling": 2,
             "quantiles": {
               "p50": 0.0,
               "p75": 0.0,
@@ -732,41 +732,41 @@
         },
         "rust-ripgrep": {
           "all_callables": {
-            "ceiling_at_percentile": 99.14,
-            "exceedance": 0.8634,
-            "max": 12.0,
+            "ceiling_at_percentile": 99.91,
+            "exceedance": 0.0893,
+            "max": 5.0,
             "n": 3359,
-            "over_ceiling": 29,
+            "over_ceiling": 3,
             "quantiles": {
               "p50": 0.0,
               "p75": 0.0,
               "p90": 1.0,
               "p95": 2.0,
-              "p99": 4.0
+              "p99": 3.0
             }
           },
           "named": {
-            "ceiling_at_percentile": 99.04,
-            "exceedance": 0.9603,
-            "max": 12.0,
+            "ceiling_at_percentile": 99.9,
+            "exceedance": 0.0993,
+            "max": 5.0,
             "n": 3020,
-            "over_ceiling": 29,
+            "over_ceiling": 3,
             "quantiles": {
               "p50": 0.0,
               "p75": 0.0,
-              "p90": 2.0,
+              "p90": 1.0,
               "p95": 2.0,
-              "p99": 4.0
+              "p99": 3.0
             }
           }
         },
         "typescript-nest": {
           "all_callables": {
-            "ceiling_at_percentile": 99.89,
-            "exceedance": 0.1132,
-            "max": 7.0,
+            "ceiling_at_percentile": 99.99,
+            "exceedance": 0.0067,
+            "max": 6.0,
             "n": 15020,
-            "over_ceiling": 17,
+            "over_ceiling": 1,
             "quantiles": {
               "p50": 0.0,
               "p75": 0.0,
@@ -776,17 +776,17 @@
             }
           },
           "named": {
-            "ceiling_at_percentile": 99.72,
-            "exceedance": 0.2825,
-            "max": 7.0,
+            "ceiling_at_percentile": 99.98,
+            "exceedance": 0.0217,
+            "max": 6.0,
             "n": 4601,
-            "over_ceiling": 13,
+            "over_ceiling": 1,
             "quantiles": {
               "p50": 0.0,
               "p75": 0.0,
               "p90": 1.0,
-              "p95": 2.0,
-              "p99": 3.0
+              "p95": 1.0,
+              "p99": 2.0
             }
           }
         }
@@ -887,31 +887,31 @@
         },
         "rust-ripgrep": {
           "all_callables": {
-            "ceiling_at_percentile": 96.9,
-            "exceedance": 3.0952,
+            "ceiling_at_percentile": 92.65,
+            "exceedance": 7.3529,
             "max": 41.0,
-            "n": 840,
-            "over_ceiling": 26,
+            "n": 408,
+            "over_ceiling": 30,
             "quantiles": {
-              "p50": 1.0,
-              "p75": 4.0,
-              "p90": 8.0,
-              "p95": 9.0,
-              "p99": 21.0
+              "p50": 5.0,
+              "p75": 7.0,
+              "p90": 10.0,
+              "p95": 16.0,
+              "p99": 27.0
             }
           },
           "named": {
-            "ceiling_at_percentile": 99.75,
-            "exceedance": 0.2532,
-            "max": 25.0,
+            "ceiling_at_percentile": 92.66,
+            "exceedance": 7.3418,
+            "max": 41.0,
             "n": 395,
-            "over_ceiling": 1,
+            "over_ceiling": 29,
             "quantiles": {
-              "p50": 0.0,
-              "p75": 0.0,
-              "p90": 0.0,
-              "p95": 0.0,
-              "p99": 5.0
+              "p50": 5.0,
+              "p75": 7.0,
+              "p90": 10.0,
+              "p95": 16.0,
+              "p99": 28.0
             }
           }
         },
@@ -966,10 +966,10 @@
             }
           },
           "named": {
-            "ceiling_at_percentile": 99.69,
-            "exceedance": 0.3086,
+            "ceiling_at_percentile": 99.71,
+            "exceedance": 0.2948,
             "max": 7.0,
-            "n": 1296,
+            "n": 1357,
             "over_ceiling": 4,
             "quantiles": {
               "p50": 1.0,
@@ -1197,31 +1197,31 @@
         },
         "rust-ripgrep": {
           "all_callables": {
-            "ceiling_at_percentile": 96.19,
-            "exceedance": 3.8095,
+            "ceiling_at_percentile": 91.67,
+            "exceedance": 8.3333,
             "max": 188.0,
-            "n": 840,
-            "over_ceiling": 32,
+            "n": 408,
+            "over_ceiling": 34,
             "quantiles": {
-              "p50": 1.0,
-              "p75": 7.0,
-              "p90": 12.0,
-              "p95": 22.0,
-              "p99": 55.0
+              "p50": 7.0,
+              "p75": 10.0,
+              "p90": 23.0,
+              "p95": 38.0,
+              "p99": 76.0
             }
           },
           "named": {
-            "ceiling_at_percentile": 99.75,
-            "exceedance": 0.2532,
-            "max": 46.0,
+            "ceiling_at_percentile": 91.39,
+            "exceedance": 8.6076,
+            "max": 188.0,
             "n": 395,
-            "over_ceiling": 1,
+            "over_ceiling": 34,
             "quantiles": {
-              "p50": 0.0,
-              "p75": 0.0,
-              "p90": 0.0,
-              "p95": 0.0,
-              "p99": 5.0
+              "p50": 7.0,
+              "p75": 10.0,
+              "p90": 23.0,
+              "p95": 38.0,
+              "p99": 96.0
             }
           }
         },

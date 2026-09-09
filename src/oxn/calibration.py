@@ -131,7 +131,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_COGNITIVE_COMPLEXITY",
         value=float(thresholds.MAX_COGNITIVE_COMPLEXITY),
         evidence=Evidence.JUDGEMENT,
-        observations=10256,
+        observations=10317,
         provenance=(
             "12, between idea.md's proposed 8 and SonarSource's default 15. Neither endpoint "
             "is measured either: 15 is a product default, not a finding. Measured cost: it "
@@ -149,7 +149,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_CYCLOMATIC_COMPLEXITY",
         value=float(thresholds.MAX_CYCLOMATIC_COMPLEXITY),
         evidence=Evidence.LITERATURE,
-        observations=10256,
+        observations=10317,
         provenance=(
             "McCabe (1976); NIST SP 500-235 discusses 10 and 15 as the usual band. Measured "
             "cost: rejects 0.48% (typescript) to 2.03% (python) of named callables."
@@ -160,7 +160,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_PARAMETERS",
         value=float(thresholds.MAX_PARAMETERS),
         evidence=Evidence.LITERATURE,
-        observations=10256,
+        observations=10317,
         provenance=(
             "Fowler, Refactoring (Long Parameter List); the 4-5 band from Clean Code. "
             "Measured cost: rejects 0.00% (java) to 3.62% (python) of named callables -- the "
@@ -172,11 +172,16 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_NESTING_DEPTH",
         value=float(thresholds.MAX_NESTING_DEPTH),
         evidence=Evidence.JUDGEMENT,
-        observations=10256,
+        observations=10317,
         provenance=(
             "conventional; nesting is what cognitive complexity already charges for. Measured "
-            "cost: rejects 0.00% (go) to 0.96% (rust) of named callables -- the least "
-            "load-bearing ceiling here, which is consistent with it being double-charged."
+            "cost: rejects 0.00% (go, java) to 0.18% (httpx) of named callables -- the least "
+            "load-bearing ceiling here by an order of magnitude, which is consistent with it "
+            "being double-charged. It was ten times that until the depth of an `else if` "
+            "stopped depending on the grammar: TypeScript and Rust wrap it in an "
+            "`else_clause`, and counting the wrapper *and* the `if` it holds rejected ripgrep "
+            "at 0.96% against Python's 0.35% for the same shape. Cognitive complexity had the "
+            "rule right all along; this metric reused its node set and re-derived its rule."
         ),
         fit_when="evidence it catches anything `cognitive_complexity` does not catch first",
     ),
@@ -184,9 +189,9 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_FUNCTION_SLOC",
         value=float(thresholds.MAX_FUNCTION_SLOC),
         evidence=Evidence.JUDGEMENT,
-        observations=10256,
+        observations=10317,
         provenance=(
-            "conventional rather than derived. Measured cost: rejects 0.49% (java) to 2.70% "
+            "conventional rather than derived. Measured cost: rejects 0.49% (java) to 2.58% "
             "(go) of named callables."
         ),
         fit_when="the same labelled set as the cognitive ceiling",
@@ -215,12 +220,12 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_METHODS_PER_CLASS",
         value=float(thresholds.MAX_METHODS_PER_CLASS),
         evidence=Evidence.JUDGEMENT,
-        observations=3847,
+        observations=3415,
         provenance=(
             "12, a round number inside a window a control defines rather than a percentile. "
             "The two shred shapes `shredding` cannot see -- public helper names, and helpers "
             "given a second caller -- score NOM 14, while the legitimate decomposition of the "
-            "same work scores 4, so anything in 5..13 separates them. Measured across 3,847 "
+            "same work scores 4, so anything in 5..13 separates them. Measured across 3,415 "
             "classes: rejects 0.00% (go-kit, whose largest type has 9 methods) to 7.48% "
             "(httpx), and 0.7% of OXN's own 149. "
             "Higher than the per-function ceilings because the evasions sit inside the "
@@ -233,8 +238,10 @@ _CEILINGS: tuple[Parameter, ...] = (
             "moved those methods onto the named type, so the unnamed fragments now carry no "
             "aggregate at all; the population stays unfiltered because the gate does not "
             "filter either, and because Go's structs are unnamed entities regardless. "
-            "**These numbers predate that join and both receiver fixes, and are due a "
-            "re-measurement** -- `scripts/measure_ceilings.py` is the run. "
+            "**Re-measured after that join the filter no longer changes the answer**, which "
+            "is the join working: ripgrep read 3.10% of 840 unfiltered against 0.25% of 395 "
+            "named -- a thirty-fold disagreement about the same code -- and now reads 7.35% "
+            "and 7.34% of 408. "
             "**Go needs a receiver join**, since a method there is a top-level "
             "declaration rather than a member of its type: without it every struct measured "
             "NOM 0 and the ceiling was silently inert for the language. The join is by "
@@ -277,7 +284,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_WEIGHTED_METHODS_PER_CLASS",
         value=float(thresholds.MAX_WEIGHTED_METHODS_PER_CLASS),
         evidence=Evidence.JUDGEMENT,
-        observations=3847,
+        observations=3415,
         provenance=(
             "25, positioned like its sibling: the escapes score WMC 27 and the legitimate "
             "decomposition 17, so 18..26 separates them. Weighted by *cyclomatic* complexity "
