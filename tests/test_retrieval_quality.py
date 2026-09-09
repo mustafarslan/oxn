@@ -5,13 +5,27 @@ ADR-0006 section 5. The pairs are frozen in `benchmarks/retrieval-labels-oxn.jso
 `applies-to` covered a file that commit changed. Freezing them is what makes a number
 assertable -- every new commit would otherwise move the label set underneath the test.
 
+**The corpus is frozen too, and for seventeen commits it was not.** The label script argues
+that "a test cannot pin a number that moves underneath it" and freezes the queries. The
+*documents* were left live -- this repository's own ADRs, which nearly every commit edits --
+so half the experiment was frozen and half was not, and that asymmetry was the defect.
+`benchmarks/retrieval-corpus-oxn.json` is now the other half, written by
+`scripts/freeze_retrieval_corpus.py` and stamped with the commit it describes.
+
+It cost seventeen re-pins in three days, P@1 0.377 -> 0.623, without one line of the ranker
+changing: ADR-0002 is gold for most of the label set and roughly tripled in length over those
+commits. The number looked like retrieval improving and was the gold document getting longer.
+The worse half is that a test failing on every documentation edit teaches you to re-pin
+without reading it, so a real ranker regression would have arrived looking exactly like the
+seventeen benign ones.
+
 **What this file deliberately does not assert.** Not that BM25 beats the constant baseline,
-because on this corpus it does not (section 5a); and not that 0.377 is a quality floor,
+because on this corpus it does not (section 5a); and not that 0.623 is a quality floor,
 because at five documents and 53 pairs it is noise. The quality floor belongs on the
 external corpus that section 5 requires. What is asserted here is *reproducibility* -- the
-recorded numbers are what the current ranker and the current decisions produce -- so that
-any change to either carries its delta in the diff, exactly as `.oxn/baseline.json` does
-for the gate.
+recorded numbers are what this ranker produces on that frozen corpus -- so that a change to
+the ranker carries its delta in the diff, exactly as `.oxn/baseline.json` does for the gate,
+and a change to an ADR carries none.
 """
 
 from __future__ import annotations
@@ -22,47 +36,26 @@ from pathlib import Path
 
 import pytest
 
-from oxn.context.bm25 import BM25
+from oxn.context.bm25 import BM25, Document
 from oxn.context.decisions import decision_documents
 from oxn.rules.adr import load_decisions
 
 ROOT = Path(__file__).resolve().parent.parent
 LABELS = ROOT / "benchmarks" / "retrieval-labels-oxn.json"
+CORPUS = ROOT / "benchmarks" / "retrieval-corpus-oxn.json"
 
-#: Measured 2026-09-05 on 53 pairs over five decisions. Update these in the same commit as
-#: whatever moved them -- a ranker change, or an edit to any ADR body, since the corpus
-#: being ranked is the repository's own decisions.
+#: Measured on 53 pairs over five decisions, against the corpus frozen at `9fc42b9`.
 #:
-#: **These move whenever an ADR body is edited, and that is the whole point of pinning
-#: them here.** The corpus being ranked *is* this repository's decisions, so a number that
-#: lives in a script drifts silently while one that lives in an assertion carries its delta
-#: in the diff, exactly as `.oxn/baseline.json` does for the gate.
+#: **This list used to be seventeen entries long and is closed.** Every one of them was an
+#: ADR edit rather than a ranker change -- 0.377/0.579 at the start, 0.623/0.760 at the end,
+#: with ADR-0002 tripling in length underneath a fixed query set. The history is kept in
+#: `scripts/freeze_retrieval_corpus.py`, which is now the only thing that can move these two
+#: numbers without a ranker change, and moving them there is a deliberate act rather than a
+#: step in getting a build green.
 #:
-#: Seventeen re-pins across 2026-09-05 and 09-06, none of them a ranker change:
-#: 0.377/0.579 -> 0.377/0.577 (ADR-0001, ADR-0004 amended) -> 0.396/0.596 (ADR-0003) ->
-#: 0.396/0.592 -> 0.377/0.583 (ADR-0005) -> 0.396/0.603 -> 0.434/0.628 -> 0.491/0.663 ->
-#: 0.528/0.689 -> 0.547/0.708 (ADR-0002, five times across one day of resolution work)
-#: -> 0.547/0.713 (ADR-0002 again, the amendment retracting the Rust numbers)
-#: -> 0.585/0.736 (ADR-0002 a third time, the amendment measuring Java)
-#: -> 0.604/0.742 (ADR-0002 a fourth time, the local-symbol defect)
-#: -> 0.604/0.747 (ADR-0002 a fifth time, TypeScript measured)
-#: -> 0.604/0.750 (ADR-0002 a sixth time, the import table)
-#: -> 0.623/0.757 (ADR-0002 a seventh time, the gate that was off for three languages)
-#: -> 0.604/0.750 (ADR-0002 an eighth time, the call qualifier -- and *down* this time)
-#: -> 0.623/0.760 (ADR-0002 a ninth time, the bare half of the import rule).
-#:
-#: Seventeen re-pins in three days is itself the finding. ADR-0002 is gold for the resolution
-#: commits and it has roughly tripled in length, so P@1 has moved from 0.377 to 0.623
-#: without one line of the ranker changing. A corpus of five documents cannot be a quality
-#: measurement while it is also the thing under edit -- which is what ADR-0006 section 5a
-#: concluded from the other direction, and why the floor lives on the external corpus.
-#:
-#: Up, down, and back again. ADR-0003 and ADR-0005 traded the same hook-and-agent
-#: vocabulary; ADR-0002's amendment then added indexer and resolution language to the
-#: decision that is gold for the resolution commits. None of this is evidence about BM25 --
-#: it is five documents shifting under a fixed query set -- and it is the argument for
-#: putting the quality claim on the external corpus (ADR-0006 section 5b) while this file
-#: asserts only reproducibility.
+#: A number that lives in a script drifts silently; one that lives here carries its delta.
+#: That was always the right principle and it was being applied to a moving corpus, which
+#: made the delta noise. It measures the ranker now.
 RECORDED_P_AT_1 = 0.623
 RECORDED_MRR = 0.760
 
@@ -78,7 +71,20 @@ def pairs(labels) -> list[tuple[str, set[str]]]:
 
 
 @pytest.fixture(scope="module")
-def ranked(labels) -> BM25:
+def ranked() -> BM25:
+    """The ranker over the **frozen** corpus, which is what the pinned numbers describe."""
+    frozen = json.loads(CORPUS.read_text())["documents"]
+    return BM25([Document(identifier, text) for identifier, text in sorted(frozen.items())])
+
+
+@pytest.fixture(scope="module")
+def ranked_live(labels) -> BM25:
+    """The ranker over the ADRs as they are right now.
+
+    The floor tests read this one on purpose: they are the check that OXN's MCP server still
+    works on OXN's own current decisions, and they assert *inequalities*, so an ADR edit
+    cannot make them fail spuriously the way an exact pin could.
+    """
     wanted = set(labels["decisions"])
     return BM25(decision_documents(d for d in load_decisions(ROOT) if d.identifier in wanted))
 
@@ -116,10 +122,10 @@ def test_the_recorded_retrieval_numbers_reproduce(ranked, labels, pairs) -> None
     )
 
 
-def test_the_ranker_is_at_least_not_worse_than_chance(ranked, labels, pairs) -> None:
+def test_the_ranker_is_at_least_not_worse_than_chance(ranked_live, labels, pairs) -> None:
     """The weakest claim worth making on a corpus this size, and it is nearly all of what
     the corpus can support -- see ADR-0006 section 5a for why the stronger claim is false."""
-    measured, _ = _measure(lambda task: [hit.identifier for hit in ranked.rank(task)], pairs)
+    measured, _ = _measure(lambda task: [hit.identifier for hit in ranked_live.rank(task)], pairs)
     assert measured >= _baselines(labels, pairs)["random P@1"]
 
 

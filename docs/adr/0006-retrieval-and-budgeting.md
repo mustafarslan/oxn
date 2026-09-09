@@ -323,3 +323,44 @@ were the effect on agents. The null result stays publishable, and stays P11's to
 is not shown — and if the cap is what an agent violates, the ranking became load-bearing after all.
 That is why section 1 is absolute: the gate still enforces every constraint, shown or not. The
 bundle changes what the agent *knows*, never what the gate *accepts*.
+
+## Amendment, 2026-09-09 — half the experiment was frozen
+
+Section 5 froze the *labels* and said why: "a test cannot pin a number that moves underneath
+it." Every new commit would otherwise move the query set under the test, so
+`scripts/extract_retrieval_labels.py` writes them to a file, stamps the HEAD they came from,
+and is re-run on purpose.
+
+**The corpus never got the same treatment, and it is the repository's own ADRs.** So the
+queries were frozen and the documents were edited by nearly every commit — half the
+experiment held still and half did not.
+
+The bill was **seventeen re-pins of `tests/test_retrieval_quality.py` in three days**, P@1
+0.377 → 0.623 and MRR 0.579 → 0.760, without one line of the ranker changing. ADR-0002 is
+gold for most of the label set and roughly tripled in length across the resolution work, so
+BM25's term statistics moved under a fixed query set.
+
+Two things were wrong with that, and the second is the one that mattered:
+
+* **The number measured the wrong thing.** 0.377 → 0.623 reads as retrieval improving. It was
+  the gold document getting longer. This ADR's own section 5a rejects paraphrase circularity
+  for exactly this reason, and the same circularity walked back in through document length.
+* **The signal was training the wrong reflex.** A test that fails on every documentation edit
+  teaches you to update two constants and move on. Seventeen times. A genuine ranker
+  regression would have arrived looking exactly like the seventeen benign ones and been
+  re-pinned without anybody reading it. A test that cries wolf seventeen times is worse than
+  no test, because it consumes the attention a real failure needs.
+
+`benchmarks/retrieval-corpus-oxn.json` is now the other half, written by
+`scripts/freeze_retrieval_corpus.py`, which mirrors its sibling exactly: same `--status` flag,
+same refusal to be a gate, same statement that **regenerating is not maintenance, it is moving
+the benchmark**. What it freezes is the document *text* BM25 receives — `decision_documents`
+output — rather than a copy of `docs/adr/`, which would be five near-identical files diverging
+from their sources by construction.
+
+The floor tests still read the live ADRs, deliberately. They are the check that OXN's MCP
+server works on OXN's *current* decisions, and they assert inequalities, so an ADR edit cannot
+make them fail spuriously.
+
+Frozen at `9fc42b9`, where the frozen corpus reproduces the live numbers exactly — which is
+also the check that the fixture is faithful. This amendment is the first edit it ignores.
