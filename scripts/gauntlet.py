@@ -74,7 +74,15 @@ class Sandbox:
     """
 
     def __init__(self, name: str, root: Path = ROOT, *, venv: bool = True) -> None:
-        self.path = SCRATCH / name
+        # Unique per process. The path was `SCRATCH / target.leaf`, so two runs of the same
+        # target shared one directory -- and `_repair_one` deletes its sandbox on exit, so
+        # whichever finished first destroyed the other's tree mid-repair. It surfaced as
+        # `FileNotFoundError` writing a candidate into a directory that had been removed,
+        # in a pilot arm that had already spent five minutes on the attempt.
+        #
+        # An experiment runs the same target under six arms; running any two at once is the
+        # obvious thing to do and would have collided every time.
+        self.path = SCRATCH / f"{name}-{os.getpid()}"
         self.root = root
         self.venv = venv
         self.python = self.path / ".venv" / "bin" / "python"

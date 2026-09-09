@@ -108,3 +108,26 @@ def test_each_beds_toolchain_is_actually_installed_here(harness, bed_name) -> No
     tools = {command[0] for _label, *command in harness.BEDS[bed_name].verify}
     missing = {tool for tool in tools if shutil.which(tool) is None}
     assert not missing, f"{bed_name} needs {sorted(missing)} on PATH"
+
+
+def test_two_runs_of_one_target_do_not_share_a_sandbox(harness) -> None:
+    """They did, and each deletes its sandbox on exit, so one destroyed the other's tree.
+
+    The path was `SCRATCH / target.leaf`. A second run of the same target -- which is the
+    *normal* case for an experiment, where six arms repair the same function -- landed in
+    the same directory, and `_repair_one` cleans up however it exits. It surfaced as a
+    `FileNotFoundError` writing a candidate into a directory that had just been removed, in
+    a pilot arm five minutes into its attempt.
+
+    Keyed by process now. Two sandboxes for one target must not be the same place.
+    """
+    import os
+
+    mine = harness.Sandbox("walk")
+    assert str(os.getpid()) in mine.path.name, "the name must distinguish this process"
+    assert mine.path.name.startswith("walk"), "and still say which target it is"
+
+
+def test_a_sandbox_still_lands_under_the_scratch_root(harness) -> None:
+    """Uniqueness must not push it somewhere a cleanup would miss."""
+    assert harness.Sandbox("walk").path.parent == harness.SCRATCH
