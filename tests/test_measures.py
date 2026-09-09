@@ -120,3 +120,35 @@ def test_the_real_log_still_parses(harness) -> None:
     found = harness.measures(rows)
     assert found and all(r.targets > 0 for r in found)
     assert json.dumps([r.as_dict() for r in found])
+
+
+def test_an_attempt_carrying_a_set_still_reaches_the_log(harness) -> None:
+    """`GauntletResult.skipped` is a set, and the log is JSON.
+
+    This failed on the *last* action of a real run: two targets, a model call and a full
+    toolchain each, all of it discarded by a `TypeError` at the write. Nothing before that
+    point could have caught it -- every test built the row by hand -- which is what running
+    the harness for real was worth.
+
+    Handled generally rather than by converting the one field, because the next set added to
+    a result would do exactly the same thing.
+    """
+    import json
+
+    attempt = harness.Attempt(
+        "walk", "m.py", 1, False, {"tests_pass": True, "skipped": {"types", "lint"}}
+    )
+    written = json.dumps({"x": attempt.gauntlet}, default=harness._jsonable)
+    assert json.loads(written)["x"]["skipped"] == ["lint", "types"], "sorted, so a diff is stable"
+
+
+def test_an_unloggable_value_is_refused_rather_than_stringified(harness) -> None:
+    """A silent `str(obj)` would put `<object at 0x...>` in a benchmark record.
+
+    The point of the log is that it can be read back and measured. A field that serialises
+    to an address is a row that looks present and answers nothing.
+    """
+    import pytest as _pytest
+
+    with _pytest.raises(TypeError):
+        harness._jsonable(object())

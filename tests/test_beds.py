@@ -14,8 +14,21 @@ failure this project keeps finding in its own metrics, so it is a hard error wit
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from tests.test_dogfood import load_harness
+
+#: The corpus beds need a checkout, and the repair harness's own sandbox deliberately omits
+#: `benchmarks/corpora` -- it is hundreds of megabytes and no repair needs it. So these must
+#: *skip* where the corpora are absent rather than fail: a sandbox running the suite would
+#: otherwise report `tests FAIL` for every candidate, whatever the model wrote, and no repair
+#: could ever be accepted. Found by running the harness, which is the only way it shows.
+CORPORA = Path(__file__).resolve().parent.parent / "benchmarks" / "corpora"
+needs_corpora = pytest.mark.skipif(
+    not (CORPORA / "go-kit").is_dir(),
+    reason="corpora not fetched; see scripts/fetch_corpora.py",
+)
 
 
 @pytest.fixture(scope="module")
@@ -32,6 +45,7 @@ def test_the_self_bed_is_runnable_and_is_this_repository(harness) -> None:
     assert found.verify, "a bed that cannot verify cannot report"
 
 
+@needs_corpora
 def test_a_fetched_bed_stops_asking_to_be_fetched(harness) -> None:
     """Both eval beds are pinned in the lock and on disk, so the refusal moves on.
 
@@ -122,6 +136,7 @@ def test_every_bed_is_pinned_and_every_eval_pin_is_a_bed(harness) -> None:
     assert eval_pins <= declared, f"eval pins nothing consumes: {sorted(eval_pins - declared)}"
 
 
+@needs_corpora
 def test_there_is_a_runnable_bed_for_every_supported_language(harness) -> None:
     """Six languages in the goal, six runnable beds, one per language plus this repository.
 
@@ -162,6 +177,7 @@ def test_the_sandbox_copies_the_bed_and_not_always_this_repository(harness, tmp_
     assert harness.Sandbox("probe").root == harness.ROOT, "the default is still this repository"
 
 
+@needs_corpora
 @pytest.mark.parametrize(
     ("bed_name", "suffix"),
     (

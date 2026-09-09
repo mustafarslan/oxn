@@ -65,13 +65,28 @@ class Attempt:
     reply_chars: int = 0
 
 
+def _jsonable(value: Any) -> Any:
+    """Anything the encoder does not know, in a form it does.
+
+    Sets, so far -- `GauntletResult.skipped` is one, and it reached the log as the last
+    action of a run that had already spent a model call and a full toolchain on every
+    attempt. The whole record was then discarded by a `TypeError`, which is the worst place
+    for this to fail and the reason it is handled generally rather than by converting that
+    one field: the next set added to a result would do the same thing again.
+    """
+    if isinstance(value, (set, frozenset)):
+        return sorted(value)
+    raise TypeError(f"cannot log a {type(value).__name__}")
+
+
 def _append_log(attempts: list[Attempt]) -> None:
     if not attempts:
         return
     LOG.parent.mkdir(parents=True, exist_ok=True)
     with LOG.open("a") as handle:
         for attempt in attempts:
-            handle.write(json.dumps({"timestamp": time.time(), **asdict(attempt)}) + "\n")
+            row = {"timestamp": time.time(), **asdict(attempt)}
+            handle.write(json.dumps(row, default=_jsonable) + "\n")
     say(f"\n{DIM}logged {len(attempts)} attempt(s) to {LOG.relative_to(ROOT)}{RESET}")
 
 
