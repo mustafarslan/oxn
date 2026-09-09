@@ -24,13 +24,11 @@ from typing import TYPE_CHECKING, Any
 
 from oxn.graph.model import (
     Edge,
-    EdgeKind,
     Entity,
     EntityKind,
     EntityMetrics,
     MetricValue,
     ParsedFile,
-    Provenance,
     Resolution,
 )
 
@@ -156,7 +154,22 @@ CREATE INDEX edges_by_file ON edges(file_path);
 
 
 class GraphStore:
-    """A code-graph cache backed by one SQLite file."""
+    """A code-graph cache backed by one SQLite file.
+
+    **Wide on purpose, and baselined rather than split.** This class sits above both class
+    ceilings, which is what those ceilings are for -- but the count is the trigger and not
+    the verdict. Measured, it is a query catalogue rather than an accumulation of
+    responsibilities: LCOM4 reads 2, and the second component is `__enter__`, a one-line
+    `return self` that touches nothing. Every other method reaches `self._conn`, directly or
+    through `_transaction`.
+
+    So there is no seam here to cut along. Partitioning by subject would produce parts that
+    all share the one connection, and a facade over them returns the same method count with
+    a layer of delegation added. `.oxn/baseline.json` holds the number instead, which is the
+    ratchet doing its job: accepted, and it may not grow. If it does grow, check LCOM4 first
+    -- a rise there is a second responsibility arriving, and *that* is worth splitting.
+    `tests/test_wide_repository.py` pins both halves of this.
+    """
 
     def __init__(self, path: Path | str = DEFAULT_CACHE_PATH) -> None:
         self.path = Path(path)
@@ -479,10 +492,6 @@ class GraphStore:
         ).fetchall()
         return [_entity_from_row(row) for row in rows]
 
-    def edges_for(self, path: str) -> list[Edge]:
-        rows = self._conn.execute("SELECT * FROM edges WHERE file_path = ?", (path,)).fetchall()
-        return [_edge_from_row(row) for row in rows]
-
     def forget(self, path: str) -> None:
         """Drop a file that no longer exists in the working tree."""
         with self._transaction() as conn:
@@ -537,19 +546,6 @@ def _entity_from_row(row: sqlite3.Row) -> Entity:
         start_line=row["start_line"],
         end_line=row["end_line"],
         parent_id=row["parent_id"],
-        attrs=json.loads(row["attrs"]),
-    )
-
-
-def _edge_from_row(row: sqlite3.Row) -> Edge:
-    return Edge(
-        src_id=row["src_id"],
-        kind=EdgeKind(row["kind"]),
-        dst_id=row["dst_id"],
-        dst_ref=row["dst_ref"],
-        provenance=Provenance(row["provenance"]),
-        resolution=Resolution(row["resolution"]),
-        confidence=row["confidence"],
         attrs=json.loads(row["attrs"]),
     )
 

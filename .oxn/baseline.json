@@ -1,11 +1,11 @@
 {
+  "note": "Accepted debt: these violations do not fail the build, but they may not get worse, and a new one anywhere fails. Regenerate with `oxn baseline`.",
   "oxn_version": "0.0.1",
   "scope": "repository",
-  "note": "Accepted debt: these violations do not fail the build, but they may not get worse, and a new one anywhere fails. Regenerate with `oxn baseline`.",
   "violations": {
-    "methods_per_class|src/oxn/graph/store.py|src.oxn.graph.store.GraphStore": 27.0,
+    "methods_per_class|src/oxn/graph/store.py|src.oxn.graph.store.GraphStore": 26.0,
     "weighted_methods_per_class|src/oxn/graph/indexer.py|src.oxn.graph.indexer.Indexer": 28.0,
-    "weighted_methods_per_class|src/oxn/graph/store.py|src.oxn.graph.store.GraphStore": 64.0,
+    "weighted_methods_per_class|src/oxn/graph/store.py|src.oxn.graph.store.GraphStore": 62.0,
     "weighted_methods_per_class|src/oxn/llm.py|src.oxn.llm.OllamaClient": 29.0
   }
 }
