@@ -37,6 +37,7 @@ def _row(**over):
         "reply_chars": 50,
         "seconds": 1.0,
         "repeat": 0,
+        "run": "20260910T120000",
     }
     return {**row, **over}
 
@@ -188,3 +189,52 @@ def test_repeats_do_not_inflate_the_target_count(harness) -> None:
     assert result.targets == 1
     assert result.repeats == 5
     assert result.attempts == 5
+
+
+def test_one_runs_numbers_do_not_leak_into_another(harness) -> None:
+    """The log accumulates, and pooling it reads exactly like a single experiment.
+
+    A bounded grid's control arm reported 50% convergence on the strength of one row from an
+    earlier *pilot* -- a run whose target selection was already known to be broken and whose
+    numbers had been declared invalid. Nothing in the table could say so, because there was
+    nothing in the row that said which run it came from.
+    """
+    rows = [
+        _row(run="20260910T090000", arm="none", target="a", accepted=True),
+        _row(run="20260910T120000", arm="none", target="b", accepted=False),
+    ]
+    (old,) = harness.measures(rows, "20260910T090000")
+    (new,) = harness.measures(rows, "20260910T120000")
+    assert old.convergence_rate == 1.0
+    assert new.convergence_rate == 0.0, "the earlier run must not lift the later one"
+    assert len(harness.measures(rows, None)) == 1, "pooling is still possible, just not default"
+
+
+def test_the_latest_run_is_the_one_reported(harness) -> None:
+    """`report` answers "the run I just did" without a separate index to consult."""
+    rows = [_row(run="20260910T090000"), _row(run="20260910T120000")]
+    assert harness.latest_run(rows) == "20260910T120000"
+
+
+def test_rows_from_before_run_ids_identify_no_run(harness) -> None:
+    """The existing log predates the field, and must not be adopted by the newest run."""
+    row = _row()
+    del row["run"]
+    assert harness.latest_run([row]) == ""
+    assert harness.measures([row], "20260910T120000") == []
+
+
+def test_every_arm_of_one_grid_shares_its_run_id(harness) -> None:
+    """The grid is the unit of comparison, so its arms must be one run and not six."""
+    grid = harness.Grid(
+        bed="self",
+        arms=("none", "hybrid"),
+        ceiling=6,
+        limit=1,
+        retries=1,
+        repeats=1,
+        backend="dry-run",
+        run_id="20260910T120000",
+    )
+    ids = {harness._session(grid, name).run_id for name in grid.arms}
+    assert ids == {"20260910T120000"}

@@ -238,6 +238,20 @@ an edit for the agent to answer. `none` is the control and gets one attempt — 
 rejection there is nothing to retry against, and extra rounds would be re-rolls of the dice
 scored as though feedback had helped.
 
+`scripts/experiment.py` runs a whole grid, which is the only way to get a table worth reading:
+
+```sh
+python scripts/experiment.py --dry-run --arms none,hybrid --repeat 3   # price it first
+python scripts/experiment.py --bed self --arms none,hybrid --repeat 3
+```
+
+It resolves the targets **once** and hands the same list to every arm. Running the harness by
+hand per arm does not, and the first pilot's table read "none 100%, hybrid 0%" for exactly
+that reason — two invocations, two different functions, one plausible-looking finding. The
+`n` column and the note under the table exist for the same kind of reason: `generate` is
+temperature 0 and not deterministic, so a rate over one sample per target cannot be told
+apart from noise and should not be read as though it can.
+
 Two models, deliberately different: **glm-5.3** writes the repair, **deepseek-v4-pro**
 assesses it. A model grading its own output is not an independent check. `--backend
 claude-code` drives `claude -p` instead, which is the arm that decides what a result means:

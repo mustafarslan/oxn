@@ -55,12 +55,14 @@ def _arm_table(rows: list[dict[str, Any]]) -> None:
     comparison, and putting one on screen invites reading a single arm's convergence rate as
     though it meant something on its own -- the control is what makes it mean anything.
     """
-    from runlog import COST_NOTE, SINGLE_SAMPLE_NOTE, measures
+    from runlog import COST_NOTE, SINGLE_SAMPLE_NOTE, latest_run, measures
 
-    found = measures(rows)
+    run = latest_run(rows)
+    found = measures(rows, run or None)
     if len(found) < 2:
         return
-    say(f"\n{BOLD}arms{RESET}")
+    scope = f"run {run}" if run else "every attempt ever logged, which is rarely the question"
+    say(f"\n{BOLD}arms{RESET} {DIM}({scope}){RESET}")
     say(f"  {'arm':16s}{'backend':12s}{'n':>3s}{'conv':>6s}{'att/t':>7s}{'ok':>4s}{'chars':>9s}")
     for result in found:
         say(

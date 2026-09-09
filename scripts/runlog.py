@@ -56,6 +56,12 @@ class Attempt:
     #: pile and no arm can be compared to any other -- which is the entire experiment.
     arm: str = ""
     backend: str = ""
+    #: Which invocation produced it. Without this the log pools every experiment ever run:
+    #: a grid's `none` arm read 50% convergence entirely on the strength of a *pilot* row
+    #: from a run whose target selection was already known to be broken, and nothing in the
+    #: table could say so. An invalidated run must stop contributing, and a table must be
+    #: attributable to one configuration.
+    run: str = ""
     #: Which repeat of this (arm, target) produced it. `generate` is temperature 0 and
     #: explicitly not deterministic -- `oxn.llm` records three materially different rewrites
     #: from one prompt -- so a convergence rate over a single sample per target is not
@@ -173,13 +179,30 @@ COST_NOTE = (
 )
 
 
-def measures(rows: list[dict[str, Any]]) -> list[ArmResult]:
-    """One row per (arm, backend), worst convergence first.
+def latest_run(rows: list[dict[str, Any]]) -> str:
+    """The most recent invocation in the log, or `""` when none is identified.
+
+    What `report` shows by default. Pooling every run ever made is almost never the question
+    -- runs differ in bed, in depth, and in whether they were any good -- and the pooled
+    answer looks exactly like a single experiment's.
+    """
+    identified = [str(row["run"]) for row in rows if row.get("run")]
+    return max(identified) if identified else ""
+
+
+def measures(rows: list[dict[str, Any]], run: str | None = None) -> list[ArmResult]:
+    """One row per (arm, backend) within one run, worst convergence first.
+
+    `run` selects the invocation; `None` pools everything, which is what the log did
+    unconditionally until a grid's control arm inherited a pilot's accepted repair and
+    reported 50% convergence on the strength of a run already known to be invalid.
 
     Attempts logged before the arms existed carry no arm, and are grouped under `""` rather
     than folded into a named one. Silently attributing them to `hybrid` -- which is what the
     harness did then -- would put real numbers from a different experiment into its row.
     """
+    if run is not None:
+        rows = [row for row in rows if str(row.get("run", "")) == run]
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for row in rows:
         grouped.setdefault((row.get("arm", ""), row.get("backend", "")), []).append(row)

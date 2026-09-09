@@ -113,6 +113,9 @@ class Session:
     #: How many times to attempt each target. One sample of a stochastic process is an
     #: anecdote; the arm table prints this so a reader can tell which they have.
     repeats: int = 1
+    #: Which invocation this is. Shared by every arm of one grid, so a table can be scoped
+    #: to the experiment that produced it rather than to everything ever logged.
+    run_id: str = ""
 
     @property
     def is_fake(self) -> bool:
@@ -220,6 +223,7 @@ def _repair_one(
             backend="dry-run" if session.is_fake else session.backend,
             checks=where.verify,
             repeat=sample,
+            run_id=session.run_id,
         )
         feedback = ""
         for index in range(1, _attempts_for(session) + 1):
@@ -261,6 +265,8 @@ class Run:
     checks: tuple[tuple[str, ...], ...] = ()
     #: Which sample of this (arm, target) this run is. See `runlog.Attempt.repeat`.
     repeat: int = 0
+    #: The invocation every arm of one grid shares. See `runlog.Attempt.run`.
+    run_id: str = ""
 
 
 def _one_attempt(run: Run, index: int, feedback: str) -> Attempt | None:
@@ -326,6 +332,7 @@ def _one_attempt(run: Run, index: int, feedback: str) -> Attempt | None:
         next_feedback=_feedback(gauntlet),
         arm=run.arm.name,
         backend=run.backend,
+        run=run.run_id,
         repeat=run.repeat,
         prompt_chars=len(prompt),
         reply_chars=len(reply),
@@ -358,6 +365,7 @@ def _failed(attempt: _Try, *, error: str, next_feedback: str, **extra: str) -> A
         next_feedback=next_feedback,
         arm=attempt.run.arm.name,
         backend=attempt.run.backend,
+        run=attempt.run.run_id,
         repeat=attempt.run.repeat,
         **extra,
     )
@@ -417,6 +425,15 @@ def _write_diff(target: Target, original: str, candidate: str) -> None:
 
 
 # ---- reporting ------------------------------------------------------------------------------
+
+
+def new_run_id() -> str:
+    """An identifier for one invocation, sortable so `latest` means what it says.
+
+    A timestamp rather than a random token, because the useful default is "the run I just
+    did" and comparing ids has to answer that without a separate index.
+    """
+    return time.strftime("%Y%m%dT%H%M%S", time.gmtime())
 
 
 def _attempts_for(session: Session) -> int:
@@ -524,6 +541,7 @@ def main(argv: list[str] | None = None) -> int:
             backend=args.backend,
             arm=args.arm,
             repeats=args.repeat,
+            run_id=new_run_id(),
             model=args.model,
             judge_model=args.judge_model,
             host=args.host,

@@ -46,6 +46,7 @@ def grid(harness):
             "retries": 3,
             "repeats": 1,
             "backend": "dry-run",
+            "run_id": "20260910T120000",
         }
         return harness.Grid(**{**fields, **over})
 
@@ -87,7 +88,7 @@ def test_only_the_arm_differs_between_configurations(harness, grid) -> None:
     sessions = [harness._session(plan, name) for name in plan.arms]
     varying = {
         field
-        for field in ("ceiling", "retries", "backend", "repeats")
+        for field in ("ceiling", "retries", "backend", "repeats", "run_id")
         if len({getattr(session, field) for session in sessions}) > 1
     }
     assert not varying, f"these differ between arms and must not: {sorted(varying)}"

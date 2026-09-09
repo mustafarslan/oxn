@@ -23,7 +23,7 @@ from dataclasses import dataclass
 
 from arms import arm_names
 from beds import bed
-from dogfood import Session, repair
+from dogfood import Session, new_run_id, repair
 from targets import select_targets
 
 BOLD, DIM, RESET = "\033[1m", "\033[2m", "\033[0m"
@@ -44,6 +44,9 @@ class Grid:
     retries: int
     repeats: int
     backend: str
+    #: One identifier for the whole grid. Every arm shares it, which is what lets a table be
+    #: scoped to *this* experiment rather than to every attempt ever logged.
+    run_id: str
 
     @property
     def runs(self) -> int:
@@ -65,6 +68,7 @@ def run(grid: Grid) -> int:
         return 0
 
     say(f"{BOLD}{grid.bed}{RESET}: {len(targets)} target(s) x {len(grid.arms)} arm(s)")
+    say(f"  {DIM}run {grid.run_id}{RESET}")
     for target in targets:
         say(f"  {DIM}{target.score:.0f}  {target.qualified_name}{RESET}")
 
@@ -82,6 +86,7 @@ def _session(grid: Grid, name: str) -> Session:
         backend=grid.backend,
         arm=name,
         repeats=grid.repeats,
+        run_id=grid.run_id,
     )
 
 
@@ -111,6 +116,7 @@ def main(argv: list[str] | None = None) -> int:
         retries=args.retries,
         repeats=args.repeat,
         backend=args.backend,
+        run_id=new_run_id(),
     )
     if args.dry_run:
         say(f"{grid.runs} configuration(s): {', '.join(grid.arms)} on {grid.bed}")
