@@ -1367,6 +1367,39 @@ The third mitigation above (gate on the risk profile) is untouched by this and r
 instrument at module scope; the second (helper proliferation by call-site count) is **not** a
 discriminator — the cohesive extraction's three helpers each have exactly one caller too.
 
+#### Measured 2026-09-09: the risk profile fails the same control, harder
+
+The sentence immediately above is wrong, and the same control falsifies it. The third mitigation
+claims *"shredding moves LOC between buckets rather than eliminating it"*. Shredding eliminates it:
+splitting a function is precisely the operation that moves every one of its lines into a lower
+bucket, because the per-entity value falls when the entity gets smaller. The three variants, LOC
+bucketed at Python's benchmark boundaries (`scripts/measure_ceilings.py`; cognitive 1/4/9,
+cyclomatic 2/5/8), as **% of LOC in high + very-high**:
+
+| variant | cognitive | cyclomatic | cyclomatic mass |
+|---|---|---|---|
+| original — one function, 35 | **100.0%** | **100.0%** | 17 |
+| cohesive extraction — 3 helpers scoring 4, 9, 11 | 60.3% | 60.3% | 20 |
+| hand-built shred — 16 helpers, median 1 | **0.0%** | **0.0%** | **33** |
+
+A risk-profile gate would reject the good refactoring and award the shred a *perfect* score. That
+is the 2026-08-30 inversion again, with a wider margin.
+
+**Cyclomatic complexity does not rescue it, and the reason is worth recording.** Cognitive
+complexity loses its nesting increments under extraction, which is why *mass* fell monotonically
+in the table above. Cyclomatic has no nesting term, so its mass is conserved — and grows, one `+1`
+base per new function, 20 → 33 here. That is why a cyclomatic profile looked like the fix. It is
+not: mass rises while the distribution collapses, so under shredding the two signals point in
+opposite directions at once. No per-function metric survives, because the failure is in the
+aggregation, not the metric.
+
+**What the risk profile is for, then.** Section 10.2's aggregation is still right for the *health
+rating*, where being a distribution is the whole point, and it still decomposes so a number traces
+back to named entities (§10.1). The gate shape it supports is the **ratchet** of §10.3 Mode B —
+this module's high-risk share may not rise — not an absolute ceiling, and not an anti-gaming
+instrument. Shredding detection stays where 2026-08-30 left it: the `shredding` rule, plus cohesion
+and the judge. `tests/test_risk_profile.py` holds this result so it cannot be quietly re-adopted.
+
 ---
 
 ## 11. Open decisions
