@@ -753,3 +753,37 @@ sites against Python's 65.5% and Java's 88.0%, and the test now guards that inst
 re-exporting crate's root instead. Following it needs that crate's root parsed for `pub use`,
 which is the `mod`-walking declined above. It leaves a correct edge to the wrong file rather
 than a missing one, and on ripgrep it costs nothing measurable — the residue is 0.
+
+## Amendment, 2026-09-09 (third) — Java resolves, and the gate is on for all five
+
+A Java import specifier is `package.Type`, and `extract_imports` has already dropped the
+member from a static import — `import static java.lang.Math.max` arrives as `java.lang.Math`
+— so resolution is one table lookup plus a filter. A wildcard names the package and reaches
+every type in it, the same reading `_resolve_go` gives `import "pkg"`: the language couples
+the importer to the package, not to a member it never named.
+
+**On petclinic: 0 in-tree edges → 24, reported-missing 24 → 0.** With Go and Rust, the layer
+gate is now on for every launch language.
+
+**One collision found before it could bite.** `java_packages` mapped a package to a single
+directory, and `src/main/java` and `src/test/java` are separate source roots holding *the
+same packages* — 5 of petclinic's 6 are in both. A `dict[str, str]` keeps whichever was
+walked last. That cost nothing while the table only answered "is this import ours", and would
+have put half of every resolved import in the wrong source root. It is keyed on the package
+and holds the files from both roots now, which also made resolution a lookup rather than a
+scan of every known path.
+
+**Java's accuracy numbers do not move, and the reason is worth stating rather than hiding.**
+An import graph in Java sees only what crosses a package boundary: a class using its
+neighbour writes no import at all. Fifty files yield twenty-four edges, and petclinic's calls
+are receiver-dispatched or same-package, so `resolve_call` has nothing new to work with. The
+gain here is the *graph* — contracts, cycles, Martin's metrics where there were none — and
+not the resolver. **A coupling metric read off Java import edges is a lower bound**, and
+`docs/metrics.md` section 2.2's exactness stamp is where that belongs.
+
+**The `shredding` rule fired on this change, correctly.** `_resolve_java` came in over the
+complexity ceiling and the first response was to split it into two helpers only it called —
+which is precisely what that rule exists to catch, and it caught it at 15 against a ceiling
+of 12. The complexity was then removed rather than relocated: keying the package table on
+files instead of directories deleted a scan of every known path and both of its conditions.
+The gate refusing OXN's own shortcut is the strongest evidence yet that the rule works.

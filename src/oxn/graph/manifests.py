@@ -290,30 +290,32 @@ def go_module(root: Path) -> str | None:
     return None
 
 
-def java_packages(known: set[str]) -> dict[str, str]:
-    """Java package -> directory, derived from the layout rather than from `package` lines.
+def java_packages(known: set[str]) -> dict[str, tuple[str, ...]]:
+    """Java package -> **every file in it**, derived from the source layout.
 
-    Maven and Gradle both put `org.example.Thing` at `<root>/org/example/Thing.java` under a
-    source root, so the package is the directory path with `/` swapped for `.`. Reading the
-    `package` declaration out of every file would be exact and costs a parse of the whole
-    tree on a path budgeted in milliseconds; where the two disagree the file is in the wrong
-    place and will not compile.
+    Maven and Gradle both put `org.example.Thing` at `<source root>/org/example/Thing.java`,
+    so the package is the directory path with `/` swapped for `.`. Reading the `package`
+    declaration out of every file would be exact and costs a parse of the whole tree on a
+    path budgeted in milliseconds; where the two disagree the file is in the wrong place and
+    will not compile.
 
-    **Resolution is not wired on this, only visibility.** The table says which imports are
-    ours; turning one into an edge additionally needs source-root discovery across Maven
-    layouts and Gradle source sets, which has no pinned measurement yet.
+    **Files rather than directories**, which is what makes resolution a lookup instead of a
+    scan: `import pkg.*` is the value as it stands, and `import pkg.Type` is one filter over
+    it. Keyed on the package alone and holding files from *both* source roots, because
+    `src/main/java` and `src/test/java` hold the same packages -- 5 of petclinic's 6 are in
+    both -- and a mapping that kept one directory would have put half of every resolved
+    import in the wrong root.
     """
-    packages: dict[str, str] = {}
+    packages: dict[str, set[str]] = {}
     for path in known:
         if not path.endswith(".java"):
             continue
-        directory = str(PurePosixPath(path).parent)
-        segments = directory.split("/")
+        segments = str(PurePosixPath(path).parent).split("/")
         for index, segment in enumerate(segments):
             if segment == "java" and index + 1 < len(segments):
-                packages[".".join(segments[index + 1 :])] = directory
+                packages.setdefault(".".join(segments[index + 1 :]), set()).add(path)
                 break
-    return packages
+    return {package: tuple(sorted(found)) for package, found in packages.items()}
 
 
 # ---- Rust -------------------------------------------------------------------------------

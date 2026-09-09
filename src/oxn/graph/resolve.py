@@ -74,8 +74,9 @@ class ResolutionContext:
     #: This repository's own Go module path, from `go.mod`. Every import beginning with it
     #: names a directory in this tree rather than something in the module cache.
     go_module: str | None = None
-    #: Java package -> the directory that holds it, derived from the source layout.
-    java_packages: dict[str, str] = field(default_factory=dict)
+    #: Java package -> every directory holding it. Plural because `src/main/java` and
+    #: `src/test/java` hold the same packages.
+    java_packages: dict[str, tuple[str, ...]] = field(default_factory=dict)
     #: Crate name as an import spells it -> its directory, for a Cargo workspace.
     cargo_crates: dict[str, str] = field(default_factory=dict)
     #: Crate directory -> the file holding its root module, which `crate::` is relative to.
@@ -162,6 +163,8 @@ def resolve_import(
         targets = _resolve_go(raw, context)
     elif language == "rust":
         targets = resolve_rust(source_path, raw, context)
+    elif language == "java":
+        targets = _resolve_java(raw, context)
     else:
         single = _resolve_ecmascript(source_path, raw, context)
         targets = (single,) if single is not None else ()
@@ -427,3 +430,32 @@ def _go_package_files(known: set[str], directory: str) -> Iterator[str]:
 
 
 # ---- Java -------------------------------------------------------------------------------
+
+
+def _resolve_java(raw: RawImport, context: ResolutionContext) -> tuple[str, ...]:
+    """The files a Java import reaches.
+
+    A wildcard names the package and reaches every type in it -- the same reading
+    `_resolve_go` gives `import "pkg"`, because the language couples the importer to the
+    package rather than to a member it never named.
+
+    Otherwise the specifier is `package.Type`. `extract_imports` has already dropped the
+    member from a static import, so `import static java.lang.Math.max` arrives as
+    `java.lang.Math` and needs no special case. The second pass is for a nested type:
+    `org.x.Outer.Inner` lives in `Outer.java`, whose package is `org.x`.
+
+    Plural because `src/main/java` and `src/test/java` hold the same packages, so a type
+    present in both is reached by both.
+    """
+    if raw.kind == "wildcard":
+        return context.java_packages.get(raw.specifier, ())
+    segments = raw.specifier.split(".")
+    for depth in (1, 2):
+        if len(segments) <= depth:
+            break
+        wanted = f"{segments[-depth]}.java"
+        package = context.java_packages.get(".".join(segments[:-depth]), ())
+        found = tuple(path for path in package if path.rsplit("/", 1)[-1] == wanted)
+        if found:
+            return found
+    return ()
