@@ -98,23 +98,51 @@ def test_every_declared_bed_says_why_it_is_a_bed(harness) -> None:
         assert found.why, f"{name} has no rationale"
 
 
-def test_the_manifest_pins_every_bed_that_needs_fetching(harness) -> None:
-    """The declared beds and the pinned corpora must be the same set, or one of them lies.
+def test_every_bed_is_pinned_and_every_eval_pin_is_a_bed(harness) -> None:
+    """Two directions, and each catches a different lie.
 
-    A bed the manifest does not pin can never be fetched; a `use: eval` pin no bed names is
-    a download nothing consumes -- which is what these two were until now.
+    A bed the manifest does not pin can never be fetched. And a `use: eval` pin that no bed
+    names is a download nothing consumes -- which is exactly what SlopCodeBench and Conduit
+    were until they became beds.
+
+    The five OSS beds are pinned `use: threshold`, because they are the same repositories
+    the ceilings were calibrated against. That is a feature: P11 asks for "real layered OSS
+    repos" as a bed, and these are already chosen, already argued for, and already on disk.
     """
     import re
     from pathlib import Path
 
     manifest = (Path(harness.ROOT) / "benchmarks" / "manifest.yaml").read_text()
-    pinned = {
-        name
-        for name, block in re.findall(r"- name: (\S+)\n(.*?)(?=\n  - name:|\Z)", manifest, re.S)
-        if "use: eval" in block
-    }
+    blocks = dict(re.findall(r"- name: (\S+)\n(.*?)(?=\n  - name:|\Z)", manifest, re.S))
     declared = {name for name, found in harness.BEDS.items() if found.corpus}
-    assert declared == pinned, f"declared {sorted(declared)} vs pinned {sorted(pinned)}"
+
+    assert declared <= set(blocks), f"unpinned beds: {sorted(declared - set(blocks))}"
+    eval_pins = {name for name, block in blocks.items() if "use: eval" in block}
+    assert eval_pins <= declared, f"eval pins nothing consumes: {sorted(eval_pins - declared)}"
+
+
+def test_there_is_a_runnable_bed_for_every_supported_language(harness) -> None:
+    """Six languages in the goal, six runnable beds, one per language plus this repository.
+
+    A result measured only on Python would say nothing about the five languages whose
+    metrics were fixed today, and the beds are what stop that.
+    """
+    runnable = {name for name, found in harness.BEDS.items() if found.runnable}
+    assert {"self", "go-kit", "rust-ripgrep", "python-httpx", "typescript-nest"} <= runnable
+    assert "java-spring-petclinic" in runnable
+
+
+def test_a_bed_declares_its_own_toolchain_and_not_this_projects(harness) -> None:
+    """`go vet` is not `ruff`, and a Go module has no type checker to run.
+
+    The gauntlet ran this project's three commands against whatever it was given. That was
+    invisible with one bed and would have graded a Rust repair with Python's linter.
+    """
+    go = harness.BEDS["go-kit"]
+    assert ("tests", "go", "test", "./...") in go.verify
+    assert not any("ruff" in command for _label, *command in go.verify)
+    assert not go.venv, "a Go module needs no virtualenv"
+    assert "types" not in {label for label, *_ in go.verify}, "and no type checker"
 
 
 def test_the_sandbox_copies_the_bed_and_not_always_this_repository(harness, tmp_path) -> None:
@@ -131,3 +159,32 @@ def test_the_sandbox_copies_the_bed_and_not_always_this_repository(harness, tmp_
     box = harness.Sandbox("probe", root=elsewhere)
     assert box.root == elsewhere
     assert harness.Sandbox("probe").root == harness.ROOT, "the default is still this repository"
+
+
+@pytest.mark.parametrize(
+    ("bed_name", "suffix"),
+    (
+        ("go-kit", ".go"),
+        ("rust-ripgrep", ".rs"),
+        ("typescript-nest", ".ts"),
+        ("java-spring-petclinic", ".java"),
+        ("python-httpx", ".py"),
+    ),
+)
+def test_a_bed_finds_its_own_files_and_not_this_repositorys(harness, bed_name, suffix) -> None:
+    """Targets and their explanation must both come from the bed. Neither did.
+
+    `select_targets` found go-kit's files correctly and `_trail_for` then read
+    `ROOT / target.path`, so explaining a Go target tried to open a Go file inside this
+    repository and raised. `plan` took no bed at all and listed OXN's own functions under
+    `--bed go-kit` -- a wrong answer rather than a crash, which is the worse of the two.
+
+    Both were found by running the command, not by reading it. This runs it.
+    """
+    found = harness.bed(bed_name)
+    picked = harness.select_targets(ceiling=3, limit=2, skip=set(), where=found)
+    assert picked, f"{bed_name}: nothing over the ceiling, so this proves nothing"
+    for target in picked:
+        assert target.path.endswith(suffix), f"{bed_name} returned {target.path}"
+        assert (found.root / target.path).is_file(), "the path must exist inside the bed"
+        assert target.trail, "an explanation read from the wrong root would have raised"

@@ -39,11 +39,8 @@ the defaults. The loop needs *an* actor and *a* judge; which ones is the operato
 from __future__ import annotations
 
 import argparse
-import json
-import subprocess
-import sys
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +62,7 @@ from gauntlet import (
 )
 from runlog import Attempt, _append_log
 from summary import summarise
+from targets import Target, function_span, plan, select_targets
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "benchmarks" / "dogfood-log.jsonl"
@@ -91,105 +89,6 @@ DIM, GREEN, RED, YELLOW, BOLD, RESET = (
 
 
 # ---- targets ------------------------------------------------------------------------------
-
-
-@dataclass
-class Target:
-    """A function over the ceiling."""
-
-    qualified_name: str
-    path: str
-    score: float
-    trail: list[str] = field(default_factory=list)
-
-    @property
-    def leaf(self) -> str:
-        return self.qualified_name.rsplit(".", 1)[-1]
-
-
-def select_targets(ceiling: int, limit: int, skip: set[str], where: Bed = SELF) -> list[Target]:
-    """Functions whose cognitive complexity exceeds the ceiling, worst first.
-
-    `where` used to be `src/oxn`, written into this function. A result measured only on the
-    repository the tool was written for is a statement about that repository, which is why
-    P11 names three beds and why this now takes one.
-    """
-    result = subprocess.run(
-        [sys.executable, "-m", "oxn", "metrics", "--json", "--limit", "60", *where.sources],
-        cwd=where.root,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    payload = json.loads(result.stdout)
-    targets: list[Target] = []
-    for row in payload.get("entities", []):
-        if row["value"] <= ceiling or row["qualified_name"] in skip:
-            continue
-        targets.append(
-            Target(qualified_name=row["qualified_name"], path=row["path"], score=row["value"])
-        )
-        if len(targets) >= limit:
-            break
-
-    for target in targets:
-        target.trail = _trail_for(target)
-    return targets
-
-
-def _trail_for(target: Target) -> list[str]:
-    """The increment trail: the explanation an agent is supposed to act on."""
-    from oxn.languages import get_parser
-    from oxn.metrics import cognitive_complexity
-    from oxn.profiles import profile_for_path
-
-    profile = profile_for_path(target.path)
-    if profile is None:
-        return []
-    source = (ROOT / target.path).read_bytes()
-    tree = get_parser(profile.name).parse(source)
-    for node, name in _iter_functions(tree.root_node, profile):
-        if name == target.leaf:
-            return cognitive_complexity(node, profile, function_name=name).explain()
-    return []
-
-
-def _iter_functions(root: Any, profile: Any) -> list[tuple[Any, str]]:
-    found: list[tuple[Any, str]] = []
-    stack = [root]
-    while stack:
-        node = stack.pop()
-        stack.extend(node.named_children)
-        definition = profile.unwrap(node)
-        if definition.type in profile.function_like:
-            name = profile.entity_name(definition)
-            if name:
-                found.append((definition, name))
-    return found
-
-
-def function_span(path: Path, leaf: str, profile: Any) -> tuple[int, int] | None:
-    """Byte range of a function *including* its decorators, for mechanical replacement.
-
-    Splicing by byte range rather than applying a model-produced diff: LLM diffs mis-apply,
-    and the graph builder already records the exact span.
-    """
-    from oxn.graph.builder import build_file
-    from oxn.languages import get_parser
-
-    source = path.read_bytes()
-    tree = get_parser(profile.name).parse(source)
-    parsed = build_file(path.name, source, profile, tree.root_node)
-    for entity in parsed.entities:
-        if entity.name == leaf and entity.kind.value in {"function", "method"}:
-            return entity.start_byte, entity.end_byte
-    return None
-
-
-# ---- sandbox ------------------------------------------------------------------------------
-
-
-# ---- the loop -----------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -271,7 +170,7 @@ def _repair_one(
         return []
 
     before = measure(None, target)
-    sandbox = Sandbox(target.leaf, root=where.root)
+    sandbox = Sandbox(target.leaf, root=where.root, venv=where.venv)
     attempts: list[Attempt] = []
     try:
         say(f"{DIM}  creating sandbox...{RESET}")
@@ -287,6 +186,7 @@ def _repair_one(
             allow_extraction=session.allow_extraction,
             arm=arm(session.arm),
             backend="dry-run" if session.dry_run else session.backend,
+            checks=where.verify,
         )
         feedback = ""
         for index in range(1, _attempts_for(session) + 1):
@@ -323,6 +223,9 @@ class Run:
     arm: Arm
     #: What answered. Recorded per attempt so a log can be split by actor as well as by arm.
     backend: str
+    #: The bed's own checks. Carried rather than looked up, so the loop cannot verify one
+    #: bed's repair with another's toolchain.
+    checks: tuple[tuple[str, ...], ...] = ()
 
 
 def _one_attempt(run: Run, index: int, feedback: str) -> Attempt | None:
@@ -364,7 +267,7 @@ def _one_attempt(run: Run, index: int, feedback: str) -> Attempt | None:
         )
 
     path.write_bytes(original_file[: span[0]] + candidate.encode() + original_file[span[1] :])
-    gauntlet = run_gauntlet(run.sandbox, run.target, run.before, run.ceiling)
+    gauntlet = run_gauntlet(run.sandbox, run.target, run.before, run.ceiling, run.checks)
     verdict = _judge_if_it_earned_one(run, gauntlet, original, candidate)
     accepted = gauntlet.passed and verdict.get("verdict") == "accept"
     _report_attempt(index, gauntlet, verdict, accepted)
@@ -503,13 +406,6 @@ def _arm_names() -> tuple[str, ...]:
     return arm_names()
 
 
-def plan(ceiling: int, limit: int) -> None:
-    for target in select_targets(ceiling, limit, skip=set()):
-        say(f"  {target.score:5.0f}  {target.leaf:32} {DIM}{target.path}{RESET}")
-        for line in target.trail[:3]:
-            say(f"{DIM}          {line}{RESET}")
-
-
 def _parser() -> argparse.ArgumentParser:
     """The command line, which is the experiment's dial panel.
 
@@ -564,7 +460,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
 
     if args.command == "plan":
-        plan(args.ceiling, args.limit)
+        plan(args.ceiling, args.limit, bed(args.bed))
         return 0
     if args.command == "report":
         summarise()

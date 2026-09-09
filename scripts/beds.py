@@ -48,15 +48,21 @@ class Bed:
     corpus: str
     #: What `oxn metrics` measures inside the bed. A repository is not all source.
     sources: tuple[str, ...]
-    #: Commands that must still pass after a repair. Empty means the bed cannot be run --
-    #: see the module docstring; a bed that cannot verify cannot report.
+    #: What to run before verifying: install dependencies, build, whatever the bed needs.
+    #: Empty is fine -- a Go module needs nothing, and this repository's own step is the one
+    #: exception complicated enough to stay in `Sandbox`.
+    prepare: tuple[tuple[str, ...], ...] = ()
+    #: Commands that must still pass after a repair, each `(label, *argv)`. Empty means the
+    #: bed cannot be run: a bed that cannot verify cannot report.
     #:
-    #: `scripts/gauntlet.py` does **not** read this yet: it builds a `uv` venv, installs
-    #: `-e .[dev]`, and runs this project's own pytest, ruff and mypy. Those happen to be
-    #: `self`'s commands, so the two agree today by coincidence rather than by wiring.
-    #: Filling this in for a second bed is therefore half the job -- the gauntlet has to
-    #: learn the bed's toolchain too -- and that is the honest content of `blocked_on`.
+    #: The label is what the failure is filed under -- `tests`, `lint`, `types` -- because
+    #: the gauntlet reports those three separately and the actor is told which one it broke.
+    #: A bed with no type checker simply has no `types` entry, rather than a fake pass.
     verify: tuple[tuple[str, ...], ...] = ()
+    #: True for the one bed whose sandbox needs a `uv` venv and an editable install. Kept as
+    #: a flag rather than a `prepare` entry because it also decides *how* commands run --
+    #: through the sandbox's own interpreter rather than the ambient one.
+    venv: bool = False
     why: str = ""
     #: Populated for a declared bed that has no verification yet, and printed when refused.
     blocked_on: str = field(default="")
@@ -80,12 +86,68 @@ SELF = Bed(
     name="self",
     corpus="",
     sources=("src/oxn",),
-    verify=(("pytest", "-q"), ("ruff", "check"), ("mypy", "src")),
+    verify=(
+        ("tests", "-m", "pytest", "-m", "not oracle and not llm", "-q", "-x"),
+        ("lint", "-m", "ruff", "check", "."),
+        ("lint", "-m", "ruff", "format", "--check", "."),
+        ("types", "-m", "mypy"),
+    ),
+    venv=True,
     why="OXN's own source. Honest about the tool, and a statement about one repository.",
 )
 
+#: P11's third bed category -- "real layered OSS repos" -- and they are already pinned as
+#: `use: threshold` and already on disk, because the ceilings were calibrated against them.
+#: One per supported language, each chosen for a layered or explicitly modular architecture,
+#: which is what makes a layer-conformance result mean anything.
+#:
+#: **Their `verify` is their own toolchain, not this project's.** A Go module runs `go test`,
+#: a Rust crate `cargo test`, and neither has any use for ruff. Where a toolchain may be
+#: absent from the machine the gauntlet reports that as a skipped check rather than a pass --
+#: a repair verified by commands that never ran is the failure this whole mechanism exists
+#: to prevent.
+_OSS: dict[str, Bed] = {
+    "go-kit": Bed(
+        name="go-kit",
+        corpus="go-kit",
+        sources=(".",),
+        verify=(("tests", "go", "test", "./..."), ("lint", "go", "vet", "./...")),
+        why="Go, explicitly modular: one package per concern, and the ceilings' Go corpus.",
+    ),
+    "rust-ripgrep": Bed(
+        name="rust-ripgrep",
+        corpus="rust-ripgrep",
+        sources=(".",),
+        verify=(("tests", "cargo", "test"), ("lint", "cargo", "clippy", "--", "-D", "warnings")),
+        why="Rust, a workspace of crates with real boundaries between them.",
+    ),
+    "python-httpx": Bed(
+        name="python-httpx",
+        corpus="python-httpx",
+        sources=("httpx",),
+        verify=(("tests", "-m", "pytest", "-q", "-x"),),
+        venv=True,
+        why="Python, and the corpus every Python ceiling was measured against.",
+    ),
+    "typescript-nest": Bed(
+        name="typescript-nest",
+        corpus="typescript-nest",
+        sources=("packages",),
+        verify=(("tests", "npm", "test"), ("lint", "npm", "run", "lint")),
+        why="TypeScript, and a framework whose whole subject is layering.",
+    ),
+    "java-spring-petclinic": Bed(
+        name="java-spring-petclinic",
+        corpus="java-spring-petclinic",
+        sources=("src/main/java",),
+        verify=(("tests", "./mvnw", "-q", "test"),),
+        why="Java, layered controller/service/repository -- the contract OXN checks by name.",
+    ),
+}
+
 BEDS: dict[str, Bed] = {
     "self": SELF,
+    **_OSS,
     "slop-code-bench": Bed(
         name="slop-code-bench",
         corpus="slop-code-bench",

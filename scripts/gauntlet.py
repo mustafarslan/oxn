@@ -73,9 +73,10 @@ class Sandbox:
     "it can only fail to fire" is not a property worth relying on in a measurement.
     """
 
-    def __init__(self, name: str, root: Path = ROOT) -> None:
+    def __init__(self, name: str, root: Path = ROOT, *, venv: bool = True) -> None:
         self.path = SCRATCH / name
         self.root = root
+        self.venv = venv
         self.python = self.path / ".venv" / "bin" / "python"
 
     def create(self) -> None:
@@ -83,6 +84,8 @@ class Sandbox:
             shutil.rmtree(self.path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(self.root, self.path, ignore=_skip)
+        if not self.venv:
+            return
         subprocess.run(["uv", "venv", "-q", str(self.path / ".venv")], check=True)
         subprocess.run(
             ["uv", "pip", "install", "--python", str(self.python), "-q", "-e", f"{self.path}[dev]"],
@@ -90,8 +93,16 @@ class Sandbox:
         )
 
     def run(self, *args: str, timeout: int = 600) -> subprocess.CompletedProcess[str]:
+        """One command in the sandbox.
+
+        A leading `-m` means the bed's own interpreter, which is what a Python bed's checks
+        are written against. Anything else runs as itself -- `go test`, `cargo clippy`,
+        `npm test` -- because a Go module has no interpreter to route through and a harness
+        that assumed one could only ever have had a single bed.
+        """
+        argv = [str(self.python), *args] if args and args[0] == "-m" else list(args)
         return subprocess.run(
-            [str(self.python), *args],
+            argv,
             cwd=self.path,
             capture_output=True,
             text=True,
@@ -149,6 +160,11 @@ class GauntletResult:
     tests_pass: bool = False
     lint_pass: bool = False
     types_pass: bool = False
+    #: Checks the bed does not declare. A Go module has no type checker to run, and a bed
+    #: with no `types` entry must read as *not applicable* rather than as a failure -- while
+    #: a declared check whose tool is missing stays a failure, because then the repair really
+    #: was not verified. `skipped` is what keeps those two apart.
+    skipped: set[str] = field(default_factory=set)
     #: Does `oxn check` -- the gate this project actually ships -- accept the repaired file?
     #: Defaults True so the many constructed results in tests stay about what they are about.
     gate_pass: bool = True
@@ -167,6 +183,18 @@ class GauntletResult:
     target_present: bool = True
     #: The ceiling the repair had to meet. Getting closer is not the same as arriving.
     ceiling: float = 0.0
+
+    @property
+    def toolchain_pass(self) -> bool:
+        """Every check the bed declared, and none it did not.
+
+        Three fields because the actor is told which one it broke; one question because a
+        repair either survived the bed's toolchain or it did not.
+        """
+        return all(
+            getattr(self, attribute) or label in self.skipped
+            for label, attribute in _FIELDS.items()
+        )
 
     @property
     def improved(self) -> bool:
@@ -224,11 +252,14 @@ class GauntletResult:
         cohesion -- twelve helpers of three points each would clear every test here -- and
         cohesion is the judge's job. That makes judge/gauntlet agreement in `report` the
         calibration signal for this whole design rather than a decoration.
+
+        A check the bed does not declare cannot fail it. `skipped` carries those, so a Go
+        module with no type checker is not held to a `types_pass` nobody could satisfy --
+        while a declared check whose tool is missing stays a failure, since the repair
+        genuinely was not verified.
         """
         return (
-            self.tests_pass
-            and self.lint_pass
-            and self.types_pass
+            self.toolchain_pass
             and self.gate_pass
             and self.target_present
             and self.improved
@@ -238,7 +269,11 @@ class GauntletResult:
 
 
 def run_gauntlet(
-    sandbox: Sandbox, target: Target, before: Measurement, ceiling: int
+    sandbox: Sandbox,
+    target: Target,
+    before: Measurement,
+    ceiling: int,
+    checks: tuple[tuple[str, ...], ...] = (),
 ) -> GauntletResult:
     """Verify a candidate deterministically, before any model is asked an opinion."""
     result = GauntletResult(
@@ -248,7 +283,7 @@ def run_gauntlet(
         ceiling=float(ceiling),
     )
 
-    _run_toolchain(sandbox, result)
+    _run_toolchain(sandbox, result, checks)
 
     after = measure(sandbox, target)
     result.score_after = after.target
@@ -278,28 +313,67 @@ def run_gauntlet(
     return result
 
 
-def _run_toolchain(sandbox: Sandbox, result: GauntletResult) -> None:
-    """Tests, lint and types, exactly as `scripts/check.py` runs them.
+def _run_toolchain(
+    sandbox: Sandbox, result: GauntletResult, checks: tuple[tuple[str, ...], ...] = ()
+) -> None:
+    """Every check the bed declares, filed under the label it declares them with.
 
-    Both halves of ruff, because the project's own CI runs both: a harness weaker than CI
-    accepts candidates that then fail it, which is how the first accepted repair came to
-    need reformatting by hand before it would commit.
+    `checks` used to be this project's three commands written in. Both halves of ruff,
+    because the project's own CI runs both: a harness weaker than CI accepts candidates that
+    then fail it, which is how the first accepted repair came to need reformatting by hand
+    before it would commit. Those are now `beds.SELF.verify`, and a Go bed's are `go test`
+    and `go vet`.
+
+    **A check whose tool is missing is recorded as a failure, not a pass.** `cargo` absent
+    from the machine means the repair was not verified, and a green row for a command that
+    never ran is worse than a red one -- it is the same defect as measuring a stale cache.
     """
-    tests = sandbox.run("-m", "pytest", "-m", "not oracle and not llm", "-q", "-x")
-    result.tests_pass = tests.returncode == 0
-    if not result.tests_pass:
-        result.failures.append(_tail(tests.stdout or tests.stderr))
+    from beds import SELF
 
-    lint = sandbox.run("-m", "ruff", "check", ".")
-    formatting = sandbox.run("-m", "ruff", "format", "--check", ".")
-    result.lint_pass = lint.returncode == 0 and formatting.returncode == 0
-    if not result.lint_pass:
-        result.failures.append(_tail(lint.stdout if lint.returncode else formatting.stdout))
+    declared = checks or SELF.verify
+    _seed(result, declared)
+    for label, *argv in declared:
+        try:
+            finished = sandbox.run(*argv)
+        except FileNotFoundError:
+            _record(result, label, passed=False, detail=f"{argv[0]} is not on PATH")
+            continue
+        _record(
+            result,
+            label,
+            passed=finished.returncode == 0,
+            detail=finished.stdout or finished.stderr,
+        )
 
-    types = sandbox.run("-m", "mypy")
-    result.types_pass = types.returncode == 0
-    if not result.types_pass:
-        result.failures.append(_tail(types.stdout))
+
+#: What each declared label sets. A label outside this is a bed asking for a check the
+#: result has no field for, and is ignored rather than silently folded into another.
+_FIELDS = {"tests": "tests_pass", "lint": "lint_pass", "types": "types_pass"}
+
+
+def _seed(result: GauntletResult, declared: tuple[tuple[str, ...], ...]) -> None:
+    """Every declared label starts True and is ANDed down; the rest are skipped.
+
+    `lint` is two commands for this project, so a verdict has to be able to survive the
+    first and fail on the second. And a bed that declares no `types` check gets `skipped`
+    rather than a False that would read as a type error nobody found.
+    """
+    labels = {label for label, *_ in declared}
+    for label, attribute in _FIELDS.items():
+        if label in labels:
+            setattr(result, attribute, True)
+        else:
+            result.skipped.add(label)
+
+
+def _record(result: GauntletResult, label: str, *, passed: bool, detail: str) -> None:
+    """One check's outcome, ANDed into its label's verdict."""
+    attribute = _FIELDS.get(label)
+    if attribute is None:
+        return
+    setattr(result, attribute, getattr(result, attribute) and passed)
+    if not passed:
+        result.failures.append(_tail(detail))
 
 
 def measure(sandbox: Sandbox | None, target: Target) -> Measurement:

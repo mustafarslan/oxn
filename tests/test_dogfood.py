@@ -30,6 +30,7 @@ HARNESS_MODULES = (
     "actors",
     "arms",
     "beds",
+    "targets",
     "runlog",
     "summary",
     "dogfood",
