@@ -248,9 +248,7 @@ def _read_retry_budget(raw: object) -> int:
     return raw
 
 
-def _project_ceilings(
-    defaults: Config, raw: object
-) -> tuple[dict[str, float], frozenset[str]]:
+def _project_ceilings(defaults: Config, raw: object) -> tuple[dict[str, float], frozenset[str]]:
     """The ceilings in force, and the rules this project switched off.
 
     A rule turned off is *removed* rather than set to infinity: every ceiling rule joins on
@@ -277,9 +275,7 @@ def _switched_off(declared: Mapping[str, float | None]) -> frozenset[str]:
     a shape whose honest version now passes.
     """
     off = {rule for rule, limit in declared.items() if limit is None}
-    return frozenset(
-        off | {rule for rule, gate in GATED_METRICS.items() if gate.follows in off}
-    )
+    return frozenset(off | {rule for rule, gate in GATED_METRICS.items() if gate.follows in off})
 
 
 #: What a project writes to switch a rule off. `off` and `false` both, because YAML reads a

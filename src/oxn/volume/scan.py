@@ -116,9 +116,7 @@ def scan_volume(
     return report
 
 
-def _history_metrics(
-    indexer: Indexer, repo: Path, report: VolumeReport
-) -> list[Hotspot]:
+def _history_metrics(indexer: Indexer, repo: Path, report: VolumeReport) -> list[Hotspot]:
     """Churn, ownership and co-change, when history is available.
 
     Everything here reads the *same* parsed commit stream the hotspot rank already needed, so

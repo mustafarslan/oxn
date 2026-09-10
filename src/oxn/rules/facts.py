@@ -52,9 +52,7 @@ def _one_file(facts: Facts, store: GraphStore, path: str, layer: str | None) -> 
             _emit(facts, entity, path, values)
 
 
-def _emit(
-    facts: Facts, entity: Entity, path: str, values: Mapping[str, MetricValue]
-) -> None:
+def _emit(facts: Facts, entity: Entity, path: str, values: Mapping[str, MetricValue]) -> None:
     """One entity and every number measured on it, as rows."""
     facts.add(
         "entity",
@@ -212,9 +210,7 @@ def _ring_edges(graph: DependencyGraph, *, deferred: bool) -> list[tuple[str, st
     ]
 
 
-def _crosses_the_ring(
-    graph: DependencyGraph, ringed: set[str], source: str, target: str
-) -> bool:
+def _crosses_the_ring(graph: DependencyGraph, ringed: set[str], source: str, target: str) -> bool:
     """An edge between two *different* components that are both in one ring."""
     src_component = graph.component_of(source)
     dst_component = graph.component_of(target)

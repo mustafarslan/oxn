@@ -87,9 +87,7 @@ def _walk(
 _DEFERS_WHEN_NESTED = frozenset({"python", "ecmascript"})
 
 
-def _imports_at(
-    node: Node, spec: ImportSpec, type_only: bool, nested: bool
-) -> list[RawImport]:
+def _imports_at(node: Node, spec: ImportSpec, type_only: bool, nested: bool) -> list[RawImport]:
     """What this one node imports, if anything."""
     deferred = nested and spec.style in _DEFERS_WHEN_NESTED
     if node.type in spec.statement_kinds:
