@@ -91,13 +91,20 @@ STARTER_CONFIG = f"""# OXN — architecture and quality invariants for this repo
 # Everything here is optional: with no {CONFIG_NAME} at all, OXN enforces the documented
 # defaults in `oxn.thresholds`. Uncomment what you want to change.
 
+# Every rule OXN gates on, with its default. A number changes the limit; `off` removes the
+# rule. Listed in full rather than by exception, so that what this project decided is
+# readable in one place -- a rule you never think about is a rule you never chose.
 # ceilings:
-#   cognitive_complexity: 12   # per function; the headline gate
-#   cyclomatic_complexity: 10
-#   max_nesting_depth: 4
+#   cognitive_complexity: 12          # per function; the headline gate
+#   cyclomatic_complexity: 10         # 98 of its 351 catches are its own (six corpora)
+#   max_nesting_depth: 4              # caught 25 across six corpora, 0 that cognitive missed
 #   parameter_count: 5
 #   function_sloc: 60
 #   file_sloc: 500
+#   methods_per_class: 12             # the class ratchet; see `.oxn/baseline.json`
+#   weighted_methods_per_class: 25
+#   shredding: 12                     # follows cognitive_complexity; `off` there turns
+#                                     # this off too, since it exists to protect that gate
 
 # Name your layers, then constrain how they may depend on each other. Patterns are globs
 # matched against repository-relative paths, most specific first.

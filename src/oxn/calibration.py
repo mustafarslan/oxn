@@ -427,6 +427,22 @@ def parameters() -> list[Parameter]:
     return [*_CEILINGS, *_ANTI_GAMING, *_RETRIEVAL, *_ENFORCEMENT]
 
 
+def gate_status(settings: object) -> dict[str, bool]:
+    """Threshold constant -> whether the rule it governs is on in this project.
+
+    A ceiling is only half a decision. The other half is whether the rule is enabled at all,
+    and that was visible nowhere: `oxn calibration` listed `MAX_NESTING_DEPTH = 4` with its
+    provenance whether or not this project had switched the rule off. A number that is not
+    being applied is not a threshold, it is a default.
+
+    Only the gated rules appear. `BM25_K1` and the retry budget have no on/off.
+    """
+    from oxn.config import GATED_METRICS
+
+    disabled: frozenset[str] = getattr(settings, "disabled", frozenset())
+    return {gate.threshold: rule not in disabled for rule, gate in GATED_METRICS.items()}
+
+
 def summary() -> dict[str, object]:
     """The parameter surface as data, for a report or a future optimizer to consume."""
     values = parameters()

@@ -12,6 +12,7 @@ something useful, immediately, with nothing to read first.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -122,7 +123,14 @@ class Config:
     """Everything `oxn check` needs to know about this project's intent."""
 
     root: Path
+    #: Rule name -> ceiling, for the rules this project gates on. A rule switched off is
+    #: **absent from this map**, which is what disables it: `rules.facts._ceilings` emits one
+    #: `ceiling` row per entry, every ceiling rule joins on that row, and a rule with no row
+    #: cannot fire. Off is therefore the absence of a limit rather than an infinite one, and
+    #: nothing downstream needs to learn a second way to say no.
     ceilings: dict[str, float] = field(default_factory=dict)
+    #: Rules the project turned off, kept for reporting. Not consulted by the gate.
+    disabled: frozenset[str] = frozenset()
     #: Per-layer ceiling overrides: layer name -> {metric key: ceiling}. A generated or
     #: vendored layer usually wants a different bar from hand-written domain code.
     layer_ceilings: dict[str, dict[str, float]] = field(default_factory=dict)
@@ -199,9 +207,7 @@ class Config:
 
     @classmethod
     def _from_mapping(cls, root: Path, raw: dict[str, Any]) -> Config:
-        defaults = cls.defaults(root)
-        ceilings = dict(defaults.ceilings)
-        ceilings.update(_read_ceilings(raw.get("ceilings"), where="ceilings"))
+        ceilings, disabled = _project_ceilings(cls.defaults(root), raw.get("ceilings"))
 
         layers = tuple(
             Layer(name=name, patterns=tuple(_as_list(patterns, f"layers.{name}")))
@@ -209,7 +215,7 @@ class Config:
         )
         known = {layer.name for layer in layers}
         layer_ceilings = {
-            name: _read_ceilings(values, where=f"layer_ceilings.{name}")
+            name: _numbers(_read_ceilings(values, where=f"layer_ceilings.{name}"))
             for name, values in _as_mapping(raw.get("layer_ceilings"), "layer_ceilings").items()
         }
         for name in layer_ceilings:
@@ -219,6 +225,7 @@ class Config:
         return cls(
             root=root,
             ceilings=ceilings,
+            disabled=disabled,
             layer_ceilings=layer_ceilings,
             layers=layers,
             contracts=tuple(_read_contract(entry, known) for entry in _as_list_of_dicts(raw)),
@@ -241,16 +248,69 @@ def _read_retry_budget(raw: object) -> int:
     return raw
 
 
-def _read_ceilings(raw: object, *, where: str) -> dict[str, float]:
-    values: dict[str, float] = {}
+def _project_ceilings(
+    defaults: Config, raw: object
+) -> tuple[dict[str, float], frozenset[str]]:
+    """The ceilings in force, and the rules this project switched off.
+
+    A rule turned off is *removed* rather than set to infinity: every ceiling rule joins on
+    a `ceiling` row, so an absent row is already the way to say "this does not apply", and
+    inventing a second one would give the engine two spellings of the same decision.
+    """
+    declared = _read_ceilings(raw, where="ceilings")
+    disabled = _switched_off(declared)
+    ceilings = {**defaults.ceilings, **_numbers(declared)}
+    return {rule: limit for rule, limit in ceilings.items() if rule not in disabled}, disabled
+
+
+def _numbers(declared: Mapping[str, float | None]) -> dict[str, float]:
+    """The entries that named a limit, dropping the ones that said `off`."""
+    return {rule: limit for rule, limit in declared.items() if limit is not None}
+
+
+def _switched_off(declared: Mapping[str, float | None]) -> frozenset[str]:
+    """The rules a project turned off, plus the anti-gaming rules that only exist for them.
+
+    `shredding` has no ceiling of its own: it *follows* `cognitive_complexity`, because it
+    exists to stop that one ceiling being met by splitting instead of simplifying. With the
+    ceiling gone there is nothing for it to protect, and leaving it on would keep rejecting
+    a shape whose honest version now passes.
+    """
+    off = {rule for rule, limit in declared.items() if limit is None}
+    return frozenset(
+        off | {rule for rule, gate in GATED_METRICS.items() if gate.follows in off}
+    )
+
+
+#: What a project writes to switch a rule off. `off` and `false` both, because YAML reads a
+#: bare `off` as the boolean False and a quoted `"off"` as the string, and a config file that
+#: behaves differently depending on which one was typed is a trap rather than a feature.
+_OFF = frozenset({"off", "false", "none", "disabled"})
+
+
+def _read_ceilings(raw: object, *, where: str) -> dict[str, float | None]:
+    """Rule -> ceiling, with `None` for a rule the project turned off.
+
+    A number tightens or loosens a gate; `off` removes it. Both are declarations a project
+    makes on purpose, which is why the second is a value here rather than a separate key: a
+    reader of `oxn.yaml` sees every rule in one list and what this project decided about it.
+    """
+    values: dict[str, float | None] = {}
     for metric, ceiling in _as_mapping(raw, where).items():
         if metric not in GATED_METRICS:
             known = ", ".join(sorted(GATED_METRICS))
             raise ConfigError(f"{where}: {metric!r} is not a gated rule. Known rules: {known}")
-        if not isinstance(ceiling, (int, float)) or isinstance(ceiling, bool):
-            raise ConfigError(f"{where}.{metric} must be a number, got {ceiling!r}")
-        values[metric] = float(ceiling)
+        values[metric] = _one_ceiling(ceiling, where=f"{where}.{metric}")
     return values
+
+
+def _one_ceiling(ceiling: object, *, where: str) -> float | None:
+    """A number, or `None` for one of the spellings of off."""
+    if ceiling is False or (isinstance(ceiling, str) and ceiling.strip().lower() in _OFF):
+        return None
+    if not isinstance(ceiling, (int, float)) or isinstance(ceiling, bool):
+        raise ConfigError(f"{where} must be a number or `off`, got {ceiling!r}")
+    return float(ceiling)
 
 
 def _read_contract(entry: dict[str, Any], layers: set[str]) -> Contract:

@@ -6,6 +6,7 @@ pleasant for a person and expensive for a machine belongs here.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
@@ -147,11 +148,14 @@ def calibration(
     A number with no stated provenance is folklore, and folklore is what makes developers
     distrust a gate. This is also the surface P10's calibration work optimises over.
     """
+    from oxn.calibration import gate_status, summary
     from oxn.calibration import parameters as _parameters
-    from oxn.calibration import summary
+    from oxn.config import Config
 
     console = _console()
     report = summary()
+    active = gate_status(Config.load(Path.cwd()))
+    report["disabled"] = sorted(name for name, on in active.items() if not on)
     if json_output:
         import json
 
@@ -162,9 +166,10 @@ def calibration(
         marker = (
             "[yellow]provisional[/yellow]" if parameter.is_provisional else "[green]fitted[/green]"
         )
+        state = "" if active.get(parameter.name, True) else "  [red]off in this project[/red]"
         console.print(
             f"[bold]{parameter.name}[/bold] = {parameter.value:g}  "
-            f"{marker} {parameter.evidence.value} n={parameter.observations}"
+            f"{marker} {parameter.evidence.value} n={parameter.observations}{state}"
         )
         console.print(f"  [dim]{parameter.provenance}[/dim]")
         if parameter.fit_when:
