@@ -494,3 +494,33 @@ def test_one_nested_shape_scores_the_same_in_every_language(language: str) -> No
         "cyclomatic_complexity": 5,
         "exit_points": 2,
     }, language
+
+
+def test_a_container_holds_statements_and_not_everything_it_contains() -> None:
+    """Statement *position* is only sound if the container's children really are statements.
+
+    `statement_containers` was derived by asking which nodes are parents of things already in
+    `statement_kinds`, and that answer over-reaches. A Go `if_statement` is the parent of its
+    init clause -- `if x := g(); x > 0` -- which is a statement, and also of its condition and
+    its consequence block, which are not: every Go `if` scored three logical lines instead of
+    one, and the 1.22x this change was reported as buying on `go-kit` was **entirely that
+    over-count**. It is 1.00x. A TypeScript `switch_case` is the same shape, holding the case
+    value beside its statements.
+
+    Both are dropped rather than special-cased, because nothing is lost by dropping them:
+    `short_var_declaration` is already a Go statement kind, so the init clause still counts,
+    and TypeScript's case bodies are `expression_statement` and `break_statement`.
+    """
+    from oxn.metrics import line_counts
+
+    go = b"package m\n\nfunc f() int {\n\tif x := g(); x > 0 {\n\t\treturn x\n\t}\n\treturn 0\n}\n"
+    profile, _ = first_function("go", go.decode())
+    root = get_parser("go").parse(go).root_node
+    # package, func, if, the init clause, and two returns.
+    assert line_counts(root, go, profile).lloc == 6
+
+    ts = b"function f(a: number) {\n  switch (a) {\n    case 1:\n      g();\n      break;\n  }\n}\n"
+    profile, _ = first_function("typescript", ts.decode())
+    root = get_parser("typescript").parse(ts).root_node
+    # function, switch, the call, the break -- and not the literal `1`.
+    assert line_counts(root, ts, profile).lloc == 4

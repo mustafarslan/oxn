@@ -112,7 +112,7 @@ _TS_METRICS = MetricSpec(
             }
         ),
         return_kinds=frozenset({"return_statement", "throw_statement"}),
-        statement_containers=frozenset({"statement_block", "program", "switch_case", "class_body"}),
+        statement_containers=frozenset({"statement_block", "program", "class_body"}),
         docstrings_are_comments=False,
     ),
     halstead=HalsteadSpec(

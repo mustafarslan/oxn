@@ -93,7 +93,7 @@ GO_METRICS = MetricSpec(
             }
         ),
         return_kinds=frozenset({"return_statement"}),
-        statement_containers=frozenset({"statement_list", "source_file", "if_statement"}),
+        statement_containers=frozenset({"statement_list", "source_file"}),
         docstrings_are_comments=False,
     ),
     halstead=HalsteadSpec(

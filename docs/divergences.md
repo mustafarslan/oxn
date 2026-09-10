@@ -219,6 +219,14 @@ named `expression_statement`, the shipped Python grammar emits `block > assignme
 counted zero. Over OXN's own `src/`, lloc read 4,128 against radon's 9,582; it now reads
 7,354, and the remaining gap is the table above.
 
+The same change was first reported as buying 1.22x on Go. It buys **1.00x**: the Go
+`if_statement` had been listed as a statement container, and it holds its condition and its
+consequence block beside its init clause, so every `if` counted three logical lines instead
+of one. Go and Java both sit at 1.00x, which is the reassuring shape -- their grammars wrap
+statements the way `statement_kinds` expected, so nothing there was broken and nothing there
+moves. The languages that genuinely gain are Python (1.78x), Rust (1.23x), TypeScript
+(1.16x) and JavaScript (1.04x).
+
 ---
 
 ## Duplication — Python (oracle: PMD-CPD 7.7.0)
