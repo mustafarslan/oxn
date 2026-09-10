@@ -166,6 +166,13 @@ class OllamaClient:
         # more slowly. Turning thinking off is the fix the model itself supports: the same
         # prompt then returns 3,146 characters of code instead of 45.
         #
+        # The *answer* does the same thing, measured on `httpx._urlparse.urlparse`
+        # (cognitive 63): 123,471 characters against 32,768 tokens, then 254,715 against
+        # 65,536 -- exactly twice, cut off both times, and the second with no reasoning at
+        # all. So `ReplyCutOff` says "or give it a smaller target" alongside the budget: for
+        # some target and model pairs there is no budget that is enough, and finding that out
+        # costs about 800 seconds per doubling.
+        #
         # Only when the caller expressed no preference, and only once. A caller that asked
         # for reasoning gets the error instead of silently different behaviour.
         if self.think is None and reply.starved_by_reasoning:

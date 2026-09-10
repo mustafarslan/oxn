@@ -44,6 +44,13 @@ class Grid:
     retries: int
     repeats: int
     backend: str
+    #: Qualified names to leave out of the target set, excluded **once** so every arm still
+    #: gets the same list. `dogfood.py` has had `--skip` since it had one bed; the grid
+    #: hardcoded `set()` and so had no way to drop a target the actor cannot answer at all.
+    #: Measured on `httpx._urlparse.urlparse` (cognitive 63): `glm-5.3:cloud` wrote 123,471
+    #: characters against a 32,768-token budget and 254,715 against 65,536 -- exactly twice,
+    #: cut off both times. A target every arm truncates on is not a comparison.
+    skip: frozenset[str]
     #: One identifier for the whole grid. Every arm shares it, which is what lets a table be
     #: scoped to *this* experiment rather than to every attempt ever logged.
     run_id: str
@@ -62,7 +69,7 @@ def run(grid: Grid) -> int:
     depend on a property it does not enforce, which is how the first pilot went wrong.
     """
     where = bed(grid.bed)
-    targets = select_targets(grid.ceiling, grid.limit, skip=set(), where=where)
+    targets = select_targets(grid.ceiling, grid.limit, skip=set(grid.skip), where=where)
     if not targets:
         say(f"nothing over {grid.ceiling} in {grid.bed}")
         return 0
@@ -107,6 +114,12 @@ def main(argv: list[str] | None = None) -> int:
     from actors import backend_help
 
     parser.add_argument("--backend", default="ollama", help=backend_help())
+    parser.add_argument(
+        "--skip",
+        action="append",
+        default=[],
+        help="qualified name to leave out, applied once so every arm shares the target set",
+    )
     parser.add_argument("--dry-run", action="store_true", help="print the grid and stop")
     args = parser.parse_args(argv)
 
@@ -118,6 +131,7 @@ def main(argv: list[str] | None = None) -> int:
         retries=args.retries,
         repeats=args.repeat,
         backend=args.backend,
+        skip=frozenset(args.skip),
         run_id=new_run_id(),
     )
     if args.dry_run:
