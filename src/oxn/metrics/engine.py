@@ -15,6 +15,7 @@ from oxn.metrics.cyclomatic import cyclomatic_complexity
 from oxn.metrics.halstead import halstead, maintainability_index
 from oxn.metrics.shredding import METRIC, Cluster, Unit, cluster_totals
 from oxn.metrics.size import exit_points, line_counts, max_nesting_depth
+from oxn.profiles.base import declared_private
 
 if TYPE_CHECKING:  # pragma: no cover
     from tree_sitter import Node
@@ -37,6 +38,7 @@ def measure_file(
     ranges from the same tree.
     """
     by_range = _index_nodes(tree_root, profile)
+    esm = _uses_es_modules(tree_root, profile)
     results: list[EntityMetrics] = []
     units: list[Unit] = []
 
@@ -51,7 +53,7 @@ def measure_file(
         _measure_common(measured, target, source, profile)
         if entity.kind in CALLABLE_KINDS:
             _measure_callable(measured, target, entity, profile)
-            units.append(_unit(entity, measured, target, profile))
+            units.append(_unit(entity, measured, target, profile, esm=esm))
         results.append(measured)
 
     _mark_shredding(results, units, profile)
@@ -102,14 +104,36 @@ def _class_totals(
     return {owner: (int(count), weight) for owner, (count, weight) in totals.items()}
 
 
-def _unit(entity: Entity, measured: EntityMetrics, node: Node, profile: LanguageProfile) -> Unit:
-    """Reduce a measured callable to what the shredding question needs."""
+def _unit(
+    entity: Entity, measured: EntityMetrics, node: Node, profile: LanguageProfile, *, esm: bool
+) -> Unit:
+    """Reduce a measured callable to what the shredding question needs.
+
+    Privacy is resolved *here*, where the node is. Four of six launch languages answer it
+    with a modifier rather than with the name, and asking the name alone left `shredding`
+    firing in two of them.
+    """
     return Unit(
         entity_id=entity.id,
         name=entity.name or "",
         score=measured.get("cognitive_complexity") or 0.0,
         calls=tuple(callee_names(node, profile)),
+        private=declared_private(node, entity.name or "", profile, esm=esm),
     )
+
+
+def _uses_es_modules(root: Node, profile: LanguageProfile) -> bool:
+    """Does this file use ES module syntax? A per-file fact, so it is answered once.
+
+    "Not exported" is module privacy only when the module has an export list at all. A
+    CommonJS file publishes through `module.exports.x = x`, which no `export_statement`
+    records, so a rule that read an unexported function as private would be unsound there --
+    and JavaScript's whole `require` ecosystem is that case.
+    """
+    if not profile.export_wrapper:
+        return False
+    kinds = profile.metrics.imports.statement_kinds
+    return any(child.type in kinds for child in root.named_children)
 
 
 def _mark_shredding(

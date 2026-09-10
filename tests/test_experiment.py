@@ -46,6 +46,7 @@ def grid(harness):
             "retries": 3,
             "repeats": 1,
             "backend": "dry-run",
+            "skip": frozenset(),
             "run_id": "20260910T120000",
         }
         return harness.Grid(**{**fields, **over})

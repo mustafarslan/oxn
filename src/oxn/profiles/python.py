@@ -196,6 +196,7 @@ PYTHON = LanguageProfile(
     extensions=frozenset({".py", ".pyi"}),
     version=4,
     privacy="underscore",
+    privacy_rules=("name",),
     function_like=frozenset({"function_definition", "lambda"}),
     supertype_fields=frozenset({"superclasses"}),
     class_like=frozenset({"class_definition"}),

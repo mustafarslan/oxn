@@ -234,6 +234,7 @@ def test_every_arm_of_one_grid_shares_its_run_id(harness) -> None:
         retries=1,
         repeats=1,
         backend="dry-run",
+        skip=frozenset(),
         run_id="20260910T120000",
     )
     ids = {harness._session(grid, name).run_id for name in grid.arms}

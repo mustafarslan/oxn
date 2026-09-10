@@ -67,7 +67,11 @@ invariant, and the JSON names the entity, the rule and the number.
 * A violation is not a suggestion. Fix the cause -- do not split a function into one-line
   helpers to get under a ceiling. That is reported as rule `shredding`, which totals a
   function together with the private, trivial helpers only it calls: dedicated helpers do
-  not raise the budget.
+  not raise the budget. "Private" is read from the language -- an underscore in Python,
+  casing in Go, `pub` in Rust, `private` in Java and TypeScript, `#` or a module that does
+  not export it in JavaScript. A CommonJS file is the one case the rule declines: anything
+  can be published there by assigning to `module.exports`, so a helper cannot be shown to be
+  dedicated, and the class aggregates below are what catch a shred in that shape.
 * `.oxn/baseline.json` records pre-existing debt. It may not grow: a baselined violation
   that gets worse fails the build exactly as a new one does.
 * The loop is bounded. After `retry_budget` failed repairs of the *same* violation, the

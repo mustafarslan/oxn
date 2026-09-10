@@ -242,8 +242,20 @@ def test_the_rule_follows_a_configured_ceiling_not_just_the_default(project) -> 
 # ---- the unit rule, where the edges are cheap to state ---------------------------------
 
 
-def _unit(name, score, calls=()):
-    return Unit(entity_id=f"id:{name}", name=name, score=score, calls=tuple(calls))
+#: "not stated", which is *not* `None` -- `None` is the meaningful answer "could not be
+#: established", and a default that collided with it left this helper unable to say it.
+BY_NAME = object()
+
+
+def _unit(name, score, calls=(), private=BY_NAME):
+    """`private` defaults to the profile's name rule, which is what these fixtures test.
+
+    Privacy moved from a question about a name to one about a node, because four of six
+    languages answer it with a modifier -- so `Unit` carries the answer and the rule reads
+    it. These units are built without a tree, so the name rule stands in for it.
+    """
+    settled = PYTHON.is_private(name) if private is BY_NAME else private
+    return Unit(entity_id=f"id:{name}", name=name, score=score, calls=tuple(calls), private=settled)
 
 
 def test_a_name_defined_twice_declines_rather_than_guesses(project) -> None:
@@ -263,20 +275,29 @@ def test_a_name_defined_twice_declines_rather_than_guesses(project) -> None:
     assert cluster_totals(units, PYTHON) == {}
 
 
-def test_a_language_without_a_privacy_rule_does_not_fire() -> None:
-    """TypeScript spells visibility with modifiers, not names.
+def test_a_callable_whose_privacy_is_unknown_does_not_fire() -> None:
+    """ "Called once in this file" does not prove a *public* name has no callers elsewhere.
 
-    "Called once in this file" does not prove a public name has no callers elsewhere, so
-    single-use without privacy is unsound. The profile declines instead of guessing.
+    This used to be about a language -- TypeScript spelled visibility with modifiers, so its
+    whole profile declined. It now spells it with `declared_private`, and the property that
+    survives is the one that mattered all along: a unit whose privacy could not be
+    established is not provably dedicated, whatever language it is in. `common.js` in
+    `tests/test_shred_languages.py` is that case at the file level.
     """
-    units = [
-        _unit("root", 8.0, ["_a", "_b", "_c"]),
-        _unit("_a", 1.0),
-        _unit("_b", 1.0),
-        _unit("_c", 1.0),
+    unknown = [
+        _unit("root", 8.0, ["_a", "_b", "_c"], private=False),
+        _unit("_a", 1.0, private=None),
+        _unit("_b", 1.0, private=None),
+        _unit("_c", 1.0, private=None),
     ]
-    assert cluster_totals(units, PYTHON), "control: python does fire on this shape"
-    assert cluster_totals(units, TYPESCRIPT) == {}
+    known = [
+        _unit("root", 8.0, ["_a", "_b", "_c"], private=False),
+        _unit("_a", 1.0, private=True),
+        _unit("_b", 1.0, private=True),
+        _unit("_c", 1.0, private=True),
+    ]
+    assert cluster_totals(known, TYPESCRIPT), "control: known-private helpers do fire"
+    assert cluster_totals(unknown, TYPESCRIPT) == {}
 
 
 def test_helpers_fold_transitively_onto_one_root() -> None:

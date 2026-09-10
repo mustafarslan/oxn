@@ -72,6 +72,11 @@ class Unit:
     score: float
     #: Names this callable calls, in its own body only.
     calls: tuple[str, ...]
+    #: Is it private to its file? Resolved where the *node* is, because four of six
+    #: languages answer with a modifier rather than with the name -- see
+    #: `profiles.base.declared_private`. `None` means the profile could not tell, and the
+    #: rule declines rather than guessing.
+    private: bool | None = None
 
 
 def cluster_totals(units: list[Unit], profile: LanguageProfile) -> dict[str, Cluster]:
@@ -80,8 +85,8 @@ def cluster_totals(units: list[Unit], profile: LanguageProfile) -> dict[str, Clu
     Only roots of a cluster that passes the shape test appear. An empty result is the
     normal case and means nothing was shaped like a shred.
     """
-    if profile.privacy == "":
-        return {}  # the profile cannot establish privacy; see LanguageProfile.is_private
+    if not any(unit.private is not None for unit in units):
+        return {}  # nothing here can be shown private; see `profiles.base.declared_private`
 
     called = Counter(name for unit in units for name in unit.calls)
     defined = Counter(unit.name for unit in units)
@@ -107,11 +112,12 @@ def _is_dedicated(
     A name defined twice cannot be attributed to one definition, so it is not *provably*
     dedicated. Declining there fails safe -- the rule does not fire.
     """
+    del profile
     return (
         defined[unit.name] == 1
         and called[unit.name] == 1
         and unit.score <= TRIVIAL_HELPER
-        and bool(profile.is_private(unit.name))
+        and bool(unit.private)
     )
 
 

@@ -161,6 +161,7 @@ GO = LanguageProfile(
     extensions=frozenset({".go"}),
     version=3,
     privacy="casing",
+    privacy_rules=("name",),
     # An interface's method, declared without a body. TypeScript counts its
     # `method_signature` and Java its abstract `method_declaration`, so leaving Go's out made
     # every Go interface read NOM 0 -- and a large method count on an interface is exactly the

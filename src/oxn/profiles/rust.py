@@ -161,6 +161,10 @@ RUST = LanguageProfile(
     name="rust",
     grammar="rust",
     extensions=frozenset({".rs"}),
+    # No `pub` means private to the module -- the one language here where privacy is
+    # the default and publication is the marked case.
+    privacy_rules=("visibility",),
+    public_marker="visibility_modifier",
     version=1,
     function_like=frozenset({"function_item", "function_signature_item", "closure_expression"}),
     implements_field="type",

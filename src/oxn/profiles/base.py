@@ -119,11 +119,44 @@ class LanguageProfile:
     #:
     #: * ``"underscore"`` -- Python: a leading underscore.
     #: * ``"casing"`` -- Go: a lowercase initial letter.
-    #: * ``""`` -- the profile cannot answer from the name. Java, Rust and TypeScript spell
-    #:   visibility with modifiers (``private``, ``pub``, ``#``), which is a node-level
-    #:   question this field deliberately does not pretend to answer. The shredding rule
-    #:   needs privacy to be sound and therefore does not fire for such a language.
+    #: * ``"hash"`` -- JavaScript: a ``#`` prefix, which is privacy the grammar guarantees.
+    #: * ``""`` -- no name rule. See :attr:`privacy_rules` for the node-level ones.
     privacy: str = ""
+
+    #: Every way this language can say "private", any of which is sufficient. Several apply
+    #: at once: a TypeScript method may carry `private` *and* sit in a module that does not
+    #: export it, and both are sound.
+    #:
+    #: This exists because `privacy` alone -- a question about a *name* -- left the
+    #: `shredding` rule firing in **two of six launch languages**. Measured 2026-09-10 on one
+    #: 14-helper shred transliterated across all six: Python and Go were caught by the rule,
+    #: Java/TypeScript/JavaScript only because the fixture put the helpers in a class and the
+    #: class aggregates caught *that*, and **Rust by nothing at all**. Moved module-level and
+    #: written as free functions, TypeScript and JavaScript escaped too. Three languages with
+    #: a free shred, while `oxn init` writes into every user's CLAUDE.md that shredding "is
+    #: detected and rejected" -- which is P10's own finding, recurring one language at a time.
+    #:
+    #: * ``"name"`` -- ask :attr:`privacy` about the declared name.
+    #: * ``"modifier"`` -- a child of :attr:`private_marker` holding the token ``private``.
+    #: * ``"visibility"`` -- private *unless* a :attr:`public_marker` child is present, which
+    #:   is Rust: no ``pub`` means private to the module.
+    #: * ``"unexported"`` -- a top-level declaration not wrapped in :attr:`export_wrapper`,
+    #:   and **only in a file that uses ES module syntax**. A CommonJS file can publish
+    #:   anything through ``module.exports.x = x``, so the rule declines there rather than
+    #:   guessing -- which is visible in the JavaScript corpus, whose imports are all
+    #:   ``require``.
+    privacy_rules: tuple[str, ...] = ()
+
+    #: The child kind that holds a ``private`` token: Java's ``modifiers``, TypeScript's
+    #: ``accessibility_modifier``.
+    private_marker: str = ""
+
+    #: The child kind whose *presence* makes a definition public: Rust's
+    #: ``visibility_modifier``.
+    public_marker: str = ""
+
+    #: The wrapper that publishes a top-level declaration: ``export_statement``.
+    export_wrapper: str = ""
 
     #: Metric tables: decision points, cognitive increment classes, statement kinds.
     metrics: MetricSpec = field(default_factory=MetricSpec)
@@ -147,6 +180,8 @@ class LanguageProfile:
             return name.startswith("_")
         if self.privacy == "casing":
             return not name[:1].isupper()
+        if self.privacy == "hash":
+            return name.startswith("#")
         return None
 
     def is_definition(self, node: Node) -> bool:
@@ -238,6 +273,67 @@ def receiver_type(node: Node, field: str) -> str | None:
     written = receiver.text.decode("utf-8", "replace") if receiver and receiver.text else ""
     parts = written.strip("()").strip().split()
     return parts[-1].lstrip("*").split("[")[0] or None if parts else None
+
+
+def declared_private(node: Node, name: str, profile: LanguageProfile, *, esm: bool) -> bool | None:
+    """Is this definition private to its file? ``None`` when the profile cannot tell.
+
+    ``None`` is not ``False`` and the distinction is the whole point: "called once in this
+    file" does not prove a *public* name has no callers elsewhere, so a rule that needs
+    privacy must decline rather than guess.
+
+    Module-level beside `receiver_type` and `implemented_type`, and for the same reason those
+    are -- `LanguageProfile` sits at its `weighted_methods_per_class` ceiling, and this is a
+    question about a node rather than about the profile.
+
+    Any rule the profile declares may answer yes. The rules are checked in the order declared
+    so the cheapest and most local one wins: a Java method carrying `private` is private
+    whatever its file does.
+    """
+    for rule in profile.privacy_rules:
+        found = _by_rule(rule, node, name, profile, esm=esm)
+        if found:
+            return True
+    return False if profile.privacy_rules else None
+
+
+def _by_rule(rule: str, node: Node, name: str, profile: LanguageProfile, *, esm: bool) -> bool:
+    """One privacy rule, applied. Unknown rules answer no rather than raising."""
+    if rule == "name":
+        return bool(profile.is_private(name))
+    if rule == "modifier":
+        return _has_token(node, profile.private_marker, "private")
+    if rule == "visibility":
+        return not any(child.type == profile.public_marker for child in node.named_children)
+    if rule == "unexported":
+        return esm and _is_top_level(node) and not _is_wrapped_in(node, profile.export_wrapper)
+    return False
+
+
+def _has_token(node: Node, holder: str, token: str) -> bool:
+    """Does a child of `holder` kind carry this exact token? Java and TypeScript both do."""
+    for child in node.named_children:
+        if child.type != holder:
+            continue
+        if any(grandchild.type == token for grandchild in child.children):
+            return True
+    return False
+
+
+def _is_top_level(node: Node) -> bool:
+    """Is this declaration at the top of its file, rather than nested inside something?
+
+    Only a top-level declaration is governed by whether the *module* exports it. One inside a
+    class or a function has its own scope and its own answer.
+    """
+    parent = node.parent
+    if parent is not None and parent.type in {"export_statement"}:
+        parent = parent.parent
+    return parent is not None and parent.parent is None
+
+
+def _is_wrapped_in(node: Node, wrapper: str) -> bool:
+    return bool(wrapper) and node.parent is not None and node.parent.type == wrapper
 
 
 def implemented_type(node: Node, field: str) -> str:

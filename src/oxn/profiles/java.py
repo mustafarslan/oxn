@@ -183,6 +183,9 @@ JAVA = LanguageProfile(
     name="java",
     grammar="java",
     extensions=frozenset({".java"}),
+    # `private` on the method itself. Sound: it is the language saying so.
+    privacy_rules=("modifier",),
+    private_marker="modifiers",
     version=1,
     function_like=frozenset({"method_declaration", "constructor_declaration", "lambda_expression"}),
     supertype_fields=frozenset({"superclass", "interfaces"}),

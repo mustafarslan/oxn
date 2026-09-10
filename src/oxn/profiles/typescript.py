@@ -225,6 +225,12 @@ TYPESCRIPT = LanguageProfile(
     name="typescript",
     grammar="typescript",
     extensions=frozenset({".ts", ".tsx", ".mts", ".cts"}),
+    # Three ways, any of which is sound: `#name`, the `private` modifier, and a top-level
+    # declaration an ES module does not export.
+    privacy="hash",
+    privacy_rules=("name", "modifier", "unexported"),
+    private_marker="accessibility_modifier",
+    export_wrapper="export_statement",
     version=1,
     function_like=_FUNCTION_LIKE,
     class_like=_CLASS_LIKE,
@@ -247,6 +253,12 @@ JAVASCRIPT = LanguageProfile(
     name="javascript",
     grammar="javascript",
     extensions=frozenset({".js", ".jsx", ".mjs", ".cjs"}),
+    # `#name` is privacy the grammar guarantees; `private` does not exist here. The module
+    # rule applies only to a file that uses ES module syntax -- CommonJS can publish anything
+    # through `module.exports.x = x`, so the rule declines there rather than guessing.
+    privacy="hash",
+    privacy_rules=("name", "unexported"),
+    export_wrapper="export_statement",
     version=1,
     function_like=_FUNCTION_LIKE,
     # JS has no interfaces or type aliases; a class is the only type declaration.
