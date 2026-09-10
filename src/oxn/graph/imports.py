@@ -41,6 +41,13 @@ class RawImport:
     level: int = 0
     #: Names imported *from* the module, where the language distinguishes them.
     names: tuple[str, ...] = ()
+    #: Written inside a function or class body **in a language where that defers the load**.
+    #: Python and CommonJS execute such an import when the body runs, not when the module is
+    #: initialised, which is precisely how both languages *break* an import cycle. Go and
+    #: Java cannot nest an import at all, and a Rust `use` inside a function is a namespace
+    #: alias that changes nothing about when the crate is linked -- so `deferred` is false
+    #: for all three however deeply the statement is nested.
+    deferred: bool = False
 
     @property
     def is_relative(self) -> bool:
@@ -54,30 +61,46 @@ def extract_imports(root: Node, profile: LanguageProfile) -> list[RawImport]:
         return []
 
     found = [
-        item for node, type_only in _walk(root, spec) for item in _imports_at(node, spec, type_only)
+        item
+        for node, type_only, nested in _walk(root, spec, profile)
+        for item in _imports_at(node, spec, type_only, nested)
     ]
     found.sort(key=lambda item: (item.line, item.specifier))
     return found
 
 
-def _walk(root: Node, spec: ImportSpec) -> Iterator[tuple[Node, bool]]:
-    """Every node, paired with whether it sits inside a type-only guard."""
-    stack: list[tuple[Node, bool]] = [(root, False)]
+def _walk(
+    root: Node, spec: ImportSpec, profile: LanguageProfile
+) -> Iterator[tuple[Node, bool, bool]]:
+    """Every node, with whether it sits inside a type-only guard and inside a definition."""
+    stack: list[tuple[Node, bool, bool]] = [(root, False, False)]
     while stack:
-        node, guarded = stack.pop()
-        yield node, guarded
+        node, guarded, nested = stack.pop()
+        yield node, guarded, nested
         inner = guarded or _is_type_checking_guard(node, spec)
-        stack.extend((child, inner) for child in node.named_children)
+        within = nested or profile.is_definition(node)
+        stack.extend((child, inner, within) for child in node.named_children)
 
 
-def _imports_at(node: Node, spec: ImportSpec, type_only: bool) -> list[RawImport]:
+#: Languages where a nested import is evaluated when the body runs rather than when the
+#: module loads. It is the standard remedy for an import cycle in both.
+_DEFERS_WHEN_NESTED = frozenset({"python", "ecmascript"})
+
+
+def _imports_at(
+    node: Node, spec: ImportSpec, type_only: bool, nested: bool
+) -> list[RawImport]:
     """What this one node imports, if anything."""
+    deferred = nested and spec.style in _DEFERS_WHEN_NESTED
     if node.type in spec.statement_kinds:
-        statements = _from_statement(node, spec)
-        return [replace(item, kind="type_only") for item in statements] if type_only else statements
+        statements = [
+            replace(item, deferred=deferred, kind="type_only" if type_only else item.kind)
+            for item in _from_statement(node, spec)
+        ]
+        return statements
     if node.type in spec.call_kinds:
         dynamic = _from_dynamic_call(node, spec)
-        return [dynamic] if dynamic is not None else []
+        return [replace(dynamic, deferred=deferred)] if dynamic is not None else []
     return []
 
 

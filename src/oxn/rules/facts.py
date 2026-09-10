@@ -114,6 +114,53 @@ def graph_facts(facts: Facts, graph: DependencyGraph, settings: Config) -> None:
     # into the package looks like it bypassed one. An empty allow-list is not a strict
     # check, it is a false positive.
     _contract_facts(facts, settings, placed)
+    _cycle_facts(facts, graph, settings)
+
+
+def _cycle_facts(facts: Facts, graph: DependencyGraph, settings: Config) -> None:
+    """Which import edges close a ring, for each `acyclic` contract that asked.
+
+    Computed here rather than in a rule because Datalog has no fixpoint over *components*:
+    the SCCs are found once with Tarjan and projected as ordinary rows, the same treatment
+    `entrypoint_match` gives a glob.
+    """
+    for contract in settings.contracts:
+        if contract.kind == "acyclic":
+            rows = _ring_edges(graph, deferred=contract.deferred)
+            facts.add("cycle", *[(contract.name, src, dst) for src, dst in rows])
+
+
+def _ring_edges(graph: DependencyGraph, *, deferred: bool) -> list[tuple[str, str]]:
+    """Every file edge whose two ends sit in one strongly connected component.
+
+    **Two graphs, and the contract picks.** By default the ring is looked for among the
+    imports that run when a module loads. A Python or CommonJS import inside a function body
+    is the standard *fix* for an import cycle, so counting it finds a ring exactly where one
+    was already broken -- OXN's own tree is 9 components on all imports and 2 on these.
+    `deferred: true` asks the stricter "may not reach itself by any path" on purpose.
+    """
+    from oxn.graph.algos import cycles
+
+    components = graph.components if deferred else graph.hard_components
+    ringed = {member for cycle in cycles(components) for member in cycle}
+    if not ringed:
+        return []
+    edges = graph.files if deferred else graph.hard_files
+    return [
+        (source, target)
+        for source, targets in edges.items()
+        for target in targets
+        if _crosses_the_ring(graph, ringed, source, target)
+    ]
+
+
+def _crosses_the_ring(
+    graph: DependencyGraph, ringed: set[str], source: str, target: str
+) -> bool:
+    """An edge between two *different* components that are both in one ring."""
+    src_component = graph.component_of(source)
+    dst_component = graph.component_of(target)
+    return src_component != dst_component and {src_component, dst_component} <= ringed
 
 
 def _contract_facts(facts: Facts, settings: Config, targets: set[str]) -> None:

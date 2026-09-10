@@ -285,9 +285,8 @@ def _edge_facts(
     measured. A file nobody edited importing this one illegally is invisible here and is
     caught by `--deep`.
 
-    **`cycle` is declared and not implemented**, and this said otherwise until 2026-09-10:
-    a two-package import cycle passes `--deep` with 0 violations while `oxn arch` reports
-    it. ADR-0005's amendment carries what it would take to gate one.
+    `cycle` is answered here only at `--deep`, and only for a declared `acyclic` contract:
+    an SCC is a property of the whole graph. ADR-0005's amendment carries the rest.
     """
     deep = report.scope == "repository"
     if not settings.contracts:
@@ -310,10 +309,6 @@ def _edge_facts(
             "file-scoped contract check: edges out of the files measured. "
             "`oxn check --deep` adds edges into them."
         )
-    # `cycle` stays in the conditional set: `REPOSITORY_RELATIONS` uses it to decide what a
-    # file-scoped run must skip, so removing it would let a repository-scoped rule run at
-    # file scope the day one is written. It is a scope declaration, not a promise that the
-    # relation has any rows -- see the docstring.
     return frozenset({"imports", "cycle"}) if deep else frozenset({"imports"})
 
 
@@ -404,9 +399,11 @@ def _architecture(targets: list[Path], settings: Config, report: CheckReport) ->
     with _indexer(settings) as indexer:
         files = indexer.sources(targets)
         graph = build_dependency_graph(indexer.root, files)
-        # `check_contracts` wants the file-level graph: a layer is a set of paths, and a
-        # violation has to name the file that caused it, not the directory it sits in.
-        conformance = check_contracts(graph.files, settings.layers, settings.contracts)
+        # File-level, because a layer is a set of paths and a violation must name the file
+        # that caused it -- and `hard_files`, because a deferred import breaks a ring.
+        conformance = check_contracts(
+            graph.hard_files, settings.layers, settings.contracts, graph.membership
+        )
 
     # Keyed by the offending *edge*, never by the layer pair. `Violation.source` is a layer
     # name, and a finding keyed on it forgives every later import between the same two

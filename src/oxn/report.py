@@ -308,6 +308,10 @@ def run_arch(
             types=types,
             sizes=sizes,
             partition=graph.membership,
+            # Cycles only: an import Python or CommonJS defers to call time is real
+            # coupling and belongs in every other metric here, but it is not an
+            # initialisation-order edge, and calling it a ring inverts the remedy.
+            initialisation=graph.hard_components,
         )
 
     payload = _arch_payload(graph, report, show_unresolved=show_unresolved)

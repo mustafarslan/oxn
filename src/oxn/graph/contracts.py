@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import fnmatch
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -74,6 +75,12 @@ class Contract:
     modules: tuple[str, ...] = ()
     package: str | None = None
     allowed_entrypoints: tuple[str, ...] = ()
+    #: For ``acyclic``: count imports that Python and CommonJS defer to call time. Off by
+    #: default, because a function-body import is how both languages *break* a cycle, and a
+    #: check that counts it reports the fix as the fault. On, the contract asks the stricter
+    #: question -- "no component may reach itself by any path at all" -- which is a real
+    #: thing to want and not the default thing.
+    deferred: bool = False
 
 
 @dataclass
@@ -116,12 +123,25 @@ def assign_layers(paths: Sequence[str], layers: Sequence[Layer]) -> dict[str, st
     return assignment
 
 
+#: Default for `check_contracts(membership=...)`. Every file is its own component, so no two
+#: files can share one and `acyclic` finds nothing -- which is the honest answer when the
+#: caller did not say how the tree is grouped, rather than a ring invented from file edges.
+_NO_COMPONENTS: Mapping[str, str] = MappingProxyType({})
+
+
 def check_contracts(
     file_graph: Graph[str],
     layers: Sequence[Layer],
     contracts: Sequence[Contract],
+    membership: Mapping[str, str] = _NO_COMPONENTS,
 ) -> ConformanceReport:
-    """Check a file-level import graph against declared contracts."""
+    """Check a file-level import graph against declared contracts.
+
+    ``membership`` maps each file to its component, and only ``acyclic`` needs it: the
+    Acyclic Dependencies Principle is about packages, and a file-level ring in Python is
+    both common and usually harmless. Without it an ``acyclic`` contract finds nothing here,
+    which the rule engine's parity test would catch immediately.
+    """
     paths = sorted(file_graph)
     assignment = assign_layers(paths, layers)
     report = ConformanceReport(
@@ -130,7 +150,9 @@ def check_contracts(
     layer_edges = _layer_edges(file_graph, paths, assignment)
 
     for contract in contracts:
-        report.divergent.extend(_check_one(contract, file_graph, assignment, layer_edges))
+        report.divergent.extend(
+            _check_one(contract, file_graph, assignment, layer_edges, membership)
+        )
 
     violating = {(violation.source, violation.target) for violation in report.divergent}
     report.convergent = sum(1 for edge in layer_edges if edge not in violating)
@@ -191,7 +213,10 @@ def _check_one(
     file_graph: Graph[str],
     assignment: Mapping[str, str | None],
     layer_edges: Mapping[tuple[str, str], list[tuple[str, str]]],
+    membership: Mapping[str, str],
 ) -> list[Violation]:
+    if contract.kind == "acyclic":
+        return _check_acyclic(contract, file_graph, membership)
     if contract.kind == "layered":
         return _check_layered(contract, file_graph, layer_edges)
     if contract.kind == "forbidden":
@@ -201,6 +226,38 @@ def _check_one(
     if contract.kind == "deep_import":
         return _check_deep_import(contract, file_graph, assignment)
     return []
+
+
+def _check_acyclic(
+    contract: Contract, file_graph: Graph[str], membership: Mapping[str, str]
+) -> list[Violation]:
+    """Every edge between two components that can reach each other.
+
+    The hand-coded twin of `rules.facts._ring_edges`, and deliberately written from the
+    definition rather than by calling it: parity is only evidence when the two were derived
+    separately. This one has no `deferred` switch because the graph it is handed has already
+    made that choice -- the caller passes `files` or `hard_files`.
+    """
+    from oxn.graph.algos import cycles
+
+    components: dict[str, set[str]] = {}
+    for source, targets in file_graph.items():
+        owner = membership.get(source, source)
+        components.setdefault(owner, set())
+        for target in targets:
+            reached = membership.get(target, target)
+            components.setdefault(reached, set())
+            if reached != owner:
+                components[owner].add(reached)
+
+    ringed = {member for cycle in cycles(components) for member in cycle}
+    return [
+        Violation(contract.name, source, target, detail="closes a dependency cycle")
+        for source, targets in sorted(file_graph.items())
+        for target in sorted(targets)
+        if membership.get(source, source) != membership.get(target, target)
+        and {membership.get(source, source), membership.get(target, target)} <= ringed
+    ]
 
 
 def _check_layered(

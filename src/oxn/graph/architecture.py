@@ -143,19 +143,27 @@ def analyse(
     types: Mapping[str, tuple[int, int]] | None = None,
     sizes: Mapping[str, int] | None = None,
     partition: Mapping[str, str] | None = None,
+    initialisation: Graph[str] | None = None,
 ) -> ArchitectureReport:
     """Compute every Tier-2 metric for a component graph.
 
     ``types`` maps a component to ``(abstract, total)`` type counts; ``sizes`` to lines of
     code. Both are optional: without them the structural metrics still hold, and the metrics
     that need them are simply omitted rather than faked.
+
+    ``initialisation`` is the same graph without the imports that Python and CommonJS defer
+    to call time, and **cycles are read from it** when it is given. Everything else here is
+    about coupling -- what a component must know -- where a deferred import counts exactly
+    like any other. A cycle is about *order*, and a function-body import is how both
+    languages break one, so counting it manufactures the cycle it resolved: OXN's own tree
+    reads as one 9-component ring on all imports and a 2-component one on these.
     """
     components = sorted(graph)
     report = ArchitectureReport(components=tuple(components))
     if not components:
         return report
 
-    report.cycles = [sorted(cycle) for cycle in cycles(graph)]
+    report.cycles = [sorted(cycle) for cycle in cycles(initialisation or graph)]
     report.martin = _martin(graph, types or {})
 
     membership, dag, groups = condensation(graph)

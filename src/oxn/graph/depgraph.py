@@ -48,8 +48,17 @@ class DependencyGraph:
 
     #: file -> imported files, inside the tree only.
     files: dict[str, set[str]] = field(default_factory=dict)
+    #: The same edges minus the ones Python and CommonJS defer to call time. **Coupling is
+    #: `files`; initialisation order is this.** A function-body import is real knowledge of
+    #: another module -- a layer contract must see it -- but it does not run when the module
+    #: loads, and it is the standard way to break an import cycle in both languages. Calling
+    #: it a cycle tells a project its remedy is the disease: OXN's own tree is one
+    #: 9-component ring on `files` and a 2-component one here, from 50 edges against 25.
+    hard_files: dict[str, set[str]] = field(default_factory=dict)
     #: component -> depended-on components, with edge multiplicity.
     components: dict[str, set[str]] = field(default_factory=dict)
+    #: `components` over `hard_files`. What a cycle check must read.
+    hard_components: dict[str, set[str]] = field(default_factory=dict)
     weights: dict[tuple[str, str], int] = field(default_factory=dict)
     unresolved: list[UnresolvedImport] = field(default_factory=list)
     #: file -> component, so a violation can name the file that caused it.
@@ -106,6 +115,7 @@ def build_dependency_graph(
             continue
         profile, tree_root = parsed
         graph.files.setdefault(relative, set())
+        graph.hard_files.setdefault(relative, set())
         graph.membership[relative] = component_of(relative)
         _add_imports(graph, _Scan(relative, tree_root, profile, context, kinds))
 
@@ -154,9 +164,12 @@ def _add_imports(graph: DependencyGraph, scan: _Scan) -> None:
             continue
         if raw.kind not in scan.kinds:
             continue
-        for target in resolved.targets:
-            if target != scan.relative:
-                graph.files[scan.relative].add(target)
+        # A file importing itself is not an edge; everything else lands in `files`, and in
+        # `hard_files` too unless the language defers it to call time.
+        targets = {target for target in resolved.targets if target != scan.relative}
+        graph.files[scan.relative] |= targets
+        if not raw.deferred:
+            graph.hard_files[scan.relative] |= targets
 
 
 def _record_external(graph: DependencyGraph, relative: str, raw: RawImport, scan: _Scan) -> None:
@@ -196,12 +209,17 @@ def _aggregate(graph: DependencyGraph, component_of: Callable[[str], str]) -> No
     for source, targets in graph.files.items():
         source_component = component_of(source)
         graph.components.setdefault(source_component, set())
+        graph.hard_components.setdefault(source_component, set())
+        hard = graph.hard_files.get(source, set())
         for target in targets:
             target_component = graph.membership.get(target) or component_of(target)
             graph.components.setdefault(target_component, set())
+            graph.hard_components.setdefault(target_component, set())
             if target_component == source_component:
                 continue
             graph.components[source_component].add(target_component)
+            if target in hard:
+                graph.hard_components[source_component].add(target_component)
             key = (source_component, target_component)
             graph.weights[key] = graph.weights.get(key, 0) + 1
 

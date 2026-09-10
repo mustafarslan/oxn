@@ -9,6 +9,7 @@ rather than asserted against labels that do not exist.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pytest
 
@@ -329,3 +330,94 @@ def test_equally_severe_smells_come_back_in_a_stable_order() -> None:
 
     rows = [(smell.kind, -smell.severity, smell.component) for smell in smells]
     assert rows == sorted(rows), "the sort key must be total, or the order is hash-dependent"
+
+
+# ---- acyclic, the fifth contract kind ------------------------------------------------------
+
+
+def _cycle_project(root: Path, *, deferred: bool) -> None:
+    """Two packages that import each other; `deferred` puts one import inside a function."""
+    for package in ("alpha", "beta"):
+        (root / package).mkdir()
+        (root / package / "__init__.py").write_text("")
+    (root / "alpha" / "core.py").write_text(
+        "from beta import helper\n\n\ndef go():\n    return helper.value()\n"
+    )
+    back = (
+        "def value():\n    return 1\n\n\ndef back():\n    from alpha import core\n\n"
+        "    return core.go()\n"
+        if deferred
+        else "from alpha import core\n\n\ndef value():\n    return 1\n\n\n"
+        "def back():\n    return core.go()\n"
+    )
+    (root / "beta" / "helper.py").write_text(back)
+
+
+def _acyclic_check(root: Path, *, strict: bool = False):
+    from oxn.check import run_check
+
+    (root / "oxn.yaml").write_text(
+        "version: 1\nlayers:\n  alpha: ['alpha/**']\n  beta: ['beta/**']\n"
+        "contracts:\n  - name: no-rings\n    kind: acyclic\n"
+        + ("    deferred: true\n" if strict else "")
+    )
+    return run_check(["."], deep=True, use_baseline=False)
+
+
+def test_an_acyclic_contract_blocks_a_ring_between_two_packages(tmp_path, monkeypatch) -> None:
+    """The gate could not answer this at all until 2026-09-10.
+
+    `cycle` was declared in `REPOSITORY_RELATIONS`, `--deep` advertised it in its own
+    diagnostic, and no fact source produced a row: a two-package ring passed with 0
+    violations while `oxn arch` reported it.
+    """
+    monkeypatch.chdir(tmp_path)
+    _cycle_project(tmp_path, deferred=False)
+
+    report = _acyclic_check(tmp_path)
+    assert report.exit_code != 0
+    assert "contract:no-rings" in {finding.rule for finding in report.blocking}
+
+
+def test_a_cycle_that_only_exists_through_a_deferred_import_is_not_one(
+    tmp_path, monkeypatch
+) -> None:
+    """Moving the import into the function *is* the fix, in Python and in CommonJS.
+
+    A check that counts it reports the remedy as the fault. Measured on OXN's own tree: 9
+    components in a ring on all imports, 2 on the ones that run at module load.
+    """
+    monkeypatch.chdir(tmp_path)
+    _cycle_project(tmp_path, deferred=True)
+
+    assert _acyclic_check(tmp_path).exit_code == 0
+    assert _acyclic_check(tmp_path, strict=True).exit_code != 0, "`deferred: true` still asks"
+
+
+def test_the_hook_declines_a_cycle_rather_than_answering_it_from_one_file(
+    tmp_path, monkeypatch
+) -> None:
+    """An SCC is a property of the whole graph; a file-scoped run can only get it wrong."""
+    from oxn.check import run_check
+
+    monkeypatch.chdir(tmp_path)
+    _cycle_project(tmp_path, deferred=False)
+    _acyclic_check(tmp_path)
+
+    assert run_check(["alpha/core.py"], use_baseline=False).exit_code == 0
+
+
+def test_a_misspelled_contract_kind_is_refused_rather_than_silently_inert(tmp_path) -> None:
+    """`contract_rules` skips what it does not recognise, so `kind: acylic` gated nothing.
+
+    A gate that quietly does not run is worse than one that is switched off: the second is
+    a decision and the first reads like protection.
+    """
+    from oxn.config import Config, ConfigError
+
+    (tmp_path / "oxn.yaml").write_text(
+        "version: 1\ncontracts:\n  - name: rings\n    kind: acylic\n"
+    )
+    with pytest.raises(ConfigError) as raised:
+        Config.load(tmp_path)
+    assert "acylic" in str(raised.value) and "acyclic" in str(raised.value)

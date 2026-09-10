@@ -368,3 +368,73 @@ The honest limit is that a file-scoped contract check sees the edges a file *mak
 the edges made *at* it. That is not a weakening — the file that made an illegal import had
 its own edit gated — but it is a different claim from `--deep`, and `check` says so in a
 diagnostic rather than leaving a caller to infer it from silence.
+
+## Amendment, 2026-09-10 — `cycle` had a scope and no rows, and now has a contract
+
+`CONDITIONAL_RELATIONS` named `cycle`, `REPOSITORY_RELATIONS` named `cycle`, the `--deep`
+diagnostic advertised "and cycles", and `check.py`'s own docstring said `--deep` "is also
+the only scope that can answer `cycle`". No fact source produced a row and no rule body read
+one. **Measured: a two-package import ring passes `oxn check --deep` with 0 violations while
+`oxn arch` reports it as a `cyclic_dependency` smell.** The scope machinery was complete and
+the check did not exist — a gate that quietly does not run, which reads like protection.
+
+**`acyclic` is the fifth contract kind**, opt-in in `oxn.yaml` beside `layered`, `forbidden`,
+`independence` and `deep_import`:
+
+```yaml
+contracts:
+  - name: no-rings
+    kind: acyclic
+```
+
+It is a kind rather than a default because the answer is a policy. On the six threshold
+corpora the count is **zero cycles**; on OXN's own tree it is **one ring of nine
+components**. A default that fails the tool's own repository and passes every corpus is a
+decision to take deliberately, and `.oxn/baseline.json` is the wrong place to record it.
+
+**A misspelled kind used to be inert.** `contract_rules` builds rules for the kinds it knows
+and skips the rest, so `kind: acylic` declared a contract that could never fire and said
+nothing. `config.CONTRACT_KINDS` now rejects it by name, like `ceilings:` already did.
+
+### The prerequisite: an import inside a function is not an initialisation edge
+
+Moving an import into a function body is *the* remedy for an import cycle in Python and in
+CommonJS. `extract_imports` walks the whole tree — deliberately, since coupling hidden inside
+a function is still coupling — and recorded a deferred import identically to a top-level one,
+so a cycle check over that graph would report the fix as the fault.
+
+`RawImport.deferred` is that distinction, and it is **language-specific rather than
+syntactic**: Go and Java cannot nest an import, and a Rust `use` inside a function is a
+namespace alias that changes nothing about linking, so all three are never deferred however
+deeply nested. `DependencyGraph` now carries `hard_files` and `hard_components` beside
+`files` and `components` — one parse, two views.
+
+**Coupling reads `files`; order reads `hard_files`.** Layer contracts, Martin's metrics,
+Lakos and propagation cost keep every edge: a module that imports another *knows* it,
+whenever the statement runs. Only the ring question uses the initialisation view, and a
+contract can opt back in with `deferred: true` to ask the stricter "may not reach itself by
+any path at all".
+
+Measured on OXN itself:
+
+| view | component edges | cycles |
+|---|---|---|
+| all imports | 50 | one ring of 9 |
+| initialisation only | 25 | one ring of 2 (`src/oxn` ↔ `src/oxn/graph`) |
+
+Half of the edges are deferred, and `oxn arch` reported the 9 until this amendment. The
+lazy-import style is not incidental to OXN — ADR-0004's cold-hook budget is why the modules
+are written that way — so the tool was, in the most direct sense, mismeasuring itself.
+
+### Granularity, and why the finding is still keyed on a file edge
+
+The ring is looked for between **components** (directories), which is what the Acyclic
+Dependencies Principle is about and what `oxn arch` already reports; a file-level ring inside
+one package is common in Python and usually harmless. The *finding* is keyed on the concrete
+import edge that crosses the ring, exactly like the other four kinds, for the reason the
+2026-09-04 amendment gives: keyed on the component pair, a baseline entry would forgive every
+later import between those two components and the ratchet would be an amnesty.
+
+`graph/contracts.py` gains `_check_acyclic`, the hand-coded twin, written from the definition
+rather than by calling the projection — parity is only evidence when the two sides were
+derived separately.

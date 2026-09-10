@@ -80,6 +80,7 @@ def contract_rules(settings: Config) -> list[Rule]:
         "forbidden": _forbidden_rule,
         "independence": _independence_rule,
         "deep_import": _deep_import_rule,
+        "acyclic": _acyclic_rule,
     }
     return [
         builders[contract.kind](contract)
@@ -176,6 +177,28 @@ def _deep_import_rule(contract: object) -> Rule:
             Atom("edge_label", (SRC, DST, Var("Edge"))),
         ),
         head=_edge_head(name, "entered outside its declared entry points"),
+    )
+
+
+def _acyclic_rule(contract: object) -> Rule:
+    """No component may take part in a dependency ring.
+
+    The one contract kind that cannot be answered from one file: an SCC is a property of the
+    whole graph, so `cycle` is in `REPOSITORY_RELATIONS` and the rule is dropped at file
+    scope rather than answered wrongly there. `oxn check --deep` and CI run it.
+
+    Keyed on the concrete edge like the other four -- the ring is in the detail line, so the
+    finding says which import closes it *and* what it closes.
+    """
+    name = contract.name  # type: ignore[attr-defined]
+    return Rule(
+        name=f"contract:{name}",
+        body=(
+            Atom("imports", (SRC, DST)),
+            Atom("cycle", (name, SRC, DST)),
+            Atom("edge_label", (SRC, DST, Var("Edge"))),
+        ),
+        head=_edge_head(name, "closes a dependency cycle"),
     )
 
 

@@ -107,6 +107,11 @@ GATED_METRICS: dict[str, Gate] = {
     ),
 }
 
+#: The contract kinds `contracts:` accepts. Declared here rather than only in
+#: `rules.builtin.contract_rules`, which *skips* what it does not recognise -- so a
+#: misspelled kind built no rule, fired never, and reported nothing.
+CONTRACT_KINDS = frozenset({"layered", "forbidden", "independence", "deep_import", "acyclic"})
+
 
 class ConfigError(ValueError):
     """`oxn.yaml` says something OXN cannot act on. Never silently ignored."""
@@ -253,6 +258,12 @@ def _read_contract(entry: dict[str, Any], layers: set[str]) -> Contract:
     kind = entry.get("kind")
     if not isinstance(name, str) or not isinstance(kind, str):
         raise ConfigError(f"every contract needs a string `name` and `kind`: {entry!r}")
+    if kind not in CONTRACT_KINDS:
+        # A misspelled kind used to be silently inert: `contract_rules` skips what it does
+        # not recognise, so `kind: acylic` declared a contract that could never fire and
+        # said nothing. A gate that quietly does not run is worse than one that is off.
+        known = ", ".join(sorted(CONTRACT_KINDS))
+        raise ConfigError(f"contract {name!r}: {kind!r} is not a contract kind. Known: {known}")
     order = tuple(_as_list(entry.get("order"), f"contracts.{name}.order"))
     for layer in order:
         if layer not in layers:
@@ -268,6 +279,7 @@ def _read_contract(entry: dict[str, Any], layers: set[str]) -> Contract:
         allowed_entrypoints=tuple(
             _as_list(entry.get("allowed_entrypoints"), f"contracts.{name}.allowed_entrypoints")
         ),
+        deferred=bool(entry.get("deferred", False)),
     )
 
 

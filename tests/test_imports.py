@@ -457,3 +457,71 @@ def test_a_java_static_wildcard_couples_to_the_class_not_its_package() -> None:
         "wildcard",
         [],
     )
+
+
+# ---- an import that runs when the body runs ----------------------------------------------
+
+
+def test_a_python_import_inside_a_function_is_marked_deferred() -> None:
+    """The distinction cycle detection needs, and the one the walk could not make.
+
+    A module-body import runs at initialisation; one inside a function runs when the
+    function does, which is precisely how Python breaks an import cycle. Recorded as the
+    same edge, the remedy reads as the disease: OXN's own tree is one 9-component ring on
+    all imports and a 2-component one on initialisation edges alone.
+    """
+    source = (
+        "import top\n\n\n"
+        "def go():\n"
+        "    import deferred_one\n"
+        "    return deferred_one\n\n\n"
+        "class Holder:\n"
+        "    def method(self):\n"
+        "        from pkg import deferred_two\n"
+        "        return deferred_two\n"
+    )
+    found = {item.specifier: item.deferred for item in imports("python", source)}
+
+    assert found == {"top": False, "deferred_one": True, "pkg": True}
+
+
+def test_a_nested_use_defers_nothing_in_rust_go_or_java() -> None:
+    """Only two of the six languages have the semantics, and the flag must say so.
+
+    A Rust `use` inside a function is a namespace alias -- the crate is linked either way --
+    and Go and Java cannot nest an import at all. Marking those deferred would let a real
+    initialisation cycle hide behind an indented statement.
+    """
+    rust = "use top::thing;\n\nfn go() {\n    use inner::other;\n    let _ = other;\n}\n"
+    found = {item.specifier: item.deferred for item in imports("rust", rust)}
+
+    assert found and not any(found.values()), found
+
+
+def test_a_deferred_import_still_counts_as_coupling(tmp_path) -> None:
+    """It is dropped from cycle detection only, never from the layer gate.
+
+    A function-body import reaches across a boundary exactly as a top-level one does -- the
+    module knows the other module either way -- so `include_deferred` defaults to true and
+    the contract check keeps every edge it had.
+    """
+    from oxn.graph.depgraph import build_dependency_graph
+
+    (tmp_path / "alpha").mkdir()
+    (tmp_path / "beta").mkdir()
+    (tmp_path / "alpha" / "__init__.py").write_text("")
+    (tmp_path / "beta" / "__init__.py").write_text("")
+    (tmp_path / "alpha" / "core.py").write_text(
+        "def go():\n    from beta import helper\n\n    return helper\n"
+    )
+    (tmp_path / "beta" / "helper.py").write_text("value = 1\n")
+    files = [
+        tmp_path / "alpha" / "core.py",
+        tmp_path / "beta" / "helper.py",
+        tmp_path / "alpha" / "__init__.py",
+        tmp_path / "beta" / "__init__.py",
+    ]
+
+    graph = build_dependency_graph(tmp_path, files)
+    assert graph.components.get("alpha") == {"beta"}, "the layer gate must still see it"
+    assert not graph.hard_components.get("alpha"), "and a cycle check must not"
