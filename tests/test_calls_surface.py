@@ -231,8 +231,30 @@ def test_a_language_whose_privacy_needs_a_node_refuses_rather_than_reporting_zer
     assert name_privacy(go) == {"b": True}, "a lowercase Go name is unexported"
 
     refused = _dead_code([], name_privacy(java), java, 20)
-    assert refused == {"status": "UNAVAILABLE", "note": NO_PRIVACY}, refused
+    assert refused["status"] == "UNAVAILABLE", refused
+    assert refused["note"] == NO_PRIVACY
+    assert refused["not_judged"] == ["java"]
     assert _dead_code([], name_privacy(go), go, 20)["status"] == "OK", "Go can be answered"
+
+
+def test_one_judgeable_language_does_not_vouch_for_the_others() -> None:
+    """The guard is per language, because polyglot is the normal case.
+
+    Asked per *tree*, a single Python helper beside forty thousand lines of Java satisfies
+    it, and Java's structural zero -- every callable rooted because no name can show it
+    private -- gets reported as a real answer.
+    """
+    from oxn.calls import _dead_code
+    from oxn.metrics.callgraph import name_privacy
+
+    mixed = {
+        "a": ("com.example.Thing.helper", "src/Thing.java", "method"),
+        "b": ("tool._helper", "tool.py", "function"),
+    }
+    section = _dead_code([], name_privacy(mixed), mixed, 20)
+
+    assert section["status"] == "OK", "Python can still be answered"
+    assert section["not_judged"] == ["java"], "and Java must be named as unanswered"
 
 
 def test_paths_choose_which_rows_are_shown_and_not_what_is_computed(tmp_path, monkeypatch) -> None:
@@ -260,3 +282,96 @@ def test_paths_choose_which_rows_are_shown_and_not_what_is_computed(tmp_path, mo
     assert _dead(scoped) == {"src.a._dead_here"}, "a row outside the requested path is not shown"
     assert scoped["callables"] < whole["callables"], "the header counts what the sections show"
     assert scoped["declined"] == whole["declined"], "the graph itself is unchanged"
+
+
+def test_a_function_used_as_a_value_is_not_dead(tmp_path, monkeypatch) -> None:
+    """The last of the three false-positive sources, and the largest after dunders.
+
+    A callable in a dispatch table, a callback or a sort key has no call node, so a
+    reachability pass that follows only calls cannot see it -- and everything reachable only
+    through it goes with it. On OXN's own `src/` this was **36 of the 38 roots of the dead
+    forest**, and fixing it took the report from 69 candidates to 4.
+
+    Both shapes are here because they reach differently. `_HANDLERS` is module-scope, so the
+    reference comes from the file entity, which is a root. The dict inside `dispatch` is
+    function-scope, so the reference comes from `dispatch` and only counts if `dispatch`
+    itself is reached.
+    """
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "m.py").write_text(
+        "def _handler():\n    return 1\n\n\n"
+        "def _nested():\n    return 2\n\n\n"
+        "_HANDLERS = (_handler,)\n\n\n"
+        "def dispatch():\n    return {'k': _nested}\n"
+    )
+    from oxn.graph.indexer import Indexer
+
+    with Indexer(root=tmp_path) as indexer:
+        indexer.index()
+        found = {entity.qualified_name: entity.id for entity in indexer.store.entities_for("m.py")}
+        indexer.store.put_edges(
+            "m.py",
+            [
+                Edge(
+                    src_id=found[source],
+                    kind=EdgeKind.REFERENCES,
+                    dst_id=found[target],
+                    provenance=Provenance.SCIP,
+                    resolution=Resolution.L2,
+                )
+                for source, target in (("m", "m._handler"), ("m.dispatch", "m._nested"))
+            ]
+            + [
+                Edge(
+                    src_id=found["m"],
+                    kind=EdgeKind.CALLS,
+                    dst_id=found["m.dispatch"],
+                    provenance=Provenance.SCIP,
+                    resolution=Resolution.L2,
+                )
+            ],
+        )
+    payload = run_calls(["."])
+
+    assert _dead(payload) == set(), f"nothing here is unused, and OXN said {_dead(payload)}"
+
+
+def test_a_reference_is_not_a_call(tmp_path, monkeypatch) -> None:
+    """`REFERENCES` reaches, and must not count.
+
+    Fan-in, fan-out and the recursion increment are counts of calls. A function named in a
+    handler table has not been called once, and merging these into `CallGraph` would have
+    given every such name a caller it does not have -- and could manufacture a recursion
+    cycle, which inflates every cognitive-complexity score in it.
+    """
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "m.py").write_text("def _handler():\n    return 1\n\n\n_H = (_handler,)\n")
+    from oxn.graph.indexer import Indexer
+
+    with Indexer(root=tmp_path) as indexer:
+        indexer.index()
+        found = {entity.qualified_name: entity.id for entity in indexer.store.entities_for("m.py")}
+        indexer.store.put_edges(
+            "m.py",
+            [
+                Edge(
+                    src_id=found["m"],
+                    kind=EdgeKind.REFERENCES,
+                    dst_id=found["m._handler"],
+                    provenance=Provenance.SCIP,
+                    resolution=Resolution.L2,
+                ),
+                Edge(
+                    src_id=found["m"],
+                    kind=EdgeKind.CALLS,
+                    dst_ref="requests.get",
+                    provenance=Provenance.SCIP,
+                    resolution=Resolution.L2,
+                ),
+            ],
+        )
+    payload = run_calls(["."])
+
+    assert "m._handler" not in _dead(payload), "the reference must reach it"
+    fan = {row["qualified_name"]: row for row in payload["fan"]}
+    assert fan["m._handler"]["fan_in"] == 0, "and must not give it a caller"

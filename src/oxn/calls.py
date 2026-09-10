@@ -48,13 +48,12 @@ def run_calls(paths: list[str], output: Output = TO_JSON, *, limit: int = 20) ->
     that has never ingested a SCIP index -- which is every tree by default. `_dead_code`
     refuses a second way, for a language whose privacy no name can decide.
 
-    **What dead code still over-reports, measured rather than guessed.** A callable that is
-    *referenced as a value* -- an entry in a dispatch table, a callback, a sort key -- has no
-    call node, so `scip.join` never writes an edge to it and everything reachable only
-    through it is reported. On OXN's own `src/` on 2026-09-10: 69 candidates, of which 38 are
-    the roots of the dead forest and the other 31 hang off them, and **36 of those 38 are a
-    reference rather than a call**. One shape, one missing relation: `EdgeKind.REFERENCES`
-    exists and nothing populates it. Until it does, read a candidate as a question.
+    **What dead code still over-reports, measured rather than guessed.** A call through an
+    *imported* name resolves to a SCIP document-local symbol, and a local has no cross-file
+    meaning, so the edge resolves to nothing: **2,303 of OXN's 9,497 call edges, 24%**, against
+    4,570 that genuinely leave the tree. Anything reached only from another file's import is
+    therefore still reported. On OXN's own `src/` on 2026-09-10 that is 3 of 4 candidates --
+    the fourth, `cli._version`, is real. Read a candidate as a question, not a verdict.
 
     Two false-positive sources have been removed and the numbers are worth keeping. Members
     the language dispatches without naming -- a constructor, `__eq__`, `__iter__` -- were
@@ -87,7 +86,10 @@ def run_calls(paths: list[str], output: Output = TO_JSON, *, limit: int = 20) ->
             graph,
             entities,
             default_roots(read.every, privacy),
-            dispatch=dispatched_members(entities, read.classes, read.parents, read.overriding),
+            reaches=_reaches(
+                dispatched_members(entities, read.classes, read.parents, read.overriding),
+                read.references,
+            ),
         )
         if read.selected(found.file_path)
     ]
@@ -140,6 +142,8 @@ class _CallCache:
     #: traversal, and a file is a root, so both must survive the trip out of the store.
     every: dict[str, tuple[str, str, str]]
     parents: dict[str, str | None]
+    #: Source id -> what it mentions without calling. See `graph.rows.reference_edges`.
+    references: dict[str, list[str]]
     selected: Callable[[str], bool]
     #: `every` partitioned the three ways the report reads it: what can be reported dead,
     #: what can own a dispatched member, and what the requested paths actually cover.
@@ -157,7 +161,7 @@ def _call_cache(paths: list[str]) -> _CallCache:
     rows are shown.
     """
     from oxn.config import CALLABLE_KINDS, CLASS_KINDS
-    from oxn.graph.rows import call_edges, dispatch_sources
+    from oxn.graph.rows import call_edges, dispatch_sources, reference_edges
 
     targets = [Path(raw) for raw in paths]
     with _indexer() as indexer:
@@ -173,6 +177,7 @@ def _call_cache(paths: list[str]) -> _CallCache:
         return _CallCache(
             rows=call_edges(indexer.store),
             overriding=dispatch_sources(indexer.store),
+            references=reference_edges(indexer.store),
             every=every,
             parents=parents,
             selected=selected,
@@ -180,6 +185,21 @@ def _call_cache(paths: list[str]) -> _CallCache:
             classes={key: row for key, row in every.items() if row[2] in CLASS_KINDS},
             shown=[key for key, row in callables.items() if selected(row[1])],
         )
+
+
+def _reaches(
+    dispatch: Mapping[str, list[str]], references: Mapping[str, list[str]]
+) -> dict[str, list[str]]:
+    """Every non-call way one entity reaches another, in one mapping.
+
+    Two sources with the same shape and the same job, and an entity can be in both -- a class
+    that dispatches a constructor and is itself named in a registry -- so they are merged
+    rather than passed separately.
+    """
+    merged: dict[str, list[str]] = {key: list(value) for key, value in dispatch.items()}
+    for key, value in references.items():
+        merged.setdefault(key, []).extend(value)
+    return merged
 
 
 def _under(targets: list[Path], root: Path) -> Callable[[str], bool]:
@@ -207,16 +227,23 @@ def _dead_code(
     entities: Mapping[str, tuple[str, str, str]],
     limit: int,
 ) -> dict[str, Any]:
-    """The dead-code section, which refuses when nothing in the tree could be judged private.
+    """The dead-code section, which refuses for any language it could not judge.
 
     `default_roots` roots everything it cannot show to be private, so a language whose
     privacy lives in a modifier -- Java, Rust, TypeScript outside ``#`` -- roots *every*
     callable and reaches a total of zero without having looked. That zero and "nothing is
     dead" are different claims, and only `NO_CALL_GRAPH`'s shape tells them apart.
+
+    **Asked per language, not per tree.** Polyglot is the normal case, and a tree-wide test
+    let one Python helper vouch for forty thousand lines of Java beside it -- Java's
+    structural zero reported as a real answer because something else in the repository could
+    be judged. A language nothing could be judged in is named in ``not_judged``; when that is
+    every language present, the section refuses outright.
     """
-    if entities and not any(privacy.get(key) for key in entities):
-        return {"status": "UNAVAILABLE", "note": NO_PRIVACY}
-    return {
+    blind = _unjudged(privacy, entities)
+    if blind and blind == _languages(entities):
+        return {"status": "UNAVAILABLE", "note": NO_PRIVACY, "not_judged": sorted(blind)}
+    section: dict[str, Any] = {
         "status": "OK",
         "candidates": [
             {"qualified_name": found.qualified_name, "path": found.file_path}
@@ -224,3 +251,29 @@ def _dead_code(
         ],
         "total": len(dead),
     }
+    if blind:
+        section["not_judged"] = sorted(blind)
+        section["note"] = NO_PRIVACY
+    return section
+
+
+def _languages(entities: Mapping[str, tuple[str, str, str]]) -> set[str]:
+    """Every language with a callable in this tree."""
+    from oxn.profiles import profile_for_path
+
+    found = (profile_for_path(row[1]) for row in entities.values())
+    return {profile.name for profile in found if profile is not None}
+
+
+def _unjudged(
+    privacy: Mapping[str, bool | None], entities: Mapping[str, tuple[str, str, str]]
+) -> set[str]:
+    """Languages with callables here, not one of which could be shown private by name."""
+    from oxn.profiles import profile_for_path
+
+    judged: dict[str, bool] = {}
+    for key, row in entities.items():
+        profile = profile_for_path(row[1])
+        if profile is not None:
+            judged[profile.name] = judged.get(profile.name, False) or bool(privacy.get(key))
+    return {language for language, seen in judged.items() if not seen}

@@ -75,3 +75,40 @@ def dispatch_sources(store: GraphStore) -> set[str]:
         (EdgeKind.OVERRIDES.value, EdgeKind.IMPLEMENTS.value),
     ).fetchall()
     return {row["src_id"] for row in found}
+
+
+def reference_edges(store: GraphStore) -> dict[str, list[str]]:
+    """``REFERENCES`` edges as source id -> the entity ids it mentions.
+
+    Resolved only, and that is not a filter but the whole population: an unresolved reference
+    names something outside the tree and `GraphStore.drop_unresolved_references` has already
+    discarded it. Contrast `call_edges`, which keeps its unresolved rows deliberately because
+    `declined` is a number a reader needs.
+    """
+    found = store._conn.execute(  # noqa: SLF001
+        "SELECT DISTINCT src_id, dst_id FROM edges WHERE kind = ? AND dst_id IS NOT NULL",
+        (EdgeKind.REFERENCES.value,),
+    ).fetchall()
+    out: dict[str, list[str]] = {}
+    for row in found:
+        out.setdefault(row["src_id"], []).append(row["dst_id"])
+    return out
+
+
+def drop_unresolved_references(store: GraphStore) -> int:
+    """Discard ``REFERENCES`` edges that name a symbol outside the tree.
+
+    The asymmetry with ``CALLS`` is deliberate and is about who reads them. An unresolved
+    call is *reported*: `build_call_graph` counts it as `declined`, and that number is how a
+    reader knows what share of the picture they are being shown -- 1,939 of httpx's 4,025
+    call sites leave the tree. A reference exists for one purpose, reachability inside the
+    tree, and one that leaves it can never contribute. On OXN's own source **33,589 of
+    35,332 reference edges resolved to nothing**, mostly the standard library, and keeping
+    them would have tripled the cache for rows with no reader.
+    """
+    with store._transaction() as conn:  # noqa: SLF001
+        cursor = conn.execute(
+            "DELETE FROM edges WHERE kind = ? AND dst_id IS NULL",
+            (EdgeKind.REFERENCES.value,),
+        )
+        return int(cursor.rowcount)

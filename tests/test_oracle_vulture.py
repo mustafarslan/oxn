@@ -120,7 +120,7 @@ def test_neither_tool_flags_a_helper_a_constructor_calls(tmp_path) -> None:
             graph,
             callables,
             default_roots(rows),
-            dispatch=dispatched_members(callables, classes, parents),
+            reaches=dispatched_members(callables, classes, parents),
         )
     }
 

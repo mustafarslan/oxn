@@ -172,3 +172,37 @@ def test_a_named_symbol_that_agrees_is_graded() -> None:
 
     assert accuracy.graded_call_sites == 1
     assert accuracy.excluded_untrustworthy == 0
+
+
+def test_an_import_is_a_mention_and_not_a_use(tmp_path) -> None:
+    """`REFERENCES` excludes import occurrences, via SCIP's role bits.
+
+    `from m import _helper` mentions `_helper` without using it, and counting that as a
+    reference would let every importable name reach itself: the module that imports a
+    dispatch target would reach it through the import line alone, and the dead-code pass
+    would go quiet for the wrong reason -- reporting nothing because everything imports
+    something, rather than because nothing is dead.
+
+    SCIP marks this for us. `symbol_roles` carries Import as its own bit, so this is read
+    rather than inferred from position or shape.
+    """
+    from tests.test_scip import delimited, document, occurrence
+
+    from oxn.graph.indexer import Indexer
+    from oxn.scip.ingest import ingest_index
+
+    (tmp_path / "m.py").write_bytes(b"def helper():\n    return 1\n")
+    (tmp_path / "u.py").write_bytes(b"from m import helper\n")
+    index = tmp_path / "one.scip"
+    index.write_bytes(
+        delimited(2, document("m.py", [occurrence("scip py p 1 `m`/helper().", [0, 4, 10], 1)]))
+        # Role 2 is Import: the same symbol, mentioned rather than used.
+        + delimited(2, document("u.py", [occurrence("scip py p 1 `m`/helper().", [0, 14, 20], 2)]))
+    )
+
+    with Indexer(root=tmp_path, cache_path=tmp_path / "graph.db") as indexer:
+        indexer.index()
+        ingest_index(indexer, index)
+        assert indexer.store.edge_stats().get("references", 0) == 0, (
+            "an import line must not produce a reference edge"
+        )

@@ -93,7 +93,7 @@ def unreachable(
     entities: Mapping[str, tuple[str, str, str]],
     roots: Iterable[str],
     *,
-    dispatch: Mapping[str, Iterable[str]] | None = None,
+    reaches: Mapping[str, Iterable[str]] | None = None,
 ) -> list[DeadCodeCandidate]:
     """Entities not reachable from ``roots``.
 
@@ -102,13 +102,15 @@ def unreachable(
     though a class is not a candidate, because writing ``Client(...)`` is how the language
     reaches ``Client.__init__``.
 
-    ``dispatch`` maps a class id to the members its language invokes without naming them --
-    see `dispatched_members`. Kept separate from ``graph.edges`` rather than merged into it:
-    fan-in and fan-out are counts of *calls*, and a constructor nobody writes a call for
-    would otherwise gain one.
+    ``reaches`` is every way one entity reaches another that is *not* a call: a class to the
+    members its language dispatches (`dispatched_members`), and an entity to what it merely
+    mentions (`graph.rows.reference_edges`). Kept out of ``graph.edges`` rather than merged
+    into it, because fan-in, fan-out and the recursion increment are counts of **calls** --
+    a constructor nobody writes a call for, or a function named in a handler table, has not
+    been called once and must not read as though it had.
     """
     reached: set[str] = set()
-    dispatch = dispatch or {}
+    reaches = reaches or {}
     # Seeded unfiltered: a root may be a class, which is a node here but not a candidate.
     frontier = list(roots)
     while frontier:
@@ -117,7 +119,7 @@ def unreachable(
             continue
         reached.add(current)
         frontier.extend(graph.edges.get(current, ()))
-        frontier.extend(dispatch.get(current, ()))
+        frontier.extend(reaches.get(current, ()))
 
     return sorted(
         (

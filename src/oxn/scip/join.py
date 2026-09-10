@@ -17,7 +17,7 @@ more (docs/metrics.md section 2.2).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from oxn.graph.model import Edge, EdgeKind, EntityKind, Provenance, Resolution
@@ -88,6 +88,26 @@ def scoped(symbol: str, path: str) -> str:
 
 
 @dataclass
+class _Join:
+    """The state one document's join carries between its passes.
+
+    Assembled once rather than threaded as arguments: `_map_calls` and `_map_references` had
+    grown to six parameters each, and they are not six things -- they are one document being
+    read four ways.
+    """
+
+    by_position: dict[tuple[int, int], ScipOccurrence]
+    by_def_range: dict[tuple[int, int], Entity]
+    profile: LanguageProfile
+    tree_root: Node
+    result: JoinResult
+    #: Occurrence positions `_map_calls` matched, so `_map_references` can tell a call from
+    #: a mention of the same name. SCIP marks definitions, imports, reads and writes -- it
+    #: does not mark calls, so this is the only way to know.
+    consumed: set[tuple[int, int]] = field(default_factory=set)
+
+
+@dataclass
 class JoinResult:
     """Edges recovered for one file, plus the coverage that produced them."""
 
@@ -138,8 +158,10 @@ def join_document(
             None,
         ),
     )
-    _map_definitions(by_position, by_def_range, profile, tree_root, result)
-    _map_calls(by_position, by_def_range, profile, tree_root, result)
+    join = _Join(by_position, by_def_range, profile, tree_root, result)
+    _map_definitions(join)
+    _map_calls(join)
+    _map_references(join, document)
     _map_relationships(document, result)
     return result
 
@@ -152,14 +174,10 @@ def _index_occurrences(document: ScipDocument) -> dict[tuple[int, int], ScipOccu
     }
 
 
-def _map_definitions(
-    by_position: dict[tuple[int, int], ScipOccurrence],
-    by_def_range: dict[tuple[int, int], Entity],
-    profile: LanguageProfile,
-    tree_root: Node,
-    result: JoinResult,
-) -> None:
+def _map_definitions(join: _Join) -> None:
     """Match each entity to the SCIP symbol declared at its name."""
+    by_position, by_def_range = join.by_position, join.by_def_range
+    profile, tree_root, result = join.profile, join.tree_root, join.result
     for definition, entity in _iter_definitions(profile, tree_root, by_def_range):
         # `profile.name_node`, not the name field: a callable bound to a name -- `const
         # handler = () => {}` -- is named by the identifier *outside* it, and SCIP puts its
@@ -175,13 +193,9 @@ def _map_definitions(
             result.joined_definition_sites += 1
 
 
-def _map_calls(
-    by_position: dict[tuple[int, int], ScipOccurrence],
-    by_def_range: dict[tuple[int, int], Entity],
-    profile: LanguageProfile,
-    tree_root: Node,
-    result: JoinResult,
-) -> None:
+def _map_calls(join: _Join) -> None:
+    by_position, by_def_range = join.by_position, join.by_def_range
+    profile, tree_root, result, consumed = join.profile, join.tree_root, join.result, join.consumed
     call_kinds = profile.metrics.cognitive.call_kinds
     callee_field = profile.metrics.cognitive.callee_field
     if not call_kinds:
@@ -199,12 +213,7 @@ def _map_calls(
             continue
         result.call_sites += 1
 
-        # A qualified callee (`repo.save`) must resolve on its *last* name component. Its
-        # start position belongs to the receiver, and `repo` is usually a local variable --
-        # matching there produces an edge to the local instead of to the method.
-        occurrence = by_position.get(_last_name_position(callee)) or by_position.get(
-            callee.start_point
-        )
+        position, occurrence = _occurrence_at(callee, by_position)
         if occurrence is None:
             continue
 
@@ -216,6 +225,8 @@ def _map_calls(
         if caller is None:
             continue
 
+        # Recorded so `_map_references` can tell a call from a mention of the same name.
+        consumed.add(position)
         result.joined_call_sites += 1
         result.edges.append(
             Edge(
@@ -225,6 +236,54 @@ def _map_calls(
                 provenance=Provenance.SCIP,
                 resolution=Resolution.L2,
                 attrs={"line": node.start_point[0] + 1},
+            )
+        )
+
+
+def _map_references(join: _Join, document: ScipDocument) -> None:
+    """``REFERENCES`` edges: a symbol *mentioned* where it is not called.
+
+    **A callable used as a value has no call node, and reachability that only follows calls
+    cannot see it.** `_HANDLERS = (_ignored, _else_if, ...)` is how this repository dispatches
+    cognitive-complexity handlers, and `{"python": _python_statement, ...}` is how it
+    dispatches import parsers -- neither writes a call, so nothing reached those functions and
+    everything downstream of them was reported dead. Measured on OXN's own `src/` before this
+    existed: 69 dead-code candidates, 38 of them roots of the dead forest, and **36 of those
+    38 were a reference rather than a call**.
+
+    Three exclusions, each of which would otherwise make the edge a lie:
+
+    * **Definitions.** The name at its own `def` is not a use of it.
+    * **Calls**, via ``consumed``. SCIP does not mark a call occurrence -- the role bits know
+      about reads, writes, imports and definitions, and nothing else -- so the only way to
+      know is that `_map_calls` already matched that position, which is why it records them.
+    * **Imports**, via ``roles``. An import is a mention and not a use: `_python_module_ref`
+      is imported by the module that dispatches to it, and counting that would let every
+      importable name reach itself.
+
+    Kept out of `CallGraph` entirely and used only for reachability. Fan-in, fan-out and the
+    recursion increment are counts of *calls*, and a function named in a handler table has
+    not been called once.
+    """
+    by_def_range, profile = join.by_def_range, join.profile
+    tree_root, result, consumed = join.tree_root, join.result, join.consumed
+    for occurrence in document.occurrences:
+        position = (occurrence.start_line, occurrence.start_char)
+        if occurrence.is_definition or occurrence.is_import or position in consumed:
+            continue
+        node = tree_root.descendant_for_point_range(position, position)
+        source = (
+            _enclosing_entity(node, profile, by_def_range) if node is not None else None
+        ) or result.module
+        if source is None:
+            continue
+        result.edges.append(
+            Edge(
+                src_id=source.id,
+                kind=EdgeKind.REFERENCES,
+                dst_ref=scoped(occurrence.symbol, result.path),
+                provenance=Provenance.SCIP,
+                resolution=Resolution.L2,
             )
         )
 
@@ -280,6 +339,25 @@ def _enclosing_entity(
                 return entity
         current = current.parent
     return None
+
+
+def _occurrence_at(
+    callee: Node, by_position: dict[tuple[int, int], ScipOccurrence]
+) -> tuple[tuple[int, int], ScipOccurrence | None]:
+    """The occurrence a callee resolves to, and the position it was found at.
+
+    **A qualified callee (`repo.save`) must resolve on its *last* name component.** Its start
+    position belongs to the receiver, and `repo` is usually a local variable, so matching
+    there produces an edge to the local instead of to the method. The start position is the
+    fallback for a callee that is a bare name.
+
+    The position is returned alongside because `_map_calls` records it: it is what lets
+    `_map_references` tell a call from a mention.
+    """
+    position = _last_name_position(callee)
+    if position not in by_position:
+        position = callee.start_point
+    return position, by_position.get(position)
 
 
 def _last_name_position(callee: Node) -> tuple[int, int]:

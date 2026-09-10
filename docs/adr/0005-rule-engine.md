@@ -438,3 +438,53 @@ later import between those two components and the ratchet would be an amnesty.
 `graph/contracts.py` gains `_check_acyclic`, the hand-coded twin, written from the definition
 rather than by calling the projection — parity is only evidence when the two sides were
 derived separately.
+
+---
+
+## Amendment, 2026-09-10 — `REFERENCES`, and the difference between reaching and calling
+
+`EdgeKind.REFERENCES` was declared in the P1 schema and populated by nothing. It is now
+written by the SCIP join, and it exists because **reachability and calling are different
+relations, and dead code needs the first while every other call-graph metric needs the
+second**.
+
+A callable used as a *value* — an entry in a dispatch table, a callback, a sort key — has no
+call node anywhere. `_HANDLERS = (_ignored, _else_if, ...)` is how this repository dispatches
+cognitive-complexity handlers and `{"python": _python_statement, ...}` is how it dispatches
+import parsers; nothing calls those functions by name, so a reachability pass that follows
+only calls could not see them, and everything reachable only through them was reported dead.
+Measured on OXN's own `src/`: **69 candidates, 38 of them roots of the dead forest, and 36 of
+those 38 a reference rather than a call.** With `REFERENCES` the report is **4**, one of which
+(`cli._version`, defined and mentioned nowhere) is a true positive.
+
+**They are kept out of `CallGraph` entirely.** Fan-in, fan-out and the recursion increment are
+counts of *calls*: a function named in a handler table has not been called once, and merging
+these would give it a caller it does not have. Worse, a mutual reference would manufacture a
+recursion cycle, and a phantom cycle inflates every cognitive-complexity score in it — the
+failure the `metrics/callgraph.py` module docstring already warns about. `unreachable` takes
+them as a separate `reaches` mapping alongside dispatched members, and nothing else reads them.
+
+**Three exclusions, each of which would otherwise make the edge a lie.** A *definition* is not
+a use of the thing defined. A *call* is already an edge, and SCIP does not mark call
+occurrences — its roles are definition, import, read and write — so the only way to know is
+that the call pass already matched that position, which is why it records them. And an
+*import* is a mention rather than a use: counting `from m import helper` would let every
+importable name reach itself, and the dead-code pass would go quiet because everything imports
+something rather than because nothing is dead. SCIP marks that one for us.
+
+**Unresolved references are discarded, and unresolved calls are not.** The asymmetry is about
+who reads them. `declined` tells a reader what share of the call picture is missing — 1,939 of
+httpx's 4,025 call sites leave the tree — and is worth its rows. A reference that leaves the
+tree can never contribute to in-tree reachability and has no reader at all: **33,589 of 35,332
+resolved to nothing**, mostly the standard library.
+
+### Known gap, measured: calls through an imported name
+
+`scip-python` binds `from oxn.check import _measure` as a **document-local** symbol, so the
+call site resolves to `local 3 tests/test_rules_parity.py` — and a local is document-scoped
+(see `scip.join.scoped`), so it resolves to nothing. **2,303 of OXN's 9,497 call edges — 24% —
+are unresolved for this reason**, against 4,570 that genuinely leave the tree. The three
+remaining dead-code candidates that are not true positives are all of this shape: reached only
+from a test that imports them. Recovering these means mapping a document's local import
+bindings to the symbols they alias, which the import occurrence at the same position already
+carries. Not attempted here.

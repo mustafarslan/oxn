@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from oxn.graph.rows import drop_unresolved_references
 from oxn.scip.index import load_index
 from oxn.scip.join import join_document
 
@@ -37,6 +38,9 @@ class IngestReport:
     #: Documents `oxn.yaml`'s `exclude` names. Counted rather than listed: on OXN's own
     #: tree that is 1,464 corpus files, and a list of them is not a report.
     excluded: int = 0
+    #: `REFERENCES` edges naming a symbol outside the tree, discarded after resolution.
+    #: See `GraphStore.drop_unresolved_references` for why these and not unresolved calls.
+    dropped_references: int = 0
 
     @property
     def call_coverage(self) -> float:
@@ -67,6 +71,7 @@ class IngestReport:
             "seconds": round(self.seconds, 2),
             "skipped": self.skipped[:20],
             "excluded": self.excluded,
+            "dropped_references": self.dropped_references,
         }
 
 
@@ -134,5 +139,6 @@ def ingest_index(indexer: Indexer, index_path: Path | str) -> IngestReport:
         report.joined_definition_sites += result.joined_definition_sites
 
     report.resolved_edges = indexer.store.resolve_edge_targets()
+    report.dropped_references = drop_unresolved_references(indexer.store)
     report.seconds = time.perf_counter() - started
     return report
