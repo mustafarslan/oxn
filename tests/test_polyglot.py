@@ -402,3 +402,95 @@ def test_a_go_signature_that_groups_and_one_that_does_not_agree() -> None:
         root = get_parser("go").parse(source.encode()).root_node
         names.append(profile.parameter_names(root.named_children[1]))
     assert names[0] == names[1] == ["a", "b", "c", "d", "e"]
+
+
+# ---- one nested shape, six languages -----------------------------------------------------
+
+
+#: One function, four levels deep, two exits. `docs/metrics.md` makes agreement the
+#: acceptance gate rather than parsing, and it is what found the `else if` defect: TypeScript
+#: and Rust wrap the inner `if` in an `else_clause`, so counting the wrapper *and* the `if`
+#: rejected ripgrep at ten times Python's rate for the same shape.
+NESTED = {
+    "python": (
+        "m.py",
+        "def f(a, b, c, d):\n"
+        "    if a:\n"
+        "        for x in b:\n"
+        "            while c:\n"
+        "                if d:\n"
+        "                    return x\n"
+        "    return 0\n",
+    ),
+    "javascript": (
+        "m.js",
+        "function f(a, b, c, d) {\n  if (a) {\n    for (const x of b) {\n"
+        "      while (c) {\n        if (d) {\n          return x;\n"
+        "        }\n      }\n    }\n  }\n  return 0;\n}\n",
+    ),
+    "typescript": (
+        "m.ts",
+        "function f(a: any, b: any, c: any, d: any): any {\n  if (a) {\n"
+        "    for (const x of b) {\n      while (c) {\n        if (d) {\n"
+        "          return x;\n        }\n      }\n    }\n  }\n  return 0;\n}\n",
+    ),
+    "java": (
+        "A.java",
+        "class A {\n  int f(boolean a, int[] b, boolean c, boolean d) {\n    if (a) {\n"
+        "      for (int x : b) {\n        while (c) {\n          if (d) {\n"
+        "            return x;\n          }\n        }\n      }\n    }\n"
+        "    return 0;\n  }\n}\n",
+    ),
+    "go": (
+        "m.go",
+        "package m\n\nfunc f(a bool, b []int, c bool, d bool) int {\n\tif a {\n"
+        "\t\tfor _, x := range b {\n\t\t\tfor c {\n\t\t\t\tif d {\n"
+        "\t\t\t\t\treturn x\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n"
+        "\treturn 0\n}\n",
+    ),
+    "rust": (
+        "m.rs",
+        "fn f(a: bool, b: Vec<i32>, c: bool, d: bool) -> i32 {\n    if a {\n"
+        "        for x in b {\n            while c {\n                if d {\n"
+        "                    return x;\n                }\n            }\n"
+        "        }\n    }\n    0\n}\n",
+    ),
+}
+
+#: What every language must answer identically. `sloc` is deliberately absent: a brace is a
+#: real line of source, so Python's 7 against everyone else's 12 is the metric working. That
+#: difference is also most of `function_sloc`'s language spread, and pretending it away by
+#: normalising would hide the one thing the exceedance table is for.
+SHAPE_METRICS = (
+    "max_nesting_depth",
+    "cognitive_complexity",
+    "cyclomatic_complexity",
+    "exit_points",
+)
+
+
+@pytest.mark.parametrize("language", sorted(NESTED))
+def test_one_nested_shape_scores_the_same_in_every_language(language: str) -> None:
+    from oxn.graph.builder import build_file
+    from oxn.languages import get_parser
+    from oxn.metrics.engine import measure_file
+    from oxn.profiles import get_profile
+
+    path, source = NESTED[language]
+    profile = get_profile(language)
+    data = source.encode()
+    root = get_parser(profile.grammar).parse(data).root_node
+    parsed = build_file(path, data, profile, root)
+
+    measured = next(
+        entity
+        for entity in measure_file(list(parsed.entities), data, profile, root)
+        if entity.qualified_name.endswith(".f")
+    )
+    scored = {name: measured.get(name) for name in SHAPE_METRICS}
+    assert scored == {
+        "max_nesting_depth": 4,
+        "cognitive_complexity": 10,
+        "cyclomatic_complexity": 5,
+        "exit_points": 2,
+    }, language
