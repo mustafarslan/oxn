@@ -197,7 +197,7 @@ class Indexer:
             for stale in self.store.known_paths() - seen:
                 self.store.forget(stale)
 
-        aggregate_classes(self.store, seen)
+        aggregate_classes(self.store, seen, self.root)
         return report
 
     def close(self) -> None:
@@ -231,7 +231,7 @@ def _grammar_version() -> str:
 _OWNER_KINDS = frozenset({EntityKind.CLASS, EntityKind.INTERFACE})
 
 
-def aggregate_classes(store: GraphStore, paths: set[str]) -> None:
+def aggregate_classes(store: GraphStore, paths: set[str], root: Path) -> None:
     """Recompute every class aggregate at *package* scope, once all files are indexed.
 
     `metrics.engine` answers per file, which is exact wherever a method is nested in its
@@ -250,7 +250,7 @@ def aggregate_classes(store: GraphStore, paths: set[str]) -> None:
     """
     from oxn.metrics.coupling import package_class_totals
 
-    for members in _by_package(paths).values():
+    for members in _by_package(paths, store.known_paths(), root).values():
         entities = [entity for path in members for entity in store.entities_for(path)]
         measurements = {path: store.measurements_for(path) for path in members}
         if not _has_work(entities, measurements):
@@ -282,11 +282,40 @@ def _cyclomatic(
     }
 
 
-def _by_package(paths: set[str]) -> dict[str, list[str]]:
-    """Group indexed files by the directory that holds them, which is Go's package."""
+def _by_package(paths: set[str], known: set[str], root: Path) -> dict[str, list[str]]:
+    """Group the touched files by directory -- Go's package -- and complete each group.
+
+    A package is only a package if all of it is present. `index(targets)` passes the files
+    it just indexed, which on the hook path is the one file that was edited, so the "package"
+    was a single-file group and the docstring above became false exactly where it matters: a
+    Go type whose thirteenth method is added in a sibling file scored NOM 1 and **the hook
+    passed the edit**, while `oxn check --deep` failed the same tree. Measured on a two-file
+    package: `--deep` 1 violation, the hook 0.
+
+    So each touched directory is completed from what the cache already holds. That costs
+    SQLite reads for the siblings and no parsing -- they were indexed by whatever ran last.
+    A sibling the cache has never seen still cannot be counted, which is the same limit the
+    hook has everywhere else and is why `--deep` exists.
+
+    **What this does not close**, stated because it is an evasion path and not a rough edge:
+    the aggregate is now right, but a run reports findings for the entities *in the files it
+    was given*, and the class entity lives in the file that declares the type. Editing
+    `more.go` to add a thirteenth method therefore still passes the hook while `kind.go` and
+    `--deep` both fail. Closing it means reporting a finding against a file the edit did not
+    touch, which is a change to what the enforcement channel says and wants a decision rather
+    than a commit. Measured mitigations: on go-kit all 376 methods sit in the same file as
+    their type, so the shape is rare in real Go, and CI catches it either way.
+    """
     grouped: dict[str, list[str]] = {}
-    for path in paths:
-        grouped.setdefault(path.rpartition("/")[0], []).append(path)
+    packages = {path.rpartition("/")[0] for path in paths}
+    for path in known | paths:
+        package = path.rpartition("/")[0]
+        # A partial run does not prune, so the cache can still hold a file that has been
+        # deleted -- and completing a package from it resurrects that file's types. A Go
+        # package holding both the old `all.go` and the new `counter.go` declares `Counter`
+        # twice, the name join picks one, and the surviving type reads NOM 0.
+        if package in packages and (path in paths or (root / path).exists()):
+            grouped.setdefault(package, []).append(path)
     return grouped
 
 

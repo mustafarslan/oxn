@@ -20,7 +20,7 @@ Two scopes, because they have different budgets, and the line between them moved
 2026-09-05. The default is file-scoped — Tier-1 ceilings on the paths given, plus the layer
 contracts those paths' own imports can settle — and belongs in a `PostToolUse` hook at
 ~150 ms on a 1,900-file tree. `--deep` adds what one file cannot answer: edges *into* the
-measured files, and cycles. Contracts were `--deep`-only until that date, on the assumption
+measured files. Contracts were `--deep`-only until that date, on the assumption
 that any import graph meant parsing the whole tree; resolution in fact needs the tree's
 layout and one file's text, so the hook was silent about layer violations for a cost it was
 never actually paying.
@@ -283,7 +283,11 @@ def _edge_facts(
 
     What this cannot see is stated rather than glossed: only edges **out of** the files
     measured. A file nobody edited importing this one illegally is invisible here and is
-    caught by `--deep`, which is also the only scope that can answer `cycle`.
+    caught by `--deep`.
+
+    **`cycle` is declared and not implemented**, and this said otherwise until 2026-09-10:
+    a two-package import cycle passes `--deep` with 0 violations while `oxn arch` reports
+    it. ADR-0005's amendment carries what it would take to gate one.
     """
     deep = report.scope == "repository"
     if not settings.contracts:
@@ -304,8 +308,12 @@ def _edge_facts(
     if not deep:
         report.diagnostics.append(
             "file-scoped contract check: edges out of the files measured. "
-            "`oxn check --deep` adds edges into them, and cycles."
+            "`oxn check --deep` adds edges into them."
         )
+    # `cycle` stays in the conditional set: `REPOSITORY_RELATIONS` uses it to decide what a
+    # file-scoped run must skip, so removing it would let a repository-scoped rule run at
+    # file scope the day one is written. It is a scope declaration, not a promise that the
+    # relation has any rows -- see the docstring.
     return frozenset({"imports", "cycle"}) if deep else frozenset({"imports"})
 
 

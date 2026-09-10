@@ -197,3 +197,43 @@ def test_a_baselined_class_may_stay_but_may_not_grow(project: Path) -> None:
     assert run_check(["m.py"], config=settings).exit_code != 0, (
         "a baselined class that grows another method must fail again -- that is the ratchet"
     )
+
+
+# ---- the package is only a package if all of it is present -------------------------------
+
+_SPLIT_DECLARATION = "package split\n\ntype Widget struct {\n\tname string\n}\n\n" + (
+    'func (w *Widget) Name() string { return w.name }\n'
+)
+_SPLIT_METHODS = "package split\n\n" + "".join(
+    f"func (w *Widget) M{index}() string {{ return w.name }}\n" for index in range(12)
+)
+
+
+def test_a_type_whose_methods_live_in_a_sibling_file_is_counted_by_the_hook(
+    project: Path,
+) -> None:
+    """Go's package scope was applied to whichever files the run happened to index.
+
+    `aggregate_classes` is right that a Go type's methods can sit in a sibling file, and
+    `index(targets)` handed it only the files just indexed -- on the hook path, the one file
+    that was edited. So the "package" was a single-file group: `--deep` failed this tree with
+    NOM 13 and the hook passed it, and the class aggregates are a *ratchet*, which makes an
+    aggregate that changes with the caller's file list worse than untidy.
+
+    Each touched directory is completed from what the cache already holds, so the sibling is
+    counted without being re-parsed.
+    """
+    from oxn.check import run_check
+
+    (project / "kind.go").write_text(_SPLIT_DECLARATION)
+    (project / "more.go").write_text(_SPLIT_METHODS)
+
+    whole = run_check(["."], deep=True, use_baseline=False)
+    assert "methods_per_class" in {finding.rule for finding in whole.blocking}, (
+        "the tree really does breach the ceiling"
+    )
+
+    hook = run_check(["kind.go"], use_baseline=False)
+    assert "methods_per_class" in {finding.rule for finding in hook.blocking}, (
+        "the file declaring the type must see its package's methods"
+    )
