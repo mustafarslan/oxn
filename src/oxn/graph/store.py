@@ -57,7 +57,9 @@ if TYPE_CHECKING:  # pragma: no cover
 #: lambda made both class ceilings inert against the shape. Version 13 labels Java's
 #: `lambda_expression` and ECMAScript's `generator_function` as lambdas, the last two
 #: `function_like` kinds that can carry no name and were counted as named functions.
-SCHEMA_VERSION = 13
+#: Version 14 records every name a Go `parameter_declaration` declares: `f(a, b, c int)`
+#: groups three parameters under one node, and `attrs["parameters"]` held one of them.
+SCHEMA_VERSION = 14
 
 DEFAULT_CACHE_PATH = Path(".oxn/cache/graph.db")
 

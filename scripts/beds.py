@@ -80,6 +80,9 @@ class Bed:
         return self.fetched and bool(self.verify)
 
 
+#: The one httpx test that does not pass on its own untouched tree here. See the bed below.
+_TRIO_TIMEOUT = "tests/test_timeouts.py::test_write_timeout[trio]"
+
 #: This repository, which is the bed every result so far was measured on. Its verification is
 #: the gauntlet's -- tests, lint, types -- and it is the only bed that needs no fetch.
 #:
@@ -101,6 +104,9 @@ SELF = Bed(
         ("types", "-m", "mypy"),
     ),
     venv=True,
+    # This project's own install, which used to be written into `Sandbox.create` and applied
+    # to every bed. It belongs to the bed that has a `dev` extra.
+    prepare=(("-m", "pip", "install", "-q", "-e", ".[dev]"),),
     why="OXN's own source. Honest about the tool, and a statement about one repository.",
 )
 
@@ -133,7 +139,24 @@ _OSS: dict[str, Bed] = {
         name="python-httpx",
         corpus="python-httpx",
         sources=("httpx",),
-        verify=(("tests", "-m", "pytest", "-q", "-x"),),
+        # httpx keeps its dev dependencies in `requirements.txt`, which is what its own CI
+        # installs, and has **no `dev` extra**. The sandbox used to install `-e .[dev]`
+        # regardless -- and `uv` does not refuse a missing extra, it exits 0 having installed
+        # nothing at all, so this bed had no `pytest` and every attempt scored `tests FAIL`.
+        prepare=(("-m", "pip", "install", "-q", "-r", "requirements.txt"),),
+        # ruff and mypy are pinned in that file, so all three checks are the ones httpx runs.
+        verify=(
+            # `test_write_timeout[trio]` fails on the *pristine* tree, deterministically,
+            # three runs out of three: trio 0.31 garbage-collects an async generator that
+            # httpx's pinned test expects to still be live, and pytest turns the
+            # `ResourceWarning` into an error. The `[asyncio]` parametrisation passes. A
+            # check that fails identically before and after a repair says nothing about the
+            # repair and blocks every one of them, so it is deselected by name rather than
+            # left to make the bed unusable -- and named here so that it is a decision.
+            ("tests", "-m", "pytest", "-q", "-x", "--deselect", _TRIO_TIMEOUT),
+            ("lint", "-m", "ruff", "check", "."),
+            ("types", "-m", "mypy", "httpx"),
+        ),
         venv=True,
         why="Python, and the corpus every Python ceiling was measured against.",
     ),

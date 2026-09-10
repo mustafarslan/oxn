@@ -333,3 +333,72 @@ def test_a_statement_wrapping_only_a_statement_is_one_logical_line() -> None:
     source = b"package m\n\nfunc f(a int) int {\n\tb := a\n\treturn b\n}\n"
     profile, node = first_function("go", source.decode())
     assert rust.lloc == line_counts(node, source, profile).lloc == 3
+
+
+# ---- one signature, six languages --------------------------------------------------------
+
+
+#: The same method taking five arguments, written idiomatically in each language. Go's row is
+#: the one that matters: `a, b, c, d, e int` is a *single* `parameter_declaration` holding
+#: five `name` fields, so reading the first identifier of each node counted it as one
+#: parameter -- and `parameter_count` is gated, so `func f(a, b, c, d, e, g int)` walked
+#: through a ceiling of five that every other language's spelling of it fails.
+FIVE_ARGUMENTS = {
+    "python": ("m.py", "class A:\n    def go(self, a, b, c, d, e):\n        return a\n"),
+    "java": ("A.java", "class A { int go(int a, int b, int c, int d, int e) { return a; } }\n"),
+    "typescript": (
+        "m.ts",
+        "class A { go(a: number, b: number, c: number, d: number, e: number) { return a; } }\n",
+    ),
+    "javascript": ("m.js", "class A { go(a, b, c, d, e) { return a; } }\n"),
+    "go": (
+        "m.go",
+        "package m\n\ntype A struct{}\n\nfunc (r A) Go(a, b, c, d, e int) int { return a }\n",
+    ),
+    "rust": (
+        "m.rs",
+        "struct A;\nimpl A { fn go(&self, a: i32, b: i32, c: i32, d: i32, e: i32) -> i32 { a } }\n",
+    ),
+}
+
+
+@pytest.mark.parametrize("language", sorted(FIVE_ARGUMENTS))
+def test_five_arguments_count_as_five_everywhere(language: str) -> None:
+    """A receiver is not an argument and a grouped declaration is not one argument.
+
+    Both halves have been wrong here: Python's `self` and Rust's `&self` are excluded by
+    reading the *actual* first parameter, and Go's grouping was found by asking all six
+    languages the same question rather than by any single-language test.
+    """
+    from oxn.graph.builder import build_file
+    from oxn.languages import get_parser
+    from oxn.metrics.engine import measure_file
+    from oxn.profiles import get_profile
+
+    path, source = FIVE_ARGUMENTS[language]
+    profile = get_profile(language)
+    data = source.encode()
+    root = get_parser(profile.grammar).parse(data).root_node
+    parsed = build_file(path, data, profile, root)
+
+    counts = [
+        measured.get("parameter_count")
+        for measured in measure_file(list(parsed.entities), data, profile, root)
+        if measured.qualified_name.lower().endswith(".go")
+    ]
+    assert counts == [5], f"{language}: {counts}"
+
+
+def test_a_go_signature_that_groups_and_one_that_does_not_agree() -> None:
+    """The control for the row above, so the fix is not just "five" by coincidence."""
+    from oxn.languages import get_parser
+    from oxn.profiles import get_profile
+
+    profile = get_profile("go")
+    grouped = "package m\n\nfunc f(a, b, c int, d string, e ...int) int { return a }\n"
+    spelled = "package m\n\nfunc f(a int, b int, c int, d string, e ...int) int { return a }\n"
+    names = []
+    for source in (grouped, spelled):
+        root = get_parser("go").parse(source.encode()).root_node
+        names.append(profile.parameter_names(root.named_children[1]))
+    assert names[0] == names[1] == ["a", "b", "c", "d", "e"]

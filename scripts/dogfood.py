@@ -59,6 +59,7 @@ from gauntlet import (
     Sandbox,
     measure,
     run_gauntlet,
+    verify_bed,
 )
 from runlog import Attempt, _append_log
 from summary import summarise
@@ -205,11 +206,17 @@ def _repair_one(
         return []
 
     before = measure(None, target)
-    sandbox = Sandbox(target.leaf, root=where.root, venv=where.venv)
+    sandbox = Sandbox(target.leaf, root=where.root, venv=where.venv, prepare=where.prepare)
     attempts: list[Attempt] = []
     try:
         say(f"{DIM}  creating sandbox...{RESET}")
         sandbox.create()
+        # The bed's own checks, on the bed's own untouched code. A tree that fails them
+        # cannot say anything about a repair, and it fails them the same way a bad repair
+        # does -- which is how an empty virtualenv produced `tests FAIL` on every attempt of
+        # every arm and would have rendered as a table.
+        say(f"{DIM}  verifying the bed...{RESET}")
+        verify_bed(sandbox, where.verify)
         run = Run(
             actor=crew.actor,
             judge=crew.judge,
@@ -389,13 +396,25 @@ def _judge_if_it_earned_one(
         return {"verdict": "unavailable", "error": str(error)[:200]}
 
 
+def _mark(label: str, gauntlet: GauntletResult) -> str:
+    """One check's verdict, and `skip` for one the bed never declared.
+
+    `GauntletResult.skipped` has kept "not applicable" apart from "failed" since it was
+    added, and this line printed `FAIL` for both -- so every Python-only bed read
+    `lint FAIL types FAIL` on every attempt, for two commands that were never run. The same
+    thing `_run_toolchain`'s docstring calls worse than a red row, in the one place a human
+    actually watches.
+    """
+    if label in gauntlet.skipped:
+        return f"{label} skip"
+    return f"{label} {'ok' if getattr(gauntlet, f'{label}_pass') else 'FAIL'}"
+
+
 def _report_attempt(
     index: int, gauntlet: GauntletResult, verdict: dict[str, Any], accepted: bool
 ) -> None:
     marks = [
-        f"tests {'ok' if gauntlet.tests_pass else 'FAIL'}",
-        f"lint {'ok' if gauntlet.lint_pass else 'FAIL'}",
-        f"types {'ok' if gauntlet.types_pass else 'FAIL'}",
+        *(_mark(label, gauntlet) for label in ("tests", "lint", "types")),
         f"score {gauntlet.score_before:.0f}->{gauntlet.score_after:.0f}",
     ]
     if gauntlet.shredded:

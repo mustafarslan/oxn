@@ -63,6 +63,14 @@ def _skip(directory: str, names: list[str]) -> set[str]:
     return ignored
 
 
+class SandboxNotReady(RuntimeError):
+    """The bed cannot verify its own untouched code, so it cannot verify a repair.
+
+    Raised rather than recorded, because there is no honest row to write: an arm scored
+    against a sandbox whose checks were always going to fail is measuring the sandbox.
+    """
+
+
 class Sandbox:
     """A throwaway copy of a repository. The working tree is never touched.
 
@@ -73,7 +81,14 @@ class Sandbox:
     "it can only fail to fire" is not a property worth relying on in a measurement.
     """
 
-    def __init__(self, name: str, root: Path = ROOT, *, venv: bool = True) -> None:
+    def __init__(
+        self,
+        name: str,
+        root: Path = ROOT,
+        *,
+        venv: bool = True,
+        prepare: tuple[tuple[str, ...], ...] = (),
+    ) -> None:
         # Unique per process. The path was `SCRATCH / target.leaf`, so two runs of the same
         # target shared one directory -- and `_repair_one` deletes its sandbox on exit, so
         # whichever finished first destroyed the other's tree mid-repair. It surfaced as
@@ -85,20 +100,40 @@ class Sandbox:
         self.path = SCRATCH / f"{name}-{os.getpid()}"
         self.root = root
         self.venv = venv
+        self.prepare = prepare
         self.python = self.path / ".venv" / "bin" / "python"
 
     def create(self) -> None:
+        """Copy the tree, make the interpreter, and run what the *bed* says it needs.
+
+        The install step used to be `uv pip install -e "{path}[dev]"` written in here --
+        this project's own convention, applied to every bed. httpx has no `dev` extra, and
+        `uv` does not refuse an extra that does not exist: it **exits 0 having installed
+        nothing at all**, not even the package itself. So the sandbox had no `pytest`, every
+        attempt was scored `tests FAIL`, and the arm table would have been a complete grid of
+        zeros indistinguishable from a finding.
+
+        `Bed.prepare` was declared for exactly this and read by nothing. It is read here now,
+        and its commands must succeed -- a preparation step that fails silently is the same
+        defect one layer up.
+        """
         if self.path.exists():
             shutil.rmtree(self.path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(self.root, self.path, ignore=_skip)
-        if not self.venv:
-            return
-        subprocess.run(["uv", "venv", "-q", str(self.path / ".venv")], check=True)
-        subprocess.run(
-            ["uv", "pip", "install", "--python", str(self.python), "-q", "-e", f"{self.path}[dev]"],
-            check=True,
-        )
+        if self.venv:
+            # `--seed`, so the venv has `pip`: a bed's `prepare` is written as
+            # `("-m", "pip", ...)` and routed through this interpreter, which is the only
+            # spelling that works for every Python bed without any of them naming a path
+            # that does not exist until the sandbox is made.
+            subprocess.run(["uv", "venv", "-q", "--seed", str(self.path / ".venv")], check=True)
+        for argv in self.prepare:
+            finished = self.run(*argv, timeout=1800)
+            if finished.returncode != 0:
+                raise SandboxNotReady(
+                    f"preparing {self.path.name}: `{' '.join(argv)}` exited "
+                    f"{finished.returncode}\n{finished.stdout or finished.stderr}"
+                )
 
     def run(self, *args: str, timeout: int = 600) -> subprocess.CompletedProcess[str]:
         """One command in the sandbox.
@@ -276,12 +311,38 @@ class GauntletResult:
         )
 
 
+def verify_bed(sandbox: Sandbox, checks: tuple[tuple[str, ...], ...]) -> None:
+    """Run the bed's own checks on its own untouched code, before any repair is scored.
+
+    A bed that cannot verify its pristine tree cannot verify a repair, and the failure looks
+    identical from the outside: `tests FAIL`, every attempt, every arm. This is the fifth
+    defect of that family in this harness and the one with the largest blast radius --
+    `uv pip install -e "{path}[dev]"` exits 0 having installed nothing on a project with no
+    `dev` extra, so a full grid would have produced a complete table of zeros with nothing
+    in it to say the sandbox was empty.
+
+    A readiness *probe* -- import this, run that --  was the other option and is weaker. The
+    baseline run proves the thing that matters, which is that these exact commands pass on
+    this exact tree, and it needs no second mechanism to be kept in step with the first.
+
+    Raises rather than returning a verdict: there is no honest row to write.
+    """
+    for label, *argv in checks:
+        finished = sandbox.run(*argv)
+        if finished.returncode != 0:
+            raise SandboxNotReady(
+                f"{sandbox.path.name}: `{' '.join(argv)}` ({label}) fails on the *unmodified* "
+                f"tree, so no repair could ever pass it.\n"
+                + (finished.stdout or finished.stderr)[-2000:]
+            )
+
+
 def run_gauntlet(
     sandbox: Sandbox,
     target: Target,
     before: Measurement,
     ceiling: int,
-    checks: tuple[tuple[str, ...], ...] = (),
+    checks: tuple[tuple[str, ...], ...],
 ) -> GauntletResult:
     """Verify a candidate deterministically, before any model is asked an opinion."""
     result = GauntletResult(
@@ -322,7 +383,7 @@ def run_gauntlet(
 
 
 def _run_toolchain(
-    sandbox: Sandbox, result: GauntletResult, checks: tuple[tuple[str, ...], ...] = ()
+    sandbox: Sandbox, result: GauntletResult, checks: tuple[tuple[str, ...], ...]
 ) -> None:
     """Every check the bed declares, filed under the label it declares them with.
 
@@ -332,15 +393,17 @@ def _run_toolchain(
     before it would commit. Those are now `beds.SELF.verify`, and a Go bed's are `go test`
     and `go vet`.
 
+    **Required, with no default.** It read `checks or SELF.verify`, so a caller that passed
+    none silently verified one bed's repair with another bed's commands -- the same shape as
+    `Sandbox.root` defaulting to this repository, which that class's docstring already names
+    as the wrong-tree defect.
+
     **A check whose tool is missing is recorded as a failure, not a pass.** `cargo` absent
     from the machine means the repair was not verified, and a green row for a command that
     never ran is worse than a red one -- it is the same defect as measuring a stale cache.
     """
-    from beds import SELF
-
-    declared = checks or SELF.verify
-    _seed(result, declared)
-    for label, *argv in declared:
+    _seed(result, checks)
+    for label, *argv in checks:
         try:
             finished = sandbox.run(*argv)
         except FileNotFoundError:

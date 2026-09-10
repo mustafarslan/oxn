@@ -131,3 +131,61 @@ def test_two_runs_of_one_target_do_not_share_a_sandbox(harness) -> None:
 def test_a_sandbox_still_lands_under_the_scratch_root(harness) -> None:
     """Uniqueness must not push it somewhere a cleanup would miss."""
     assert harness.Sandbox("walk").path.parent == harness.SCRATCH
+
+
+# ---- the bed has to work before a repair can be judged against it -------------------------
+
+
+def test_a_bed_that_fails_its_own_untouched_tree_raises_rather_than_scoring(
+    harness, sandbox
+) -> None:
+    """The fifth defect of this family, and the one with the largest blast radius.
+
+    `Sandbox.create` installed `-e "{path}[dev]"` -- this project's convention, applied to
+    every bed. httpx has no `dev` extra, and `uv` does not refuse a missing one: it exits 0
+    having installed nothing at all. So the sandbox had no `pytest`, every attempt scored
+    `tests FAIL`, and a full grid would have produced a complete table of zeros with nothing
+    in it to say the virtualenv was empty.
+
+    A pristine run is the check, rather than a readiness probe, because it proves the thing
+    that matters -- these exact commands, on this exact tree -- and needs no second mechanism
+    kept in step with the first.
+    """
+    with pytest.raises(harness.SandboxNotReady, match="unmodified"):
+        harness.verify_bed(sandbox, (("tests", "false"),))
+
+    harness.verify_bed(sandbox, (("tests", "true"),))
+
+
+def test_a_prepare_step_that_fails_stops_the_sandbox(harness, tmp_path, monkeypatch) -> None:
+    """`Bed.prepare` was declared, documented, and read by nothing at all."""
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "marker.txt").write_text("x")
+    monkeypatch.setattr(harness, "SCRATCH", tmp_path / "scratch")
+
+    box = harness.Sandbox("probe", root=source, venv=False, prepare=(("false",),))
+    with pytest.raises(harness.SandboxNotReady, match="preparing"):
+        box.create()
+
+    ran = harness.Sandbox("probe2", root=source, venv=False, prepare=(("true",),))
+    ran.create()
+    assert (ran.path / "marker.txt").exists()
+
+
+def test_the_toolchain_will_not_borrow_another_beds_checks(harness, sandbox) -> None:
+    """It read `checks or SELF.verify`, so a caller passing none verified one bed's repair
+    with another bed's commands -- the shape `Sandbox.root` already carries a warning about."""
+    result = harness.GauntletResult()
+    with pytest.raises(TypeError):
+        harness._run_toolchain(sandbox, result)  # type: ignore[call-arg]
+
+
+def test_an_undeclared_check_renders_as_skipped_not_failed(harness) -> None:
+    """Every Python-only bed read `lint FAIL types FAIL` on every attempt, for two commands
+    that were never run -- what `_run_toolchain`'s docstring calls worse than a red row."""
+    result = harness.GauntletResult(tests_pass=True, skipped={"lint", "types"})
+
+    assert harness._mark("tests", result) == "tests ok"
+    assert harness._mark("lint", result) == "lint skip"
+    assert harness._mark("types", result) == "types skip"

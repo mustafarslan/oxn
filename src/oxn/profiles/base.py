@@ -216,7 +216,7 @@ class LanguageProfile:
                 continue
             if self.parameter_kinds and child.type not in self.parameter_kinds:
                 continue
-            names.append(_first_identifier(child))
+            names.extend(_declared_names(child))
         return names
 
 
@@ -358,6 +358,25 @@ def _sole_identifier(bound: Node | None) -> Node | None:
     if bound.type not in _NAME_KINDS and len(bound.named_children) == 1:
         bound = bound.named_children[0]
     return bound if bound.type in _NAME_KINDS else None
+
+
+def _declared_names(node: Node) -> list[str]:
+    """Every parameter one node declares, which is not always one.
+
+    Go groups parameters that share a type: `func f(a, b, c int, d string)` is **two**
+    `parameter_declaration` nodes, the first holding three `name` fields. Reading the first
+    identifier of each node counted that signature as two parameters, and five as one -- so
+    `parameter_count` was gated on a number no other language computed the same way, and Go's
+    0.28% exceedance was measuring the grammar rather than the code.
+
+    Only when the grammar really hands back several, so every other language keeps the
+    `_first_identifier` answer: a Python `identifier`, a TypeScript `required_parameter`
+    (named under `pattern`) and a Rust `parameter` all yield exactly one.
+    """
+    named = node.children_by_field_name("name")
+    if len(named) > 1:
+        return [child.text.decode("utf-8", "replace") for child in named if child.text]
+    return [_first_identifier(node)]
 
 
 def _first_identifier(node: Node) -> str:
