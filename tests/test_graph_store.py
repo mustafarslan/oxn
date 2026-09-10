@@ -162,3 +162,53 @@ def test_ingesting_an_index_does_not_throw_away_what_was_measured(tmp_path) -> N
         report = ingest_index(indexer, index)
         assert report.matched_documents == 1, "the index has to have been read"
         assert dict(indexer.store.measurements_for("m.py")) == before
+
+
+def test_measuring_an_ingested_file_does_not_throw_away_its_call_edges(tmp_path) -> None:
+    """The third half, and the direction the other two left open.
+
+    `test_a_parsed_but_unmeasured_file_is_not_current` makes the indexer revisit a file that
+    `scip.ingest` wrote a row for, and revisiting called `put_file` -- a delete-and-insert
+    the schema cascades from -- which took that file's SCIP symbols and edges with it. So
+    `oxn index` wrote the graph and the very next `oxn check` destroyed it: 4,176 call edges
+    on `python-httpx`, gone, with `oxn calls` answering UNAVAILABLE on a tree just indexed.
+
+    Parsed, measured and ingested are three facts about one row, and only re-parsing may
+    replace it. Asserted on the edges rather than on the freshness call, because the guard
+    is not the promise.
+    """
+    from tests.test_scip import delimited, document, occurrence
+
+    from oxn.graph.indexer import Indexer
+    from oxn.scip.ingest import ingest_index
+
+    (tmp_path / "m.py").write_bytes(
+        b"def helper():\n    return 1\n\n\ndef main():\n    return helper()\n"
+    )
+    index = tmp_path / "one.scip"
+    index.write_bytes(
+        delimited(
+            2,
+            document(
+                "m.py",
+                [
+                    occurrence("scip py p 1 `m`/helper().", [0, 4, 10], 1),
+                    occurrence("scip py p 1 `m`/main().", [4, 4, 8], 1),
+                    occurrence("scip py p 1 `m`/helper().", [5, 11, 17]),
+                ],
+            ),
+        )
+    )
+
+    # An ingest with no measuring pass, which is what `oxn index` does.
+    with Indexer(root=tmp_path, cache_path=tmp_path / "graph.db", measure=False) as indexer:
+        indexer.index()
+        ingest_index(indexer, index)
+        edges = indexer.store.edge_stats()
+        assert edges.get("calls_resolved"), f"the ingest must have written an edge, got {edges}"
+
+    # ... and then any measuring command, which must not undo it.
+    with Indexer(root=tmp_path, cache_path=tmp_path / "graph.db") as indexer:
+        indexer.index()
+        assert dict(indexer.store.measurements_for("m.py")), "the file must now be measured"
+        assert indexer.store.edge_stats() == edges, "and its call graph must have survived"

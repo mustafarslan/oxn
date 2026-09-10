@@ -10,6 +10,7 @@ parsing, or the hook's latency budget is spent re-deriving facts that have not c
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -55,6 +56,45 @@ class IndexReport:
             "parse_incomplete": self.incomplete,
             "errors": self.errors,
         }
+
+
+class _Freshness(str, Enum):
+    """How much of a stored file is still good. Three facts about one row, not two.
+
+    `scip.ingest` writes a file row so that symbols and edges can reference it, and a
+    measuring pass writes metrics against the entities in it. Both are keyed on the same
+    stamp, so "is this current" has never had a single answer.
+    """
+
+    #: Parsed, measured if measuring was asked for. Nothing to do.
+    CURRENT = "current"
+    #: Parsed from exactly these bytes, but carrying no measurements.
+    UNMEASURED = "unmeasured"
+    #: The stamp does not match, so the entities themselves are wrong.
+    STALE = "stale"
+
+
+def _freshness(
+    store: GraphStore, stamp: tuple[str, str, int, str], *, measure: bool, force: bool
+) -> _Freshness:
+    """Which of the three states this file is in. ``stamp`` is `GraphStore.is_current`'s key.
+
+    `UNMEASURED` exists because the repair for it is *not* to re-index the file. `put_file`
+    is a delete-and-insert the schema cascades from, so replacing the row takes that file's
+    SCIP symbols and edges with it -- and a file reached here because its metrics are
+    missing is exactly the file `scip.ingest` just wrote them for. `oxn index .` on
+    `python-httpx` wrote 4,176 call edges and the next `oxn check .` destroyed all 4,176,
+    leaving `oxn calls` to answer UNAVAILABLE on a tree that had just been indexed.
+
+    Keeping the stored row is sound precisely because the stamp matches: the same bytes, the
+    same profile and the same grammar produced it, and `build_file` is deterministic, so the
+    entity ids the new metrics are keyed on are the ones already there.
+    """
+    if force:
+        return _Freshness.STALE
+    if store.is_current(*stamp, measured=measure):
+        return _Freshness.CURRENT
+    return _Freshness.UNMEASURED if store.is_current(*stamp) else _Freshness.STALE
 
 
 class Indexer:
@@ -144,17 +184,20 @@ class Indexer:
         sha = content_sha(source)
         grammar_version = self.grammar_version()
 
-        # `measured=self.measure`: a file row can exist without metrics -- `scip.ingest`
-        # writes one -- and treating that as current is how the gate went blind.
-        if not force and self.store.is_current(
-            rel, sha, profile.version, grammar_version, measured=self.measure
-        ):
+        state = _freshness(
+            self.store,
+            (rel, sha, profile.version, grammar_version),
+            measure=self.measure,
+            force=force,
+        )
+        if state is _Freshness.CURRENT:
             return None, True
 
         parser = self._parser(profile.name)
         tree = parser.parse(source)  # type: ignore[attr-defined]
         parsed = build_file(rel, source, profile, tree.root_node)
-        self.store.put_file(parsed, profile.version, grammar_version)
+        if state is _Freshness.STALE:
+            self.store.put_file(parsed, profile.version, grammar_version)
 
         # Measuring in the same pass reuses the tree that is already in hand; parsing twice
         # would double the cost of the hook path for no benefit.
