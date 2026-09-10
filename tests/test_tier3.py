@@ -171,6 +171,44 @@ def test_depth_of_inheritance(ck) -> None:
     assert ck["Leaf"].dit == 2
 
 
+def test_dit_is_the_longest_path_and_not_the_number_of_ancestors() -> None:
+    """A chain cannot tell the two apart, and every fixture here was a chain.
+
+    DIT counted the distinct classes it had visited, so `X(A, B)` with `A(R)` and `B(R)`
+    reported **4** where the longest path to a root is 2. Python allows multiple inheritance
+    and Java's `extends A implements I1, I2` produces the same shape as a matter of routine,
+    so this was the normal case rather than an exotic one.
+    """
+    source = (
+        "class R:\n    def r(self):\n        pass\n\n\n"
+        "class A(R):\n    def a(self):\n        pass\n\n\n"
+        "class B(R):\n    def b(self):\n        pass\n\n\n"
+        "class X(A, B):\n    def x(self):\n        pass\n"
+    )
+    found = models(source)
+    hierarchy = build_hierarchy({"m.py": found})
+    depths = {name: ck_metrics(model, hierarchy).dit for name, model in found.items()}
+
+    assert depths == {"R": 0, "A": 1, "B": 1, "X": 2}
+
+
+def test_a_hierarchy_that_cannot_exist_still_terminates() -> None:
+    """`A(B)` and `B(A)` parses, and no language would accept it.
+
+    Nothing here should hang or recurse forever on a source file that is syntactically fine
+    and semantically impossible: the walk refuses to re-enter a class already on the path
+    rather than trusting the declarations to form a tree.
+    """
+    source = (
+        "class A(B):\n    def a(self):\n        pass\n\n\n"
+        "class B(A):\n    def b(self):\n        pass\n"
+    )
+    found = models(source)
+    hierarchy = build_hierarchy({"m.py": found})
+
+    assert ck_metrics(found["A"], hierarchy).dit == 1
+
+
 def test_number_of_children(ck) -> None:
     assert ck["Base"].noc == 1
     assert ck["Middle"].noc == 1

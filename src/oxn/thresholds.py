@@ -55,8 +55,9 @@ MAX_FILE_SLOC: Final[int] = 500
 #: These reject 0.00-7.48% and 0.27-10.28% of real classes across the six corpora
 #: (`benchmarks/ceiling-observations.json`, 3,501 classes) -- overlapping the per-function
 #: ceilings' 0.00-10.57% rather than sitting above it, because the evasions sit *inside* the
-#: legitimate distribution and not outside it. They are therefore a **ratchet** first: `.oxn/baseline.json`
-#: absorbs the classes that were already large, and what blocks is a class getting worse.
+#: legitimate distribution and not outside it. They are therefore a **ratchet** first:
+#: `.oxn/baseline.json` absorbs the classes that were already large, and what blocks is a
+#: class getting worse.
 MAX_METHODS_PER_CLASS: Final[int] = 12
 MAX_WEIGHTED_METHODS_PER_CLASS: Final[int] = 25
 

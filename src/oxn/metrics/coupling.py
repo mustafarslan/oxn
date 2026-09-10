@@ -84,28 +84,44 @@ class ClassHierarchy:
     def depth(self, scope: str, name: str) -> tuple[int, bool]:
         """``(depth, whether a base lies outside the tree)``.
 
-        An external base -- ``BaseModel``, ``Exception`` -- contributes one level and a
-        flag. Pretending its own depth is zero would silently understate every class that
-        extends a library type.
+        DIT is the **longest path from this class to a root** (Chidamber & Kemerer 1994),
+        which is one plus the deepest of its bases -- not a count of how many ancestors
+        there are. The two coincide on a chain and diverge the moment a class has two bases
+        that share an ancestor: for `X(A, B)` with `A(R)` and `B(R)` this counted the four
+        distinct classes it had visited and reported **4** where the longest path is 2.
+        Multiple inheritance is the common case in Python, and `extends A implements I1, I2`
+        makes it the *normal* case in Java, so this was not an edge shape -- but it was a
+        rare one in the corpora, and that is worth saying too: **3 classes of 3,411** were
+        overstated, each by 1. `NestApplication` (`extends NestApplicationContext implements
+        INestApplication`) read 3 for a longest path of 2, and ripgrep's `Replacer` the same.
+        DIT is ungated, so nothing was blocked by it; `oxn classes` published it.
+
+        An external base -- ``BaseModel``, ``Exception`` -- counts as depth 1 rather than 0
+        and raises the flag. Pretending its own depth is zero would silently understate
+        every class that extends a library type.
         """
-        seen: set[str] = set()
         external = False
-        depth = 0
-        frontier = [name]
-        while frontier:
-            current = frontier.pop()
-            if current in seen:
-                continue
-            seen.add(current)
+        known: dict[str, int] = {}
+
+        def longest(current: str, on_path: frozenset[str]) -> int:
+            nonlocal external
             bases = self.bases.get(self.key(scope, current))
-            if bases is None:
-                if current != name:
-                    external = True
-                continue
-            if bases:
-                depth = max(depth, len(seen))
-                frontier.extend(bases)
-        return (depth + (1 if external else 0), external)
+            if bases is None:  # not declared here: a library type, one level deep at least
+                external = external or current != name
+                return 1
+            if current in known:
+                return known[current]
+            # A hierarchy cannot legally contain a cycle in any language OXN reads, but a
+            # half-parsed tree can present one, and this walk must terminate on it anyway.
+            reachable = on_path | {current}
+            found = max(
+                (1 + longest(base, reachable) for base in bases if base not in reachable),
+                default=0,
+            )
+            known[current] = found
+            return found
+
+        return (longest(name, frozenset()), external)
 
     def child_count(self, scope: str, name: str) -> int:
         return len(self.children.get(self.key(scope, name), ()))
