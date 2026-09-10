@@ -479,3 +479,52 @@ def _tail(path: str, width: int) -> str:
 
 def _by_share(item: tuple[str, Any]) -> float:
     return -float(item[1]["share_over_ceiling"])
+
+
+def _emit_review(payload: dict[str, Any], output: Output) -> None:
+    """The measurement, then the comment if one was written.
+
+    The comment is shown *below* the findings it describes, never instead of them: prose is
+    the part nobody audits, and putting the numbers first is the same instinct that keeps them
+    out of the model's hands in the first place.
+    """
+    console = output.console
+    if console is None:
+        json.dump(payload, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return
+
+    files = payload["files"]
+    counts = payload["counts"]
+    console.print(
+        f"[bold]{payload['base']}...{payload['head']}[/bold]  "
+        f"{files['changed']} changed, {files['measured']} measured"
+        + (f", {files['excluded']} excluded" if files["excluded"] else "")
+    )
+    console.print(
+        f"  [bold]{counts['new']}[/bold] new  "
+        f"[bold]{counts['regression']}[/bold] regressed  "
+        f"[dim]{counts['baselined']} pre-existing[/dim]"
+    )
+    for found in payload["findings"][:20]:
+        tint = "dim" if found["origin"] == "baselined" else "bold"
+        console.print(
+            f"  [{tint}]{found['origin']:<11}[/{tint}] {found['message']}"
+            f"  [dim]{found['path']}:{found['line']}[/dim]"
+        )
+    _emit_comment(payload.get("comment"), console)
+
+
+def _emit_comment(comment: dict[str, Any] | None, console: Console) -> None:
+    """What the writer produced, or which numbers cost it the chance to say anything."""
+    if comment is None:
+        return
+    if comment["status"] != "OK":
+        note = comment.get("note")
+        invented = ", ".join(comment.get("invented", ()))
+        reason = note or f"the comment stated {invented}, which the measurement does not contain"
+        console.print(f"\n[bold]Comment[/bold]  [yellow]refused[/yellow]\n  [dim]{reason}[/dim]")
+        return
+    console.print(f"\n[bold]Comment[/bold]  [dim]{comment['model']}[/dim]")
+    for line in comment["body"].splitlines():
+        console.print(f"  {line}")

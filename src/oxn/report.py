@@ -17,6 +17,7 @@ from oxn.render import (
     _emit_classes,
     _emit_index,
     _emit_metrics,
+    _emit_review,
     _emit_volume,
 )
 
@@ -473,4 +474,45 @@ def run_classes(
         "total_classes": len(rows),
     }
     _emit_classes(payload, output)
+    return payload
+
+
+#: Named by the roadmap, not implemented: see the `writers` module docstring on why a client
+#: that has never made a request is not evidence of support.
+UNKNOWN_WRITER = (
+    "no writer backend named {name!r}. `ollama` is the one implemented, because it is the one "
+    "this repository can run and measure. Anthropic, OpenAI and Gemini slot into the same "
+    "`Writer` protocol in `oxn.writers`; shipping them untested would claim four providers "
+    "where there is evidence for one."
+)
+
+
+def run_review_report(
+    base: str,
+    head: str,
+    output: Output = TO_JSON,
+    *,
+    write: str = "",
+    model: str = "",
+) -> dict[str, Any]:
+    """`oxn review`: the measurement, and the comment when one was asked for.
+
+    The comment is a *second* key rather than a replacement for the measurement. A reviewer
+    who wants to check a sentence should not have to re-run the tool to see what it was based
+    on, and a refused comment is only legible beside the numbers it failed to quote.
+    """
+    from oxn.review import run_review
+
+    payload = run_review(base, head)
+    if write:
+        from oxn.writers import ollama_writer, write_review
+
+        if write != "ollama":
+            payload["comment"] = {
+                "status": "REFUSED",
+                "note": UNKNOWN_WRITER.format(name=write),
+            }
+        else:
+            payload["comment"] = write_review(payload, ollama_writer(model)).as_dict()
+    _emit_review(payload, output)
     return payload

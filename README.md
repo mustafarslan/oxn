@@ -205,6 +205,45 @@ The server also answers about the *repository*, not about wherever your editor h
 start it: it moves to the project root on startup, and `--root` or `OXN_ROOT` overrides that
 when discovery would find the wrong tree.
 
+## `@oxn` on a pull request
+
+`oxn review` measures what a pull request changed and, optionally, writes the comment.
+
+```console
+$ oxn review --base origin/main
+origin/main...HEAD  12 changed, 10 measured, 2 excluded
+  1 new  0 regressed  4 pre-existing
+  new         parse has cognitive_complexity 16, above the ceiling of 12   src/a.py:44
+  baselined   Store has weighted_methods_per_class 31, above the ceiling of 25   src/c.py:3
+```
+
+`oxn init --github` writes the workflow that runs it: tag `@oxn` in a pull-request comment and
+the job measures the diff and posts a summary. It is opt-in, and an existing workflow file is
+never overwritten.
+
+**It does not gate.** Your CI `oxn check` job does that. Two gates disagreeing about one pull
+request is worse than one gate.
+
+### The numbers come from OXN and the sentences come from a model, and the second may not
+invent the first
+
+`--write ollama` hands the *measurement* to a language model and asks for prose. Every numeral
+in the reply is then checked against the measurement, and a reply stating a number OXN did not
+measure is **refused** — no comment, rather than a comment with a caveat, because a reader who
+sees prose does not audit it. There is one retry, shown exactly which numbers were rejected,
+and no second one: a tool whose honesty depends on how many times it asked is not honest.
+
+The model is never shown the diff. A model given code reviews the code; this one restates
+measurements. It also means a workflow triggered from a fork never hands that fork's contents
+to a model.
+
+Two limits worth knowing. A finding's `origin: new` means *not in `.oxn/baseline.json`* — not
+*caused by this pull request*; a new violation can sit in an untouched function of a changed
+file, and telling those apart needs a second checkout. And only the Ollama backend is
+implemented: Anthropic, OpenAI and Gemini slot into the same `Writer` protocol in
+`oxn/writers.py`, and shipping clients that have never made a request would claim four
+providers where there is evidence for one.
+
 ## Self-repair
 
 OXN gates coding agents on complexity, and used to violate its own ceilings.

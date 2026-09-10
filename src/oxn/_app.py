@@ -113,6 +113,9 @@ def init(
     no_mcp: bool = typer.Option(
         False, "--no-mcp", help="Do not wire the MCP server into .mcp.json."
     ),
+    github: bool = typer.Option(
+        False, "--github", help="Also write the `@oxn` pull-request review workflow."
+    ),
 ) -> None:
     """Wire OXN into this repository. Additive and idempotent -- run it twice safely.
 
@@ -123,7 +126,7 @@ def init(
     from oxn.init import run_init
 
     console = _console()
-    report = run_init(with_hook=not no_hook, with_mcp=not no_mcp)
+    report = run_init(with_hook=not no_hook, with_mcp=not no_mcp, with_github=github)
     for label, paths in (
         ("created", report.created),
         ("updated", report.updated),
@@ -321,6 +324,37 @@ def calls(
         paths or ["."],
         Output(console=None if json_output else _console()),
         limit=limit,
+    )
+
+
+@app.command()
+def review(
+    base: str = typer.Option("origin/main", "--base", help="Ref the pull request targets."),
+    head: str = typer.Option("HEAD", "--head", help="Ref under review."),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    write: str = typer.Option(
+        "", "--write", help="Backend that turns the measurement into prose: `ollama`."
+    ),
+    model: str = typer.Option("", "--model", help="Model for `--write`."),
+) -> None:
+    """Measure what a pull request changed, and optionally write the comment.
+
+    Without `--write` this prints the measurement and nothing else, which is the half OXN is
+    sure about. With it, a model turns the measurement into review prose -- and any comment
+    stating a number the measurement does not contain is **refused rather than posted**.
+
+    This never gates. The CI job running `oxn check` already does, and two gates disagreeing
+    about one pull request is worse than one gate.
+    """
+    from oxn.render import Output
+    from oxn.report import run_review_report
+
+    run_review_report(
+        base,
+        head,
+        Output(console=None if json_output else _console()),
+        write=write,
+        model=model,
     )
 
 

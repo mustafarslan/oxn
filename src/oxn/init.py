@@ -167,8 +167,77 @@ class InitReport:
         }
 
 
+#: The `@oxn` trigger, as an Actions workflow. Written only on request: a repository that has
+#: not asked for a bot in its pull requests should not find one there after running `init`.
+#:
+#: **`issue_comment` runs on the base repository's default branch, with the base repository's
+#: token.** That is the property that makes this safe from a fork: the workflow file executed
+#: is the one on `main`, not the one in the pull request, so a contributor cannot rewrite the
+#: job that reviews them. The fork's *code* is checked out to be measured -- tree-sitter parses
+#: it, nothing runs it -- and is never handed to the model, because `oxn review` prompts with
+#: the measurement and not the diff.
+_WORKFLOW = """\
+# Written by `oxn init --github`. Tag @oxn in a pull request comment and OXN reviews it.
+#
+# This never gates. The `oxn check` job in your CI is the gate; two gates disagreeing about
+# one pull request is worse than one gate.
+name: oxn review
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    # A pull-request comment mentioning @oxn, and nothing else. `issue_comment` also fires
+    # for plain issues, which have no diff to measure.
+    if: >-
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '@oxn')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The pull request's head, and the whole history: `oxn review` diffs against the
+          # merge base, which a shallow clone does not contain.
+          ref: refs/pull/${{ github.event.issue.number }}/merge
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install oxn
+      - name: Measure
+        env:
+          BASE: origin/${{ github.event.repository.default_branch }}
+        run: oxn review --base "$BASE" --json > review.json
+      - name: Comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python - <<'PY' > body.md
+          import json
+          payload = json.load(open("review.json"))
+          counts = payload["counts"]
+          print(f"**OXN** — {counts['new']} new, {counts['regression']} regressed, "
+                f"{counts['baselined']} pre-existing")
+          for found in payload["findings"]:
+              if found["origin"] != "baselined":
+                  print(f"- `{found['path']}:{found['line']}` — {found['message']}")
+          PY
+          gh pr comment ${{ github.event.issue.number }} --body-file body.md
+"""
+
+
 def run_init(
-    root: Path | None = None, *, with_hook: bool = True, with_mcp: bool = True
+    root: Path | None = None,
+    *,
+    with_hook: bool = True,
+    with_mcp: bool = True,
+    with_github: bool = False,
 ) -> InitReport:
     """Wire OXN into `root`. Safe to run repeatedly, and safe to run on a populated repo.
 
@@ -192,6 +261,8 @@ def run_init(
         _write_mcp(base, report)
     else:
         report.notes.append(".mcp.json not written (--no-mcp)")
+    if with_github:
+        _write_workflow(base, report)
     _write_gitignore(base, report)
     _note_how_oxn_resolves(base, report)
     return report
@@ -408,3 +479,23 @@ def _write_gitignore(base: Path, report: InitReport) -> None:
     block = "\n".join(["", "# OXN: the cache is derived, the baseline is shared state.", *missing])
     path.write_text(existing + prefix + block + "\n")
     (report.updated if existing else report.created).append(".gitignore")
+
+
+def _write_workflow(base: Path, report: InitReport) -> None:
+    """Write the `@oxn` pull-request workflow, and never overwrite an edited one.
+
+    Opt-in for the same reason the hook is not: a repository that has not asked for a bot in
+    its pull requests should not acquire one by running a setup command. An existing file is
+    left alone rather than merged -- a workflow is a policy document about who may run what
+    with which token, and merging someone's edits to that is not a favour.
+    """
+    path = base / ".github" / "workflows" / "oxn-review.yml"
+    if path.exists():
+        report.unchanged.append(str(path.relative_to(base)))
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_WORKFLOW)
+    report.created.append(str(path.relative_to(base)))
+    report.notes.append(
+        "the @oxn workflow posts a comment and never gates; `oxn check` in CI is the gate"
+    )
