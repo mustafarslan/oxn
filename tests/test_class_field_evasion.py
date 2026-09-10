@@ -130,3 +130,45 @@ def test_a_method_is_a_named_callable_declared_in_a_class(
     from tests.test_bound_callables import named
 
     assert named(language, source) == expected
+
+
+# ---- and the other path that counts methods ----------------------------------------------
+
+
+def _model(name: str):
+    """The class as `oxn classes` builds it: the member model, not the metric engine."""
+    from oxn.languages import get_parser
+    from oxn.profiles import get_profile, profile_for_path
+    from oxn.resolve.members import build_class_models
+    from oxn.resolve.scopes import build_scopes
+
+    profile = profile_for_path(name)
+    assert profile is not None, name
+    profile = get_profile(profile.name)
+    data = (FIXTURES / f"{name}.txt").read_bytes()
+    root = get_parser(profile.grammar).parse(data).root_node
+    return build_class_models(root, profile, build_scopes(root, profile))["Panel"]
+
+
+@pytest.mark.parametrize(("language", "methods", "fields"), PAIRS)
+def test_both_paths_that_count_methods_give_the_same_answer(
+    language: str, methods: str, fields: str
+) -> None:
+    """The standing lesson of `tests/test_impl_block_evasion.py`, applied to this shape.
+
+    The gate reads `metrics.engine`; `oxn classes`, LCOM, RFC and CBO read the member model.
+    Fixing only the first left `oxn classes` reporting WMC 0 and LCOM4 0 for the same
+    thirteen-method class the gate had just started rejecting -- and when one question has
+    two answers, a ceiling is compared against the smaller.
+    """
+    assert len(_model(methods).methods) == EXPECTED_NOM, language
+    assert len(_model(fields).methods) == EXPECTED_NOM, language
+
+
+@pytest.mark.parametrize(("language", "_methods", "fields"), PAIRS)
+def test_a_method_written_as_a_field_is_not_also_a_field(
+    language: str, _methods: str, fields: str
+) -> None:
+    """Otherwise LCOM reads every one of them as an attribute no method touches."""
+    model = _model(fields)
+    assert model.fields & set(model.methods) == set(), language

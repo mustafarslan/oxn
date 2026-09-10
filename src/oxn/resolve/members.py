@@ -282,11 +282,34 @@ def _iter_classes(root: Node, profile: LanguageProfile) -> Iterator[tuple[Node, 
 def _iter_methods(body: Node, profile: LanguageProfile) -> Iterator[tuple[Node, str]]:
     """Direct method members of a class body, not functions nested inside them."""
     for child in body.named_children:
-        target = profile.unwrap(child)
-        if target.type in profile.function_like:
-            name = profile.entity_name(target)
-            if name:
-                yield target, name
+        found = _member_callable(profile.unwrap(child), profile)
+        if found is not None:
+            yield found
+
+
+def _member_callable(node: Node, profile: LanguageProfile) -> tuple[Node, str] | None:
+    """The callable a class-body member declares under a name, or ``None``.
+
+    `handler = (x) => x` is a method written as a field, and the grammar hangs the callable
+    under the member rather than making the member one -- so reading only direct
+    `function_like` children found nothing. `oxn classes` read WMC 0 and LCOM4 0 for a
+    thirteen-method TypeScript class while the gate, fixed first, read 13 and 26. Two answers
+    to one question, which `tests/test_impl_block_evasion.py` is the standing lesson about.
+
+    Recursive because the depth differs by grammar -- one level to a `value` in ECMAScript,
+    two through Java's `variable_declarator` -- and stopping at `function_like` is what keeps
+    it from descending into a method's body. The name is the same `entity_name` the builder
+    asks, so an inline callback (`x = compose(() => 1)`) yields nothing here exactly as it
+    becomes no named entity there.
+    """
+    if node.type in profile.function_like:
+        name = profile.entity_name(node)
+        return (node, name) if name else None
+    for child in node.named_children:
+        found = _member_callable(child, profile)
+        if found is not None:
+            return found
+    return None
 
 
 #: Grammar nodes that hold a class's supertypes when they are not in a named field.
@@ -357,10 +380,15 @@ def _plain_names(holder: Node) -> Iterator[str]:
 
 
 def _declared_fields(body: Node, profile: LanguageProfile, spec: ScopeSpec) -> set[str]:
-    """Names assigned or annotated directly in the class body, methods excluded."""
+    """Names assigned or annotated directly in the class body, methods excluded.
+
+    "Method" is `_member_callable`'s answer and not "a direct `function_like` child", so the
+    two readers cannot disagree: `handler = (x) => x` was otherwise counted as a field *and*
+    as a method, and LCOM reads a name that is both as an attribute nothing accesses.
+    """
     fields: set[str] = set()
     for child in body.named_children:
-        if profile.unwrap(child).type not in profile.function_like:
+        if _member_callable(profile.unwrap(child), profile) is None:
             fields |= _field_names_in(child, spec)
     return fields
 
