@@ -158,14 +158,27 @@ def measure(ceilings: dict[str, float]) -> dict[str, object]:
 
 
 def _require_fresh_caches() -> None:
-    """Refuse to measure a cache the current builder did not write.
+    """Refuse to measure a cache that is not the current builder's whole answer.
 
-    Existence was the only check, and it is not enough: the caches were left at schema 7
-    while the builder had moved to 9, and the script measured them and reported the numbers
-    as current. Nothing downstream could notice -- `tests/test_ceiling_observations.py` holds
-    the frozen record against the live ceilings and never re-measures -- so a stale figure
-    would have survived indefinitely under a green suite. A measurement that cannot say
-    whether it measured today's code is not a measurement.
+    Two ways a cache lies, and both have happened.
+
+    **Old.** Existence was the only check, and the caches sat at schema 7 while the builder
+    had moved to 9. The script measured them and reported the numbers as current. Nothing
+    downstream could notice -- `tests/test_ceiling_observations.py` holds the frozen record
+    against the live ceilings and never re-measures -- so a stale figure would have survived
+    indefinitely under a green suite.
+
+    **Partial.** Schema alone is not enough either, because a cache is written by whoever
+    opened it. On 2026-09-10 these held 23 of httpx's 60 files, 901 of nest's 1,913 and 30 of
+    petclinic's 50, *at the current schema*: anything that indexes a subset of a corpus in
+    place -- the P11 harness picking targets is one -- leaves a cache that passes a version
+    check and answers for a third of the tree. Freezing that would have put a distribution
+    over 4,000 callables into `calibration.py` as one over 10,000.
+
+    So the count is checked against the walk, and against the same walk the indexer uses:
+    `Indexer.sources` exists precisely so a caller cannot measure one file set and report
+    another. A measurement that cannot say whether it measured *all* of today's code is not a
+    measurement either.
     """
     from oxn.graph.store import SCHEMA_VERSION
 
@@ -178,13 +191,28 @@ def _require_fresh_caches() -> None:
         found = _schema_version(db)
         if found != str(SCHEMA_VERSION):
             stale.append(f"{name}: schema {found}, builder writes {SCHEMA_VERSION}")
+            continue
+        cached, walked = _coverage(CORPORA / name, db)
+        if cached != walked:
+            stale.append(f"{name}: {cached} of {walked} files cached")
     if stale:
         raise SystemExit(
             "refusing to measure stale caches:\n  "
             + "\n  ".join(stale)
             + "\n\nRun `oxn metrics . --json --limit 1` from inside each corpus root first"
-            " (see this file's docstring); a schema bump makes every cache stale."
+            " (see this file's docstring); a schema bump makes every cache stale, and so does"
+            " anything that indexed part of the tree."
         )
+
+
+def _coverage(root: Path, db: Path) -> tuple[int, int]:
+    """(files in the cache, files the indexer would look at) for one corpus."""
+    from oxn.graph.indexer import Indexer
+
+    with sqlite3.connect(db) as connection:
+        cached = int(connection.execute("SELECT count(*) FROM files").fetchone()[0])
+    with Indexer(root=root, cache_path=db) as indexer:
+        return cached, len(indexer.sources())
 
 
 def _schema_version(db: Path) -> str:

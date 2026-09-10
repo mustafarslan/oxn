@@ -178,3 +178,45 @@ def test_the_known_false_positive_shape_is_small_and_recorded(audit: dict[str, i
     assert audit["in_test_files"] <= audit["rejected"] // 10, (
         f"{audit['in_test_files']} of {audit['rejected']} rejections are in test files"
     )
+
+
+# ---- what the measurement refuses to measure ---------------------------------------------
+
+
+def _measure_ceilings():
+    """`scripts/` is not a package, so the module is loaded by path."""
+    import importlib.util
+
+    path = Path(__file__).resolve().parent.parent / "scripts" / "measure_ceilings.py"
+    spec = importlib.util.spec_from_file_location("measure_ceilings", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_a_cache_holding_part_of_the_tree_is_not_a_measurement(tmp_path: Path) -> None:
+    """Schema alone was the check, and a schema-current cache can still answer for a third.
+
+    Measured on 2026-09-10: the corpora held 23 of httpx's 60 files, 901 of nest's 1,913 and
+    30 of petclinic's 50, all stamped with the current schema, because a cache is written by
+    whoever opened it and anything that indexes a subset in place leaves one. Freezing that
+    would have put a distribution over 4,000 callables into `calibration.py` as one over
+    10,000 -- the schema-7 incident's family, one level down, and just as invisible to a
+    green suite.
+    """
+    from oxn.graph.indexer import Indexer
+
+    for index in range(4):
+        (tmp_path / f"m{index}.py").write_text(f"def f{index}(x):\n    return x\n")
+    cache = tmp_path / ".oxn" / "cache" / "graph.db"
+    cache.parent.mkdir(parents=True)
+
+    module = _measure_ceilings()
+    with Indexer(root=tmp_path, cache_path=cache) as indexer:
+        indexer.index([tmp_path / "m0.py"])
+    assert module._coverage(tmp_path, cache) == (1, 4), "a partial cache must report as one"
+
+    with Indexer(root=tmp_path, cache_path=cache) as indexer:
+        indexer.index()
+    assert module._coverage(tmp_path, cache) == (4, 4)
