@@ -58,22 +58,13 @@ class Halstead:
     def effort(self) -> float:
         return self.difficulty * self.volume
 
-    @property
-    def time_seconds(self) -> float:
-        """Halstead's estimate, effort divided by the Stroud number of 18."""
-        return self.effort / 18
-
-    @property
-    def estimated_length(self) -> float:
-        def term(n: int) -> float:
-            return n * math.log2(n) if n else 0.0
-
-        return term(self.distinct_operators) + term(self.distinct_operands)
-
-    @property
-    def bugs(self) -> float:
-        """Halstead's delivered-bugs estimate. Reported, never gated on."""
-        return self.volume / 3000
+    # `time_seconds` (effort / the Stroud number 18), `estimated_length` and `bugs`
+    # (volume / 3000) were computed here and emitted nowhere. Removed 2026-09-10 rather
+    # than left as dead code that reads like a claim: Hamer & Frewin (ICSE 1982) found
+    # Halstead's experiments "poorly designed and inadequate" and most of the theory
+    # "neither natural laws nor useful engineering approximations", and Shen, Conte &
+    # Dunsmore (TSE 1983) agreed. Volume and difficulty stay because `maintainability_index`
+    # takes volume as an input and nothing here claims the rest.
 
 
 def halstead(node: Node, profile: LanguageProfile) -> Halstead:

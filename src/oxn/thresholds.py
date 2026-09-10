@@ -91,8 +91,12 @@ DUPLICATION_MIN_LINES: Final[int] = 4
 #: framing: "what fraction of the complexity lives in the worst tenth of the code".
 EROSION_TOP_FRACTION: Final[float] = 0.10
 
-#: Fraction of a codebase that may be duplicated before it is worth reporting.
-MAX_DUPLICATION_RATIO: Final[float] = 0.05
+# `MAX_DUPLICATION_RATIO = 0.05` stood here with no reader anywhere in the project, while
+# `docs/metrics.md` said duplication "has a hard ceiling and can block". Removed 2026-09-10:
+# a promised gate that does not exist is the same defect as `--deep`'s advertised cycle
+# check, and the evidence would not support switching it on either -- Rahman, Bird & Devanbu
+# (MSR 2010) found clones on four systems "may be less defect prone than non-cloned code".
+# `oxn volume` still reports the ratio, which is what the measurement supports.
 
 # ---- Tier 2.5: history ----------------------------------------------------------------
 

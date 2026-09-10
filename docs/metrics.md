@@ -652,7 +652,16 @@ drives the risk-profile aggregation in §10.2, applied to a trend signal.
 inside its own harness. **Verdict: SELF-IMPLEMENT** (~30 LOC over metrics we already have).
 **Effort/Risk:** S (0.5 d) / Low.
 
-**Gate usage for the whole tier.** Duplication has a hard ceiling and can block. Verbosity and
+**Gate usage for the whole tier.** *This paragraph said "duplication has a hard ceiling and can
+block" from the start, and it never did.* `MAX_DUPLICATION_RATIO = 0.05` sat in
+`thresholds.py` with no reader anywhere in the project — a promised gate that does not exist,
+the same defect as `--deep`'s advertised cycle check. The constant is gone as of 2026-09-10,
+and the evidence does not support switching it on either: Rahman, Bird & Devanbu (MSR 2010)
+found, on four systems, that clones "may be **less** defect prone than non-cloned code". The
+positive result — Juergens et al. (ICSE 2009), 107 developer-confirmed faults — is about
+clones changed **inconsistently**, which needs the commit history and not a static ratio.
+Duplication is therefore **report-only**, and the gateable form of it, if OXN ever wants one,
+is a clone group whose members diverged in one commit. Verbosity and
 erosion are **trend gates**, not absolute ones — they block only on a *worsening delta* within a
 change, never on an absolute value, because an absolute erosion threshold on a legacy repo fails on
 the first commit and gets the tool disabled (§10.3, Mode B).

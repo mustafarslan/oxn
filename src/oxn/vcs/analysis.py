@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from itertools import combinations
 from typing import TYPE_CHECKING
 
@@ -51,14 +51,9 @@ class FileHistory:
     def churn(self) -> int:
         return self.added + self.deleted
 
-    @property
-    def age_days(self) -> float | None:
-        """Days since the file was last touched. High age plus high churn means volatility
-        that has since settled; low age plus high churn means it is still moving."""
-        if self.last_seen is None:
-            return None
-        now = datetime.now(timezone.utc)
-        return (now - self.last_seen.astimezone(timezone.utc)).total_seconds() / 86400
+    # `age_days` was computed here and emitted nowhere. `last_seen` is still recorded, so
+    # the moment anything reports decay -- Graves et al. (TSE 2000) measured a module's
+    # contribution to fault potential falling about 50% a year -- it is one subtraction away.
 
     @property
     def author_count(self) -> int:
