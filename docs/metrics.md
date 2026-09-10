@@ -1521,10 +1521,10 @@ ceiling instead, which is the division of labour the pairing intends.
 
 **Both ceilings earn their place, and that half of the evidence is not authored.** Positioned
 by a single control, they would be exactly the circularity §10.3 warns about. So the ceilings
-were also run as a census over the five corpora — code nobody wrote to be caught. They reject
-**115 classes**: 64 by both, **28 by NOM alone** (many small methods, WMC under 25) and **23 by
-WMC alone** (few heavy ones), so neither ceiling is a restatement of the other. And of the 87
-rejected by WMC, **56 contain no method over the per-function cyclomatic ceiling** — every
+were also run as a census over the six corpora — code nobody wrote to be caught. They reject
+**129 classes**: 72 by both, **31 by NOM alone** (many small methods, WMC under 25) and **26 by
+WMC alone** (few heavy ones), so neither ceiling is a restatement of the other. And of the 98
+rejected by WMC, **81 contain no method over the per-function cyclomatic ceiling** — every
 method individually fine, the accumulation the whole problem. That is the God Class by
 definition and it is invisible to every other gate OXN has; `GraphStore` is the local example
 at WMC 64 with a worst method of 6. Frozen in `benchmarks/ceiling-observations.json` under
@@ -1532,21 +1532,22 @@ at WMC 64 with a worst method of 6. Frozen in `benchmarks/ceiling-observations.j
 that makes either ceiling redundant shows up as a failing test rather than as symmetry nobody
 rechecked.
 
-**The known false positive, stated rather than hidden:** 7 of the 115 are test classes. Many
+**The known false positive, stated rather than hidden:** 8 of the 129 are test classes. Many
 small test methods is a legitimate shape, and the answer is `oxn.yaml`'s advisory paths, not a
-looser ceiling. 8 more are interfaces, where a large method count is an interface-segregation
-smell rather than a God Class — the same number, a different argument.
+looser ceiling. 9 more are interfaces, where a large method count is an interface-segregation
+smell rather than a God Class — a similar count, a different argument.
 
-**The cost is where the decision is.** Unlike the per-function ceilings, which reject 0.5–3.6% of
-real code, a class ceiling low enough to catch the escapes (NOM ≥ 8, WMC ≥ 18) fires on 7.4% of
-OXN's own 176 classes and 6.5–19.2% across the five corpora — because the escapes at NOM 14 sit
+**The cost is where the decision is.** As shipped these reject 0.00–7.48% (NOM) and 0.27–10.28%
+(WMC) of classes across the six corpora, against 0.00–10.57% for the per-function ceilings; a
+class ceiling low enough to catch the escapes (NOM ≥ 8, WMC ≥ 18) fires on 7.4% of
+OXN's own 176 classes and 6.5–19.2% across the corpora — because the escapes at NOM 14 sit
 *inside* the legitimate distribution (p95–p99), not outside it. So this is a ratchet before it is
 a ceiling: adopting it re-baselines, and the value is in blocking the *change* from NOM 1 to 14
 rather than in condemning classes that were already large.
 
 **Shipped as `methods_per_class: 12` and `weighted_methods_per_class: 25`**, both inside the
 window the control defines (NOM 5..13, WMC 18..26) and deliberately not at its edges, since a
-value tuned to straddle one fixture is fitted to that fixture. Measured across 3,415 class
+value tuned to straddle one fixture is fitted to that fixture. Measured across 3,501 class
 entities they reject 0.00%–7.48% and 0.27%–10.28%, and 0.7%/2.0% of OXN's own 149 classes —
 which became four baselined entries, `GraphStore` (NOM 27, WMC 64) among them.
 

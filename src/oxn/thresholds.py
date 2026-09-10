@@ -52,9 +52,10 @@ MAX_FILE_SLOC: Final[int] = 500
 #: separates them; these are the round numbers in that window, deliberately not its edges,
 #: because a value tuned to straddle one fixture is fitted to that fixture.
 #:
-#: Unlike the per-function ceilings, which reject 0.5-3.6% of real code, these reject
-#: 4.3-9.5% and 1.7-13.1% across the five corpora -- the evasions sit *inside* the legitimate
-#: distribution, not outside it. They are therefore a **ratchet** first: `.oxn/baseline.json`
+#: These reject 0.00-7.48% and 0.27-10.28% of real classes across the six corpora
+#: (`benchmarks/ceiling-observations.json`, 3,501 classes) -- overlapping the per-function
+#: ceilings' 0.00-10.57% rather than sitting above it, because the evasions sit *inside* the
+#: legitimate distribution and not outside it. They are therefore a **ratchet** first: `.oxn/baseline.json`
 #: absorbs the classes that were already large, and what blocks is a class getting worse.
 MAX_METHODS_PER_CLASS: Final[int] = 12
 MAX_WEIGHTED_METHODS_PER_CLASS: Final[int] = 25

@@ -869,16 +869,39 @@ either.
 | language | corpus | L2 def / call | index | confident | overall @ recall | excluded | graded |
 |---|---|---|---|---|---|---|---|
 | Python | httpx | 99% / 96% | 4.4 s | 100% | 70.3% @ 100% | 30.48% | 1,453 |
-| Go | go-kit | 100% / 88.3% | 1 s | 99.7% | 71.4% @ 100% | 0% | 1,578 |
+| Go | go-kit | 100% / 88.3% | 1 s | 99.1% | 69.6% @ 100% | 0% | 1,794 |
 | Rust | ripgrep | 99.2% / 99.2% | 40 s | 99.1% | 52.8% @ 100% | 0.15% | 6,665 |
-| Java | petclinic | 99.6% / 100% | 361 s | 100% | 90.4% @ 100% | 0% | 324 |
+| Java | petclinic | 99.6% / 100% | 361 s cold, 6 s warm | 100% | 90.4% @ 100% | 0% | 324 |
 | TypeScript | nest | 99.9% / 83.6% | 3 s | 100% | 69.4% @ 100% | 1.08% | 2,470 |
 | JavaScript | eslint | 89.0% / 69.3% | 20 s | 99.8% | 74.5% @ 100% | 0.14% | 13,221 |
 
-Go and Java are the 2026-09-06 measurements: `scip-go` and `scip-java` are not installed on
-this machine, so those two rows are carried forward rather than re-run. The rule can only
-*add* graded sites, and both corpora excluded **nothing**, so there is nothing in them for it
-to change — which is an argument, not a measurement, and is labelled as one.
+**Go and Java were nearly carried forward on an argument, and the argument would have been
+right about the wrong thing.** `oxn doctor` reported both indexers missing; both binaries had
+been installed on 2026-09-06 and were simply not on this shell's `PATH`. Re-run rather than
+reasoned about: Go's row moved **1,578 -> 1,794 graded**, confident precision 99.7% ->
+**99.1%**, overall 71.4% -> **69.6%**.
+
+Not because of this rule -- Go excludes nothing, so that part of the argument held. The row
+had **drifted since it was published**, and nothing re-measured it. Bisected against a fixed
+index, so that only OXN's code varies:
+
+    a481ea7  imports resolve                            1,578   99.70%   71.36%   <- as published
+    31105ac  a callable inside a callable is two        1,609   99.11%   71.16%
+    68fa0eb  a Go interface's methods become entities   1,773   99.11%   69.71%
+    HEAD     + the class-field and local-symbol work    1,794   99.12%   69.57%
+
+Every step is a fix that gave Go *more* entities to be graded on, and the new sites are harder
+than the average: an interface method is the dispatch case L1 is least certain about. A
+published row is a measurement of a version, and this one aged for four days without saying
+so. The lesson is the same one this amendment's last paragraph draws, one level up: the table
+is only true of the commit that produced it.
+
+Java is unchanged at 324 graded, 100% confident precision, 0 exclusions -- but its **index
+time is not 361 s any more, it is 6 s**, and neither number is wrong. 361 s was a cold Maven
+repository resolving and compiling; 6 s is the same corpus with `~/.m2` populated and a
+`target/` already built. The figure was published as a property of the corpus and is really a
+property of the build cache, which matters because a CI runner is cold and a developer's
+machine is not. Both are stated now, and the exit-criterion miss is the cold one.
 
 **A third exit-criterion miss, named rather than averaged.** JavaScript's 69.3% call coverage
 is the furthest any corpus falls below the >=85% bar, and it is the same two causes the sixth
