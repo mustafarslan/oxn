@@ -147,7 +147,15 @@ def ask_actor(client: Any, ask: Ask) -> tuple[str, str, str]:
         feedback=FEEDBACK.format(failures=ask.feedback) if ask.feedback else "",
     )
     system = ACTOR_SYSTEM.format(language=language, unit=_UNIT.get(language, "function definition"))
-    reply = client.generate(prompt, system=system)
+    try:
+        reply = client.generate(prompt, system=system)
+    except Exception as error:
+        # The prompt is the only thing the caller cannot reconstruct -- rebuilding it would
+        # measure a second construction rather than the one that was sent -- and a failed
+        # ask is exactly where its cost was being lost. Attached rather than wrapped, so the
+        # exception keeps the type the harness dispatches on.
+        error.prompt_chars = len(prompt)  # type: ignore[attr-defined]
+        raise
     return _strip_fences(reply, ask.target.leaf), reply, prompt
 
 

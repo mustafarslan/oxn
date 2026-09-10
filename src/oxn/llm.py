@@ -46,6 +46,11 @@ class OllamaError(RuntimeError):
 class ReplyCutOff(OllamaError):
     """The model stopped at its token budget with an answer half written.
 
+    Carries `written`, the characters that did arrive, because a cut-off attempt is the most
+    expensive kind and the log recorded it as free: `prompt_chars` and `reply_chars` both 0
+    against 608 seconds and 124,567 characters actually generated. An arm's cost column would
+    have under-reported it by exactly its worst attempts.
+
     A subclass rather than a message the caller matches on, because the two are acted on
     differently and a harness should not be parsing prose to tell them apart. Every other
     `OllamaError` is worth another attempt: the host was busy, the reply named the wrong
@@ -53,6 +58,11 @@ class ReplyCutOff(OllamaError):
     is 0, and the model scales its deliberation to whatever room it is given -- so retrying
     buys the same truncation more slowly, three times.
     """
+
+    def __init__(self, message: str, *, written: int = 0) -> None:
+        super().__init__(message)
+        #: Characters of answer that arrived before the budget ran out.
+        self.written = written
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,7 +321,8 @@ class _Reply:
                 f"{model} stopped at the token limit with {len(self.text):,} characters of "
                 f"answer written and {self.thinking_chars:,} of reasoning before it. The "
                 f"reply is cut off mid-answer, so it is not a repair to judge -- raise "
-                f"`num_predict` (now {budget:,}) or `num_ctx`, or give it a smaller target."
+                f"`num_predict` (now {budget:,}) or `num_ctx`, or give it a smaller target.",
+                written=len(self.text),
             )
         return self.text
 

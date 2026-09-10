@@ -132,7 +132,7 @@ class _Try:
 
 
 def _failed(
-    attempt: _Try, *, error: str, next_feedback: str, last: bool = False, **extra: str
+    attempt: _Try, *, error: str, next_feedback: str, last: bool = False, **extra: object
 ) -> Attempt:
     """An attempt that never reached the gauntlet. Logged like any other: it is data.
 
@@ -223,6 +223,10 @@ def _ask_for_a_candidate(
             error=str(error)[:200],
             next_feedback=feedback,
             last=_was_cut_off(error),
+            # A truncated ask is the most expensive attempt there is, and it was logged as
+            # free: 608 seconds and 124,567 characters generated, `prompt_chars` 0.
+            prompt_chars=getattr(error, "prompt_chars", 0),
+            reply_chars=getattr(error, "written", 0),
         )
 
 

@@ -384,3 +384,22 @@ def test_a_complete_answer_that_happens_to_end_at_done_is_returned(patched: Any)
         [{"response": "def f(): return 1"}, {"response": "", "done": True, "done_reason": "stop"}]
     )
     assert _client().generate("prompt") == "def f(): return 1"
+
+
+def test_a_cut_off_reply_carries_what_it_did_write(patched: Any) -> None:
+    """A truncated attempt is the most expensive kind, and the log recorded it as free.
+
+    Measured: 608 seconds and 124,567 characters generated, logged with `prompt_chars` 0 and
+    `reply_chars` 0 -- so an arm's cost column would have under-reported it by exactly its
+    worst attempts, and the cheapest-looking arm would be the one that wasted the most.
+    """
+    patched(
+        [
+            {"response": "def f():\n    if x:"},
+            {"response": "", "done": True, "done_reason": "length"},
+        ]
+    )
+    with pytest.raises(OllamaError) as raised:
+        _client().generate("prompt")
+
+    assert raised.value.written == len("def f():\n    if x:")  # type: ignore[attr-defined]

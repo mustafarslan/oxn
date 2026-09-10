@@ -237,3 +237,33 @@ def test_a_sandbox_under_test_never_lands_in_the_shared_scratch(harness, tmp_pat
     box = harness.Sandbox("probe", root=source, venv=False)
 
     assert box.path.parent == scratch, f"{box.path} escaped into the shared root"
+
+
+def test_the_prompt_that_failed_still_reports_its_size(harness) -> None:
+    """`ask_actor` builds the prompt and is the only place that can say how big it was.
+
+    Reconstructing it afterwards would measure a second construction rather than the one
+    that was sent, which is why the prompt is normally *returned* -- and on the path where
+    the actor raises, it was simply lost.
+    """
+    from actor import Ask, ask_actor
+    from targets import Target
+
+    from oxn.llm import ReplyCutOff
+
+    class Refuses:
+        def generate(self, prompt: str, system: str = "", **_: object) -> str:
+            del prompt, system
+            raise ReplyCutOff("stopped at the token limit", written=1234)
+
+    ask = Ask(
+        target=Target(qualified_name="m.f", path="m.py", score=20.0),
+        ceiling=12,
+        file_source="pass\n",
+    )
+    with pytest.raises(ReplyCutOff) as raised:
+        ask_actor(Refuses(), ask)
+
+    assert raised.value.written == 1234
+    assert raised.value.prompt_chars > 0  # type: ignore[attr-defined]
+    assert harness._was_cut_off(raised.value), "attaching the size must not change the type"
