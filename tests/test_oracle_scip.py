@@ -449,6 +449,26 @@ def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     literals and one `<get>id` accessor -- decoration rather than disagreement. The same-file
     `local` functions listed there as a third category are graded now; `is_document_local`
     records what excluding them cost on a JavaScript corpus.
+
+    **The call-coverage figure fell on 2026-09-10, and the drop is a correction rather than a
+    regression.** `_occurrence_at` used to fall back to the callee's *start* position when the
+    last name component had no occurrence -- and for a qualified callee the start belongs to
+    the receiver, so the join hit `sourceCode` rather than `getTokenAfter`, `espree` rather
+    than `tokenize`, `Object` rather than `assign`. Each of those counted as a joined call
+    site. Measured across four corpora, the fallback contributed **18,607 call edges of which
+    64 resolved to anything -- 0.34%**:
+
+    | corpus | coverage with | without | edges added | resolved |
+    |---|---|---|---|---|
+    | python-httpx | 99.7% | 97.2% | 103 | 0 |
+    | oxn (self) | 98.8% | 89.4% | 826 | 7 |
+    | typescript-nest | 89.5% | 76.2% | 1,091 | 9 |
+    | javascript-eslint | 84.6% | 47.0% | 16,587 | 48 |
+
+    So the criterion had been reading "did an occurrence exist anywhere inside the callee
+    expression", which is not the question. JavaScript falls furthest because it is the
+    corpus with the least type information for an indexer to place a property name with, and
+    that is the honest shape of the gap rather than a number to divide differently.
     """
     from oxn.graph.indexer import Indexer
     from oxn.resolve.measure import measure_corpus
@@ -470,7 +490,9 @@ def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
         ).fetchone()[0]
     assert fabricated == 0, f"{fabricated} L2 edges resolved a local symbol into another file"
     assert report.definition_coverage >= 0.90, f"{report.definition_coverage:.1%}"
-    assert report.call_coverage >= 0.80, f"{report.call_coverage:.1%} (below P5's 85%)"
+    assert report.call_coverage >= 0.70, (
+        f"{report.call_coverage:.1%} (below P5's 85%; see the receiver-fallback note above)"
+    )
 
     accuracy = measure_corpus(corpus, index, language="typescript")
     assert accuracy.graded_call_sites > 1000, "corpus too small to mean anything"
@@ -519,6 +541,26 @@ def test_javascript_l2_and_l0_l1_accuracy(tmp_path) -> None:
 
     The precision figures are the lowest of the six, and are not explained here for the same
     reason TypeScript's high ones are not: one corpus is not a cause.
+
+    **The call-coverage figure fell on 2026-09-10, and the drop is a correction rather than a
+    regression.** `_occurrence_at` used to fall back to the callee's *start* position when the
+    last name component had no occurrence -- and for a qualified callee the start belongs to
+    the receiver, so the join hit `sourceCode` rather than `getTokenAfter`, `espree` rather
+    than `tokenize`, `Object` rather than `assign`. Each of those counted as a joined call
+    site. Measured across four corpora, the fallback contributed **18,607 call edges of which
+    64 resolved to anything -- 0.34%**:
+
+    | corpus | coverage with | without | edges added | resolved |
+    |---|---|---|---|---|
+    | python-httpx | 99.7% | 97.2% | 103 | 0 |
+    | oxn (self) | 98.8% | 89.4% | 826 | 7 |
+    | typescript-nest | 89.5% | 76.2% | 1,091 | 9 |
+    | javascript-eslint | 84.6% | 47.0% | 16,587 | 48 |
+
+    So the criterion had been reading "did an occurrence exist anywhere inside the callee
+    expression", which is not the question. JavaScript falls furthest because it is the
+    corpus with the least type information for an indexer to place a property name with, and
+    that is the honest shape of the gap rather than a number to divide differently.
     """
     from oxn.graph.indexer import Indexer
     from oxn.resolve.measure import measure_corpus
@@ -531,7 +573,9 @@ def test_javascript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     with Indexer(root=corpus, cache_path=tmp_path / "graph.db") as indexer:
         report = ingest_index(indexer, index)
     assert report.definition_coverage >= 0.80, f"{report.definition_coverage:.1%}"
-    assert report.call_coverage >= 0.60, f"{report.call_coverage:.1%} (below P5's 85%)"
+    assert report.call_coverage >= 0.42, (
+        f"{report.call_coverage:.1%} (below P5's 85%; see the receiver-fallback note above)"
+    )
 
     accuracy = measure_corpus(corpus, index, language="javascript")
     assert accuracy.graded_call_sites > 10000, "corpus too small to mean anything"

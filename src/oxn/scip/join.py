@@ -346,17 +346,24 @@ def _occurrence_at(
 ) -> tuple[tuple[int, int], ScipOccurrence | None]:
     """The occurrence a callee resolves to, and the position it was found at.
 
-    **A qualified callee (`repo.save`) must resolve on its *last* name component.** Its start
-    position belongs to the receiver, and `repo` is usually a local variable, so matching
-    there produces an edge to the local instead of to the method. The start position is the
-    fallback for a callee that is a bare name.
+    **A qualified callee (`repo.save`) resolves on its *last* name component, and on nothing
+    else.** Its start position belongs to the receiver, and `repo` is usually a local
+    variable, so matching there produces an edge to the local instead of to the method.
+
+    There used to be a fallback to `callee.start_point` "for a bare name", and it was dead in
+    the only direction that mattered: for a bare callee the last name *is* the start, so the
+    first lookup already answers. Measured over OXN's own tree, 8,754 call sites: the fallback
+    fired **840 times, always on a qualified callee whose method SCIP could not place, and
+    every one of those 840 resolved to the receiver** -- 587 to a local variable and 253 to a
+    parameter symbol. It was reintroducing precisely the defect the paragraph above exists to
+    prevent, and counting each one as a joined call site, so `call_coverage` was reporting
+    them as successes. A method SCIP could not place is a call OXN cannot name, and declining
+    to name it is the honest answer.
 
     The position is returned alongside because `_map_calls` records it: it is what lets
     `_map_references` tell a call from a mention.
     """
     position = _last_name_position(callee)
-    if position not in by_position:
-        position = callee.start_point
     return position, by_position.get(position)
 
 
