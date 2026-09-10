@@ -32,6 +32,8 @@ HARNESS_MODULES = (
     "beds",
     "targets",
     "runlog",
+    "console",
+    "attempt",
     "summary",
     "dogfood",
     "experiment",

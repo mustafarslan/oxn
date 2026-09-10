@@ -16,14 +16,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+from console import BOLD, DIM, GREEN, RED, RESET, say
+
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "benchmarks" / "dogfood-log.jsonl"
-
-DIM, GREEN, RED, BOLD, RESET = "\033[2m", "\033[32m", "\033[31m", "\033[1m", "\033[0m"
-
-
-def say(message: str = "") -> None:
-    print(message)
 
 
 def summarise() -> None:

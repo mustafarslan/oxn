@@ -136,6 +136,15 @@ def _dry_run(model: str, host: str) -> Actor:
 class ClaudeCodeClient:
     """Drives `claude -p`, so the agent under study is the one the tool governs.
 
+    **Truncation is not detected here, and P11's claim is about this arm.** `OllamaClient`
+    knows when a reply stopped at `num_predict` because Ollama says so in `done_reason`, and
+    raises `ReplyCutOff` rather than returning half an answer. `claude -p` prints what it
+    prints; nothing in its output distinguishes a finished reply from a cut-off one, so a
+    truncated answer from this backend still reaches the gauntlet as a bad repair. Named
+    rather than left implicit, because the `cut` column will read 0 for this backend whether
+    or not truncation happened.
+
+
     Print mode is the whole interface: one prompt in, one answer out, no session state. That
     is exactly the shape the repair loop already has, and it is why this needs no protocol of
     its own -- the loop cannot tell it apart from a local model.

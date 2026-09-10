@@ -43,6 +43,18 @@ class OllamaError(RuntimeError):
     """Raised when Ollama is unreachable or returns something unusable."""
 
 
+class ReplyCutOff(OllamaError):
+    """The model stopped at its token budget with an answer half written.
+
+    A subclass rather than a message the caller matches on, because the two are acted on
+    differently and a harness should not be parsing prose to tell them apart. Every other
+    `OllamaError` is worth another attempt: the host was busy, the reply named the wrong
+    function, the repair was bad. This one is not. The prompt did not change, the temperature
+    is 0, and the model scales its deliberation to whatever room it is given -- so retrying
+    buys the same truncation more slowly, three times.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class OllamaClient:
     """A thin wrapper over Ollama's HTTP API."""
@@ -288,7 +300,7 @@ class _Reply:
         if not self.saw_completion or not self.text:
             raise OllamaError(f"{model} returned an empty completion: {self.why_empty}")
         if self.stopped_because == "length":
-            raise OllamaError(
+            raise ReplyCutOff(
                 f"{model} stopped at the token limit with {len(self.text):,} characters of "
                 f"answer written and {self.thinking_chars:,} of reasoning before it. The "
                 f"reply is cut off mid-answer, so it is not a repair to judge -- raise "

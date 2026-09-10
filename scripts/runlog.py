@@ -62,6 +62,10 @@ class Attempt:
     #: table could say so. An invalidated run must stop contributing, and a table must be
     #: attributable to one configuration.
     run: str = ""
+    #: True when the model stopped at its token budget with an answer half written. A field
+    #: rather than only a substring of `error`, so a reader of the log does not have to match
+    #: prose -- `TRUNCATION_MARKER` stays for rows written before this existed.
+    cut_off: bool = False
     #: Which repeat of this (arm, target) produced it. `generate` is temperature 0 and
     #: explicitly not deterministic -- `oxn.llm` records three materially different rewrites
     #: from one prompt -- so a convergence rate over a single sample per target is not
@@ -250,7 +254,10 @@ def _result(arm: str, backend: str, rows: list[dict[str, Any]]) -> ArmResult:
         repeats=len({row.get("repeat", 0) for row in rows}),
         converged=_converged(by_target),
         truncated=_truncated(rows),
-        attempts=len(rows),
+        # Truncated rows are excluded here for the same reason they are excluded from
+        # `converged`: `attempts_per_target` would otherwise carry the confound that column
+        # just lost, and an arm with a bigger prompt would read as needing more tries.
+        attempts=len(rows) - _truncated(rows),
         correct=_functionally_correct(rows),
         prompt_chars=int(_total(rows, "prompt_chars")),
         reply_chars=int(_total(rows, "reply_chars")),
@@ -292,7 +299,9 @@ def _truncated(rows: list[dict[str, Any]]) -> int:
     mid-block. The harness filed it as `tests FAIL types FAIL target_present False` --
     indistinguishable from a repair that was simply bad.
     """
-    return sum(1 for row in rows if TRUNCATION_MARKER in str(row.get("error", "")))
+    return sum(
+        1 for row in rows if row.get("cut_off") or TRUNCATION_MARKER in str(row.get("error", ""))
+    )
 
 
 def _total(rows: list[dict[str, Any]], key: str) -> float:

@@ -289,3 +289,22 @@ def test_an_ordinary_failure_is_not_counted_as_truncation() -> None:
     (result,) = measures(rows, run="r1")
 
     assert result.truncated == 0
+
+
+def test_a_truncated_attempt_is_not_counted_as_a_retry_either() -> None:
+    """`attempts_per_target` would otherwise carry the confound `conv` just lost.
+
+    An arm with a bigger prompt truncates more, and a truncation that counted as an attempt
+    would make it read as needing more tries -- the same artifact in the next column along.
+    """
+    from runlog import measures
+
+    rows = [
+        _row(target="a", accepted=False, cut_off=True, run="r1"),
+        _row(target="a", accepted=True, run="r1"),
+    ]
+    (result,) = measures(rows, run="r1")
+
+    assert result.truncated == 1
+    assert result.attempts == 1, "the truncated row is not a try the arm needed"
+    assert result.attempts_per_target == 1.0

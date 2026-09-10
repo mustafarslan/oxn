@@ -189,3 +189,22 @@ def test_an_undeclared_check_renders_as_skipped_not_failed(harness) -> None:
     assert harness._mark("tests", result) == "tests ok"
     assert harness._mark("lint", result) == "lint skip"
     assert harness._mark("types", result) == "types skip"
+
+
+def test_a_cut_off_reply_ends_the_loop_instead_of_spending_every_retry(harness) -> None:
+    """A retry exists so the model can act on feedback about a bad repair.
+
+    A reply cut off at the token budget carries no such signal: the prompt is unchanged, the
+    temperature is 0, and the model scales its deliberation to whatever room it is given --
+    measured, 8k against a budget of 8192 and 32.6k against 32768. So three retries buy the
+    same truncation three times, at roughly 800 seconds each on the httpx bed.
+
+    Asked by type rather than by message. `oxn.llm.ReplyCutOff` exists so a harness does not
+    parse prose to tell "the host was busy" from "the answer was cut in half".
+    """
+    from oxn.llm import OllamaError, ReplyCutOff
+
+    assert issubclass(ReplyCutOff, OllamaError), "every other model failure is still retryable"
+    assert harness._was_cut_off(ReplyCutOff("stopped at the token limit"))
+    assert not harness._was_cut_off(OllamaError("Ollama is unreachable"))
+    assert not harness._was_cut_off(RuntimeError("something else"))
