@@ -72,7 +72,7 @@ def ingest_index(indexer: Indexer, index_path: Path | str) -> IngestReport:
     Files the index names but OXN has no profile for are skipped and reported: a SCIP index
     covers whatever its language server saw, which is not always the same set.
     """
-    from oxn.graph.builder import build_file
+    from oxn.graph.builder import build_file, content_sha
     from oxn.languages import get_parser
     from oxn.profiles import profile_for_path
 
@@ -98,8 +98,16 @@ def ingest_index(indexer: Indexer, index_path: Path | str) -> IngestReport:
         result = join_document(list(parsed.entities), profile, tree.root_node, document)
 
         # The file row must exist before symbols and edges can reference it, and a SCIP
-        # index may cover files the caller never asked OXN to index.
-        indexer.store.put_file(parsed, profile.version, indexer.grammar_version())
+        # index may cover files the caller never asked OXN to index -- but `put_file` is a
+        # *replace*, and it takes that file's metrics with it. Writing over a row that is
+        # already current and measured is how `oxn index` blinded the gate: 0 metric rows on
+        # httpx, and `oxn check .` reporting "60 files, 0 violations, passed" on a corpus
+        # with 118 of them. `is_current(measured=True)` is the guard that made it visible;
+        # this is the one that stops it happening.
+        if not indexer.store.is_current(
+            relative, content_sha(source), profile.version, indexer.grammar_version(), measured=True
+        ):
+            indexer.store.put_file(parsed, profile.version, indexer.grammar_version())
         indexer.store.put_symbols(relative, result.definitions)
         indexer.store.put_edges(relative, result.edges)
 

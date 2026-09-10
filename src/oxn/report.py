@@ -14,6 +14,7 @@ from oxn.render import (
     Output,
     _emit,
     _emit_arch,
+    _emit_calls,
     _emit_classes,
     _emit_index,
     _emit_metrics,
@@ -409,6 +410,74 @@ def run_index(
 
     payload: dict[str, Any] = {"status": "OK", "index": report.as_dict(), "edges": stats}
     _emit_index(payload, output)
+    return payload
+
+
+#: What `oxn calls` needs and cannot compute for itself.
+NO_CALL_GRAPH = (
+    "no call edges in the cache. OXN recovers a call graph from a SCIP index (ADR-0002): "
+    "nothing at L0/L1 writes one, because a name resolved by scope rules is a candidate and "
+    "not a call. Run `oxn index <path>` for a language whose indexer is installed, or "
+    "`oxn index <path> --index-file <file.scip>` over an index you built, then ask again."
+)
+
+
+def run_calls(
+    paths: list[str], output: Output = TO_JSON, *, limit: int = 20
+) -> dict[str, Any]:
+    """Fan-in, fan-out, recursion and dead-code candidates over the L2 call graph.
+
+    **Refuses rather than reports zero when there is no call graph.** An empty answer here
+    and a "nothing is dead" answer are different claims, and only the first is true on a tree
+    that has never ingested a SCIP index -- which is every tree by default.
+    """
+    from oxn.config import CALLABLE_KINDS
+    from oxn.graph.rows import call_edges
+    from oxn.metrics.callgraph import build_call_graph, default_roots, unreachable
+
+    targets = [Path(raw) for raw in paths]
+    with _indexer() as indexer:
+        indexer.index(targets)
+        rows = call_edges(indexer.store)
+        entities = {
+            entity.id: (entity.qualified_name, entity.file_path, entity.kind.value)
+            for path in indexer.store.known_paths()
+            for entity in indexer.store.entities_for(path)
+            if entity.kind.value in CALLABLE_KINDS
+        }
+
+    if not rows:
+        payload: dict[str, Any] = {"status": "UNAVAILABLE", "note": NO_CALL_GRAPH}
+        _emit_calls(payload, output)
+        return payload
+
+    graph = build_call_graph(rows)
+    dead = unreachable(graph, entities, default_roots(entities))
+    payload = {
+        "status": "OK",
+        "callables": len(entities),
+        "callers": len(graph.edges),
+        "edges": sum(len(targets) for targets in graph.edges.values()),
+        "declined": graph.unresolved_targets,
+        "recursion": [cycle for cycle in graph.recursion_cycles()],
+        "dead_code_candidates": [
+            {"qualified_name": found.qualified_name, "path": found.file_path}
+            for found in dead[:limit]
+        ],
+        "dead_code_total": len(dead),
+        "fan": [
+            {
+                "qualified_name": entities[entity_id][0],
+                "path": entities[entity_id][1],
+                "fan_in": graph.fan_in(entity_id),
+                "fan_out": graph.fan_out(entity_id),
+            }
+            for entity_id in sorted(
+                entities, key=lambda key: -graph.fan_in(key) - graph.fan_out(key)
+            )[:limit]
+        ],
+    }
+    _emit_calls(payload, output)
     return payload
 
 

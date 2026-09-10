@@ -86,3 +86,79 @@ def test_schema_version_mismatch_rebuilds(tmp_path, build) -> None:
 def test_store_creates_its_parent_directory(tmp_path) -> None:
     with GraphStore(tmp_path / "deep" / "nested" / "g.db") as store:
         assert store.stats()["schema_version"] == SCHEMA_VERSION
+
+
+# ---- a file row is not a measurement ---------------------------------------------------------
+
+
+def test_a_parsed_but_unmeasured_file_is_not_current(tmp_path) -> None:
+    """The freshness key answered "has this been parsed" and was asked "has this been seen".
+
+    `scip.ingest` writes a file row directly -- it needs one before symbols and edges can
+    reference it -- and `put_file` is a *replace*, so it takes that file's metrics with it.
+    The row it leaves carries the current content sha, so the next `index_file` saw a current
+    file and returned early. Nothing measured it again.
+
+    **Measured on `python-httpx` on 2026-09-10: after `oxn index --index-file`, the metrics
+    table held 0 rows, and `oxn check .` reported "60 files, 0 violations, passed" on a
+    corpus that has 118.** A gate that cannot see renders exactly like a gate that found
+    nothing, which is the most dangerous shape a defect in this project can take.
+    """
+    from oxn.graph.builder import build_file, content_sha
+    from oxn.graph.indexer import Indexer
+    from oxn.languages import get_parser
+    from oxn.profiles import get_profile
+
+    source = b"def f(x):\n    return x\n"
+    (tmp_path / "m.py").write_bytes(source)
+    profile = get_profile("python")
+
+    with Indexer(root=tmp_path, cache_path=tmp_path / "graph.db") as indexer:
+        indexer.index()
+        stamp = (content_sha(source), profile.version, indexer.grammar_version())
+        assert indexer.store.is_current("m.py", *stamp, measured=True)
+
+        # What the ingest path does: a file row, and nothing else.
+        tree = get_parser("python").parse(source)
+        parsed = build_file("m.py", source, profile, tree.root_node)
+        indexer.store.put_file(parsed, profile.version, indexer.grammar_version())
+
+        assert indexer.store.is_current("m.py", *stamp), "the parse really is current"
+        assert not indexer.store.is_current("m.py", *stamp, measured=True), (
+            "and the measurement really is gone"
+        )
+
+        # And the indexer must act on the difference rather than trust the row.
+        indexer.index()
+        assert indexer.store.measurements_for("m.py"), "re-measured rather than skipped"
+
+
+def test_ingesting_an_index_does_not_throw_away_what_was_measured(tmp_path) -> None:
+    """The other half: the guard above makes the loss visible, this stops it happening.
+
+    Left to clobber, `oxn index` deleted every metric row, `oxn check` re-parsed every file
+    to restore them, and that in turn deleted every call edge the ingest had just written --
+    the two commands undoing each other in a loop. Driven through `ingest_index` over a
+    synthetic index rather than asserted on the guard, because the guard is not the promise.
+    """
+    from tests.test_scip import delimited, document, occurrence
+
+    from oxn.graph.indexer import Indexer
+    from oxn.scip.ingest import ingest_index
+
+    source = b"def helper():\n    return 1\n"
+    (tmp_path / "m.py").write_bytes(source)
+    # `helper` is defined at line 0, columns 4..10; role 1 is a definition.
+    index = tmp_path / "one.scip"
+    index.write_bytes(
+        delimited(2, document("m.py", [occurrence("scip py p 1 `m`/helper().", [0, 4, 10], 1)]))
+    )
+
+    with Indexer(root=tmp_path, cache_path=tmp_path / "graph.db") as indexer:
+        indexer.index()
+        before = dict(indexer.store.measurements_for("m.py"))
+        assert before, "the fixture has to have been measured for this to prove anything"
+
+        report = ingest_index(indexer, index)
+        assert report.matched_documents == 1, "the index has to have been read"
+        assert dict(indexer.store.measurements_for("m.py")) == before

@@ -25,15 +25,15 @@ from typing import TYPE_CHECKING, Any
 from oxn.graph.model import (
     Edge,
     Entity,
-    EntityKind,
     EntityMetrics,
     MetricValue,
     ParsedFile,
     Resolution,
 )
+from oxn.graph.rows import entity_from_row
 
 if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Collection, Iterable, Iterator
+    from collections.abc import Collection, Iterator
 
 #: Bump on any change to the statements below. A mismatch rebuilds the cache.
 #:
@@ -233,18 +233,35 @@ class GraphStore:
     # ---- cache protocol ---------------------------------------------------------
 
     def is_current(
-        self, path: str, content_sha: str, profile_version: int, grammar_version: str
+        self,
+        path: str,
+        content_sha: str,
+        profile_version: int,
+        grammar_version: str,
+        *,
+        measured: bool = False,
     ) -> bool:
-        """True if this file's stored graph was built from exactly this input."""
+        """True if this file's stored graph was built from exactly this input.
+
+        ``measured`` also requires the file to *have* measurements. "Parsed" and "measured"
+        were one question here and are two facts: `scip.ingest` writes a file row directly --
+        it needs one before symbols and edges can reference it -- and `put_file` replaces the
+        row, taking that file's metrics with it. The row left behind carries the current sha,
+        so this said current and nothing measured the file again. **Measured on
+        `python-httpx`: after `oxn index --index-file`, 0 metric rows, and `oxn check .`
+        reported "60 files, 0 violations, passed" on a corpus with violations in it.**
+        """
         row = self._conn.execute(
             "SELECT content_sha, profile_version, grammar_version FROM files WHERE path = ?",
             (path,),
         ).fetchone()
-        return row is not None and (
-            row["content_sha"] == content_sha
-            and row["profile_version"] == profile_version
-            and row["grammar_version"] == grammar_version
-        )
+        if row is None:
+            return False
+        stamp = (row["content_sha"], row["profile_version"], row["grammar_version"])
+        if stamp != (content_sha, profile_version, grammar_version):
+            return False
+        # Inlined: `GraphStore` is at its baselined NOM and the ratchet is not spent here.
+        return not measured or _has_measurements(self._conn, path)
 
     def put_file(self, parsed: ParsedFile, profile_version: int, grammar_version: str) -> None:
         """Replace one file's contribution atomically."""
@@ -506,7 +523,7 @@ class GraphStore:
             "SELECT * FROM entities WHERE file_path = ? ORDER BY start_byte, end_byte DESC",
             (path,),
         ).fetchall()
-        return [_entity_from_row(row) for row in rows]
+        return [entity_from_row(row) for row in rows]
 
     def forget(self, path: str) -> None:
         """Drop a file that no longer exists in the working tree."""
@@ -550,21 +567,11 @@ class GraphStore:
         self.close()
 
 
-def _entity_from_row(row: sqlite3.Row) -> Entity:
-    return Entity(
-        id=row["id"],
-        file_path=row["file_path"],
-        kind=EntityKind(row["kind"]),
-        name=row["name"],
-        qualified_name=row["qualified_name"],
-        start_byte=row["start_byte"],
-        end_byte=row["end_byte"],
-        start_line=row["start_line"],
-        end_line=row["end_line"],
-        parent_id=row["parent_id"],
-        attrs=json.loads(row["attrs"]),
-    )
-
-
-def entities_by_kind(entities: Iterable[Entity], kind: EntityKind) -> list[Entity]:
-    return [e for e in entities if e.kind is kind]
+def _has_measurements(conn: sqlite3.Connection, path: str) -> bool:
+    """Whether anything in this file has been measured at all. Module-level: see `rows.py`."""
+    found = conn.execute(
+        "SELECT 1 FROM metrics m JOIN entities e ON e.id = m.entity_id WHERE e.file_path = ?"
+        " LIMIT 1",
+        (path,),
+    ).fetchone()
+    return found is not None

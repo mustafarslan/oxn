@@ -169,6 +169,47 @@ def _volume_history(payload: dict[str, Any], console: Console) -> None:
         )
 
 
+def _emit_calls(payload: dict[str, Any], output: Output) -> None:
+    """The call graph, or the reason there isn't one.
+
+    `UNAVAILABLE` is a first-class answer here. Every other surface in OXN works at L0/L1 and
+    means something without a SCIP index; this one does not, and printing "0 dead-code
+    candidates" for a tree nobody indexed would be the most confident wrong answer the tool
+    could give.
+    """
+    console = output.console
+    if console is None:
+        _emit(payload, output)
+        return
+    if payload["status"] != "OK":
+        console.print(f"[yellow]No call graph.[/yellow] [dim]{payload['note']}[/dim]")
+        return
+
+    console.print(
+        f"[bold]Call graph[/bold] {payload['edges']} edges from {payload['callers']}"
+        f" of {payload['callables']} callables"
+        f"  [dim]{payload['declined']} declined: unresolved, or resolved without"
+        " certainty at L0/L1[/dim]"
+    )
+    for row in payload["fan"][:10]:
+        console.print(
+            f"  in [bold]{row['fan_in']:3}[/bold] out [bold]{row['fan_out']:3}[/bold]"
+            f"  {row['qualified_name']:<44} [dim]{row['path']}[/dim]"
+        )
+    if payload["recursion"]:
+        console.print(f"\n[bold]Recursion[/bold] ({len(payload['recursion'])} cycles)")
+        for cycle in payload["recursion"][:5]:
+            console.print(f"  {len(cycle)} callables")
+    if payload["dead_code_candidates"]:
+        console.print(
+            f"\n[bold]Dead-code candidates[/bold] ({payload['dead_code_total']})"
+            "  [dim]candidates: reflection, DI and framework entry points all reach code"
+            " no call edge does[/dim]"
+        )
+        for found in payload["dead_code_candidates"][:10]:
+            console.print(f"  {found['qualified_name']:<48} [dim]{found['path']}[/dim]")
+
+
 def _emit_arch(payload: dict[str, Any], output: Output) -> None:
     """Five sections, each its own function -- the report reads as its own table of contents."""
     console = output.console

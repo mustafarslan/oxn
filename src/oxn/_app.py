@@ -303,6 +303,28 @@ def index(
 
 
 @app.command()
+def calls(
+    paths: list[str] = typer.Argument(None, help="Files or directories to analyse."),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    limit: int = typer.Option(20, "--limit", help="How many rows to show."),
+) -> None:
+    """Fan-in, fan-out, recursion and dead-code candidates over the call graph.
+
+    Needs L2. OXN recovers call edges from a SCIP index and never invents them from names,
+    so on a tree that has not been indexed this says it has no call graph rather than
+    reporting an empty one -- see `oxn index`.
+    """
+    from oxn.render import Output
+    from oxn.report import run_calls
+
+    run_calls(
+        paths or ["."],
+        Output(console=None if json_output else _console()),
+        limit=limit,
+    )
+
+
+@app.command()
 def classes(
     paths: list[str] = typer.Argument(None, help="Files or directories to analyse."),
     json_output: bool = typer.Option(False, "--json", help="Machine-readable output."),

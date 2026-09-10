@@ -144,7 +144,11 @@ class Indexer:
         sha = content_sha(source)
         grammar_version = self.grammar_version()
 
-        if not force and self.store.is_current(rel, sha, profile.version, grammar_version):
+        # `measured=self.measure`: a file row can exist without metrics -- `scip.ingest`
+        # writes one -- and treating that as current is how the gate went blind.
+        if not force and self.store.is_current(
+            rel, sha, profile.version, grammar_version, measured=self.measure
+        ):
             return None, True
 
         parser = self._parser(profile.name)
