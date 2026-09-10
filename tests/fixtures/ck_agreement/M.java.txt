@@ -1,0 +1,15 @@
+class Base { int ping() { return 1; } }
+
+class Repo {
+  int load(int key) { return key; }
+  int save(int row) { return row; }
+}
+
+class Service extends Base {
+  Repo repo;
+  Service(Repo repo) { this.repo = repo; }
+  int run(int key) {
+    int row = this.repo.load(key);
+    return this.repo.save(row);
+  }
+}

@@ -1,0 +1,20 @@
+class Base:
+    def ping(self):
+        return 1
+
+
+class Repo:
+    def load(self, key):
+        return key
+
+    def save(self, row):
+        return row
+
+
+class Service(Base):
+    def __init__(self, repo):
+        self.repo = repo
+
+    def run(self, key):
+        row = self.repo.load(key)
+        return self.repo.save(row)

@@ -1,0 +1,14 @@
+class Base { ping() { return 1; } }
+
+class Repo {
+  load(key) { return key; }
+  save(row) { return row; }
+}
+
+class Service extends Base {
+  constructor(repo) { super(); this.repo = repo; }
+  run(key) {
+    const row = this.repo.load(key);
+    return this.repo.save(row);
+  }
+}
