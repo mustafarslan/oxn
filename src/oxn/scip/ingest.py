@@ -34,6 +34,9 @@ class IngestReport:
     joined_definition_sites: int = 0
     seconds: float = 0.0
     skipped: list[str] = field(default_factory=list)
+    #: Documents `oxn.yaml`'s `exclude` names. Counted rather than listed: on OXN's own
+    #: tree that is 1,464 corpus files, and a list of them is not a report.
+    excluded: int = 0
 
     @property
     def call_coverage(self) -> float:
@@ -63,6 +66,7 @@ class IngestReport:
             "definition_coverage": round(self.definition_coverage, 4),
             "seconds": round(self.seconds, 2),
             "skipped": self.skipped[:20],
+            "excluded": self.excluded,
         }
 
 
@@ -70,9 +74,11 @@ def ingest_index(indexer: Indexer, index_path: Path | str) -> IngestReport:
     """Read a ``.scip`` file and merge it into the graph.
 
     Files the index names but OXN has no profile for are skipped and reported: a SCIP index
-    covers whatever its language server saw, which is not always the same set.
+    covers whatever its language server saw, which is not always the same set -- and that
+    includes files `oxn.yaml` excludes, which are counted and dropped rather than written.
     """
     from oxn.graph.builder import build_file, content_sha
+    from oxn.graph.sources import _out_of_scope
     from oxn.languages import get_parser
     from oxn.profiles import profile_for_path
 
@@ -83,6 +89,14 @@ def ingest_index(indexer: Indexer, index_path: Path | str) -> IngestReport:
     for document in index.documents:
         relative = document.relative_path
         source_path = indexer.root / relative
+        # A SCIP indexer walks the tree its own way and knows nothing of `oxn.yaml`, so it
+        # returns documents the project has excluded. Writing them made `oxn index` and
+        # `oxn check` disagree about what the cache holds -- `oxn index .` put 1,464
+        # benchmark-corpus files into OXN's own cache, which `tests/test_rules_corpus.py`
+        # forbids precisely because other people's code is not this project's debt.
+        if _out_of_scope(source_path, indexer.root, indexer.exclude):
+            report.excluded += 1
+            continue
         profile = profile_for_path(relative)
         if profile is None or not source_path.exists():
             report.skipped.append(relative)

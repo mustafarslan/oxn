@@ -377,6 +377,7 @@ def run_index(
     """Generate or ingest a SCIP index, merging its symbols into the graph."""
     import tempfile
 
+    from oxn.config import Config
     from oxn.graph.indexer import Indexer
     from oxn.scip.ingest import ingest_index
     from oxn.scip.runner import IndexerNotFound, Project, run_indexer
@@ -387,7 +388,13 @@ def run_index(
         _emit(failure, output)
         return failure
 
-    with Indexer(root=target) as indexer:
+    # `Config.load(target)`, not `_indexer()`: `oxn index <dir>` roots the cache at the
+    # directory it was pointed at -- indexing a corpus must not write into the caller's
+    # cache -- but it must still read that directory's own `exclude`. Bypassing it wrote
+    # 1,464 excluded files into OXN's cache, which `_indexer`'s docstring says is the whole
+    # reason it exists and which nothing else in the index path repeated.
+    settings = Config.load(target)
+    with Indexer(root=target, exclude=settings.exclude) as indexer:
         scip_path: Path
         with tempfile.TemporaryDirectory() as scratch:
             if index_file:
