@@ -178,6 +178,11 @@ def run_review(
             "changed": len(touched),
             "measured": len(measurable),
             "excluded": len(touched) - len(measurable),
+            # Counted here rather than in the comment that reports it. `errors` is a mapping of
+            # path to reason, and `quotable_numbers` walks a dict's values -- so a body saying
+            # `len(errors)` would be stating a number the measurement does not contain, and
+            # passing the check only when that count happened to appear somewhere else.
+            "errored": len(report.errors),
         },
         "findings": _findings(report),
         "counts": {
@@ -245,8 +250,13 @@ def _stamp(repo: Path | str, settings: Config) -> dict[str, Any]:
     from oxn import __version__
     from oxn.profiles import PROFILES
 
+    commit = _head_sha(repo)
     return {
-        "commit": _head_sha(repo),
+        "commit": commit,
+        # The abbreviation a comment shows, measured rather than sliced off at the point of
+        # use: `commit[:7]` of a sha beginning with eight digits is a numeral the payload does
+        # not contain, and a footer is the last place anyone would look for that.
+        "short": commit[:7],
         "oxn_version": __version__,
         "profiles": {name: profile.version for name, profile in sorted(PROFILES.items())},
         "ceilings": dict(sorted(settings.ceilings.items())),

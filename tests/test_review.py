@@ -17,7 +17,16 @@ import pytest
 from oxn.review import changed_files, numeral, quotable_numbers, run_review, unquotable
 from oxn.writers import FakeWriter, ReviewComment, write_review
 
-STAMP = {"commit": "a" * 40, "oxn_version": "0.1.0", "profiles": {}, "ceilings": {}}
+#: A sha that *starts with digits*, because `"a" * 40` is the one shape that cannot catch the
+#: bug it was hiding: a footer showing `commit[:7]` of `1234567890ab...` states `1234567`,
+#: which is not the number `1234567890` the payload contains.
+STAMP = {
+    "commit": "1234567890" + "a" * 30,
+    "short": "1234567",
+    "oxn_version": "0.1.0",
+    "profiles": {},
+    "ceilings": {},
+}
 
 OVER_CEILING = "def wide(a, b, c, d, e, f):\n    return a + b + c + d + e + f\n"
 
@@ -61,7 +70,7 @@ def test_the_range_is_measured_and_the_excluded_file_is_not(repo: Path) -> None:
     """
     payload = run_review("main", "HEAD")
 
-    assert payload["files"] == {"changed": 3, "measured": 1, "excluded": 2}
+    assert payload["files"] == {"changed": 3, "measured": 1, "excluded": 2, "errored": 0}
     assert payload["status"] == "FINDINGS"
     found = [row for row in payload["findings"] if row["origin"] == "new"]
     assert [row["rule"] for row in found] == ["parameter_count"]
@@ -93,6 +102,7 @@ def test_the_measurement_says_what_it_measured(repo: Path) -> None:
     stamp = payload["measured"]
 
     assert len(stamp["commit"]) == 40, stamp
+    assert stamp["commit"].startswith(stamp["short"]), stamp
     assert stamp["profiles"]["python"] > 0
     assert stamp["ceilings"]["parameter_count"] == 5
 
@@ -244,11 +254,13 @@ def test_the_body_is_written_without_a_model_at_all() -> None:
     """
     from oxn.writers import review_body
 
-    body = review_body({**PAYLOAD, "base": "main", "head": "HEAD", "measured": STAMP})
+    payload = {**PAYLOAD, "base": "main", "head": "HEAD", "measured": STAMP}
+    body = review_body(payload)
 
     assert "1 new" in body
     assert "`added.py:1`" in body
-    assert unquotable(body, quotable_numbers({**PAYLOAD, "measured": STAMP})) == [], body
+    assert "1234567" in body, "the comment says which commit it measured"
+    assert unquotable(body, quotable_numbers(payload)) == [], body
 
 
 def test_the_writer_that_cannot_lie_is_held_to_the_same_rule() -> None:
@@ -262,14 +274,37 @@ def test_the_writer_that_cannot_lie_is_held_to_the_same_rule() -> None:
         "base": "main",
         "head": "HEAD",
         "measured": STAMP,
-        "files": {"changed": 0, "measured": 0, "excluded": 0},
+        "files": {"changed": 0, "measured": 0, "excluded": 0, "errored": 0},
         "counts": {"new": 0, "regression": 0, "baselined": 0},
         "findings": [],
-        "errors": [],
+        "errors": {},
     }
-    for payload in (empty, {**PAYLOAD, "base": "main", "head": "HEAD", "measured": STAMP}):
+    # `errors` is a mapping of path to reason and `quotable_numbers` walks a dict's *values*,
+    # so the count of them is not in the payload unless something measured it. A body that
+    # said `len(errors)` would pass this only when that count turned up elsewhere by accident.
+    broken = {
+        **empty,
+        "files": {"changed": 9, "measured": 7, "excluded": 0, "errored": 2},
+        "errors": {"a.py": "no such file or directory", "b.py": "unparseable"},
+    }
+    found = {**PAYLOAD, "base": "main", "head": "HEAD", "measured": STAMP}
+    found["files"] = {**found["files"], "errored": 0}
+    for payload in (empty, broken, found):
         body = review_body(payload)
         assert unquotable(body, quotable_numbers(payload)) == [], body
+
+    # Those three would pass either way, and saying so is the point: `len(errors)` and
+    # `commit[:7]` produce the same text as the measured `files.errored` and `stamp.short`
+    # whenever the payload is self-consistent, which it always is in production. What separates
+    # reading a number from computing one is only visible on a payload where the two disagree,
+    # so the check is made where it can bite -- and the disagreement is the assertion, not the
+    # payload's plausibility.
+    assert "4 changed files could not be measured" in review_body(
+        {**broken, "files": {**broken["files"], "errored": 4}}
+    ), "the count is read from the measurement, not counted off the mapping"
+    assert "abc1234" in review_body({**found, "measured": {**STAMP, "short": "abc1234"}}), (
+        "the footer shows the measured abbreviation; it does not make one by slicing"
+    )
 
 
 def test_a_refused_prose_still_posts_the_measurement(repo: Path, monkeypatch) -> None:
@@ -329,6 +364,41 @@ def test_the_writer_is_not_handed_the_bag_of_quotable_numbers() -> None:
 
     assert "7777" not in writer.prompts[0], writer.prompts[0]
     assert "quotable" not in writer.prompts[0]
+
+
+def test_the_console_does_not_print_every_number_twice(repo: Path, capsys) -> None:
+    """OXN's own body restates the findings printed directly above it.
+
+    `--json` carries it in full, which is where the workflow reads it from. What the terminal
+    gains from a Comment block is a model's phrasing, or the news that a model lost the right
+    to phrase it -- and neither is present when OXN wrote the body itself.
+    """
+    from rich.console import Console
+
+    from oxn.render import Output
+    from oxn.report import run_review_report
+
+    run_review_report("main", "HEAD", Output(console=Console(width=100)))
+    printed = capsys.readouterr().out
+
+    assert "parameter_count" in printed, "the findings are still shown"
+    assert "**OXN**" not in printed, "and not a second time as Markdown"
+    assert "Comment" not in printed
+
+
+def test_a_refusal_is_always_shown_even_though_the_body_is_not(repo: Path, capsys) -> None:
+    """The one line that carries information the table does not."""
+    from rich.console import Console
+
+    from oxn.render import Output
+    from oxn.report import run_review_report
+
+    run_review_report("main", "HEAD", Output(console=Console(width=100)), write="anthropic")
+    printed = capsys.readouterr().out
+
+    assert "prose refused" in printed
+    assert "anthropic" in printed
+    assert "posted instead" in printed, "silence would read as nothing having been said"
 
 
 # ---- the trigger ---------------------------------------------------------------------------

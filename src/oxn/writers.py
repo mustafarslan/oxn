@@ -205,8 +205,8 @@ def review_body(payload: dict[str, Any]) -> str:
             "",
             *(f"- `{row['path']}:{row['line']}` — {row['message']}" for row in actionable),
         ]
-    if payload.get("errors"):
-        lines += ["", f"{len(payload['errors'])} files could not be measured."]
+    if files.get("errored"):
+        lines += ["", f"{files['errored']} changed files could not be measured."]
     lines += ["", _footer(payload["measured"])]
     return "\n".join(lines)
 
@@ -217,6 +217,6 @@ def _footer(stamp: dict[str, Any]) -> str:
     A pull request gets pushed to and the comment stays where it was. `oxn.review._stamp`
     makes the argument in full; this is the one line of it a reader sees.
     """
-    commit = str(stamp.get("commit", ""))[:7]
+    commit = stamp.get("short") or stamp.get("commit", "")
     version = stamp.get("oxn_version", "")
     return f"<sub>Measured on `{commit or 'unknown'}` by oxn {version}. This does not gate.</sub>"

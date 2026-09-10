@@ -527,7 +527,14 @@ def _comment(mechanical: str, payload: dict[str, Any], *, write: str, model: str
         return {"status": "OK", "body": mechanical, "model": "oxn", "invented": [], "attempts": 0}
     if write != "ollama":
         note = UNKNOWN_WRITER.format(name=write)
-        return {"status": "REFUSED", "body": mechanical, "model": "oxn", "note": note}
+        return {
+            "status": "REFUSED",
+            "body": mechanical,
+            "model": "oxn",
+            "invented": [],
+            "attempts": 0,
+            "note": note,
+        }
 
     from oxn.writers import ollama_writer, write_review
 

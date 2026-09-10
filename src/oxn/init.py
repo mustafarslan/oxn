@@ -212,9 +212,14 @@ jobs:
       - run: pip install oxn
       # The comment OXN writes itself: every number in it is read out of the measurement,
       # because nothing here composes one. To have a model phrase it instead, add
-      # `--write ollama` and an `OXN_OLLAMA_HOST` secret pointing at a host this runner can
-      # reach. The body posted below is what a runner with no such host produces, and what
-      # OXN falls back to when a model states a number the measurement does not contain.
+      # `--write ollama --model <name>` below, and a secret holding a host this runner can
+      # reach, mapped in as `OXN_OLLAMA_HOST` on this step's `env:` -- a secret is not an
+      # environment variable until something maps it, and an unreachable host fails quietly
+      # back to the body below, which looks exactly like success. `OXN_OLLAMA_MODEL` sets the
+      # model if you would rather not pass `--model`.
+      #
+      # The body posted below is what a runner with no such host produces, and what OXN falls
+      # back to when a model states a number the measurement does not contain.
       - name: Measure
         env:
           BASE: origin/${{ github.event.repository.default_branch }}

@@ -516,20 +516,32 @@ def _emit_review(payload: dict[str, Any], output: Output) -> None:
 
 
 def _emit_comment(comment: dict[str, Any] | None, console: Console) -> None:
-    """The comment that would be posted, and who lost the right to phrase it.
+    """What a model added, and what it lost the right to say. Not what the console just said.
 
-    A refusal is shown *above* the body it fell back to, not instead of it: the body is still
-    there, and a reader who sees the prose without the reason would credit the model for
-    sentences it did not get to write.
+    OXN's own body restates the findings printed directly above it, so echoing it here prints
+    every number twice and buries the one line that carries new information. `--json` has it in
+    full, which is where a workflow reads it from anyway.
+
+    A refusal is always shown, and above the prose rather than instead of it: the body is still
+    posted, and a reader shown sentences without the reason would credit the model for ones it
+    did not get to write.
     """
     if comment is None:
         return
-    console.print(f"\n[bold]Comment[/bold]  [dim]{comment.get('model', 'oxn')}[/dim]")
-    if comment["status"] != "OK":
+    model = comment.get("model", "oxn")
+    refused = comment["status"] != "OK"
+    if model == "oxn" and not refused:
+        return
+    console.print(f"\n[bold]Comment[/bold]  [dim]{model}[/dim]")
+    if refused:
         invented = ", ".join(comment.get("invented", ()))
         reason = comment.get("note") or (
             f"the writer stated {invented}, which the measurement does not contain"
         )
-        console.print(f"  [yellow]prose refused[/yellow] — [dim]{reason}[/dim]")
+        console.print(
+            f"  [yellow]prose refused[/yellow] — [dim]{reason}[/dim]\n"
+            "  [dim]the measurement above is posted instead[/dim]"
+        )
+        return
     for line in comment.get("body", "").splitlines():
         console.print(f"  {line}")
