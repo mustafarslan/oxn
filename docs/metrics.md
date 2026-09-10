@@ -419,8 +419,20 @@ CMU/SEI-92-TR-020.
 **CST recipe.** SLOC = lines with at least one non-comment, non-whitespace token, derived from the
 **token stream's line spans, not regex** — which correctly handles multi-line strings, JSX, raw
 strings and heredocs. CLOC = union of line spans of nodes in `comment_kinds`; a line with code and a
-trailing comment counts in both. LLOC = count of nodes in the profile's `statement_kinds`.
-Blank = total − (SLOC ∪ CLOC). Comment density = CLOC / (SLOC + CLOC).
+trailing comment counts in both. LLOC = count of nodes standing where a *statement* stands:
+a direct, named child of one of the profile's `statement_containers`, or a node whose kind is in
+`statement_kinds`. Blank = total − (SLOC ∪ CLOC). Comment density = CLOC / (SLOC + CLOC).
+
+**Kind alone is not enough, and assuming it was cost 43% of the count.** A grammar is under no
+obligation to wrap a statement in a node named for its being one: the Python grammar OXN ships
+emits `block > assignment` and `block > call` directly, with no `expression_statement`, so the two
+commonest statements in the language matched nothing and scored zero — two bare calls on two lines
+counted one logical line between them. Measured against radon over OXN's own `src/` on 2026-09-10:
+4,128 against 9,582. The kind test is kept beside the position test because the two fail in
+opposite directions, a wrapping grammar satisfying both around one line and a flattening one
+satisfying neither; a node matching both is still one line. Wrappers (`decorated_definition`,
+`export_statement`) and unnamed punctuation are excluded — a block's own braces are its direct
+children, which made Rust's `{ let b = a; return b; }` count five.
 
 A statement that is the *sole* content of another statement is one statement, not two. Rust writes
 `return a;` as a `return_expression` inside an `expression_statement` and both kinds are counted, so
@@ -428,8 +440,16 @@ a function whose whole body was one return reported LLOC 3 against Go's and Pyth
 differs across languages after that, and should: it counts statements in the text, and an
 expression-oriented language genuinely has a different number of them.
 
-**Edge cases.** Python docstrings are `expression_statement > string`, not comments — profile flag
-`docstring_counts_as_comment`, default yes, matching radon's `multi` handling. Multi-line strings
+**Edge cases.** A Python docstring is a bare string in *statement* position, and the flag
+`docstrings_are_comments` counts it as CLOC, matching radon's `multi` handling. **It is not
+`expression_statement > string`** — this document said so, the implementation tested for it, and the
+shipped grammar emits the string directly under its `block`, so the flag was set, was read, and
+could never match. Every Python docstring counted as code until 2026-09-10: over `src/`, 4,577
+lines — 27.7% of what OXN called code in its own source — with `comment_density` reading near zero
+on files that are more prose than statements. Since `function_sloc` and `file_sloc` are gated, the
+gate was charging this repository for documenting itself. The test is now statement position
+(`block`, `module` or `expression_statement`), because which of the three a grammar emits is a
+grammar-version detail a metric must not depend on. Multi-line strings
 used as data must not count as comments. Normalise CRLF. Handle files with no trailing newline.
 
 **Exactness.** EXACT under the published rule set.
@@ -1102,6 +1122,32 @@ registrations, plugin manifests). Unreached definitions are **candidates**.
 **Exactness: never exact.** Always reported as candidates, with the root set used and a confidence
 tier. Reflection and DI make false positives inevitable; a gate that deletes code on this signal is
 dangerous.
+
+**Measured false-positive sources, because "candidates" is not a licence to leave them
+unquantified.** As first shipped, this reported **138 candidates on `python-httpx` and every one of
+them was wrong.** Three causes, all fixed on 2026-09-10, and one that remains:
+
+* *Members the language dispatches without naming.* 124 of the 138. `BasicAuth(...)` names the
+  **class**, so a constructor has no inbound call edge, and `==` and `for` reach `__eq__` and
+  `__iter__` with no call site at all. The other 14 were private helpers those members were the only
+  callers of. Modelled by making a class a **node** in the traversal — not by rooting dispatched
+  members, which would hide a private class nobody constructs.
+* *Calls written at module scope.* No enclosing definition, so the edge was dropped and every
+  `_main` under `if __name__ == "__main__"` was reported dead. Worth 5,718 edges on OXN's own tree:
+  call coverage 92.64% → 98.75%.
+* *Privacy assumed to be Python's.* `leaf.startswith("_")` is Python's rule and Go's by coincidence.
+  Java, Rust and TypeScript spell privacy with a modifier, so every callable was rooted and the
+  total was **0 by construction**. Now routed through `LanguageProfile.is_private`, and a tree where
+  nothing can be judged private is answered UNAVAILABLE rather than zero.
+* *Still open: a callable referenced as a value.* A dispatch-table entry, a callback, a sort key —
+  no call node exists, so nothing reaches it and everything downstream of it is reported. On OXN's
+  own `src/`: 69 candidates, 38 of them roots of the dead forest, and **36 of those 38 are a
+  reference rather than a call**. One shape, one relation: `EdgeKind.REFERENCES` is declared and
+  nothing populates it.
+
+**"Public is a root" is a library's assumption and deliberately the safe one.** A public method with
+no in-tree caller may be the API someone else imports, so it is never reported. On an application
+that is a false-negative machine, which is why a zero here is not a clean bill of health.
 **Build-vs-adopt.** Free: **vulture** (MIT, Python), **knip**/**ts-prune** (MIT, TS),
 `golang.org/x/tools/cmd/deadcode` (BSD). **HYBRID** — self-implement the uniform reachability pass on
 the OCG (one model, five languages); vulture and knip are oracles.

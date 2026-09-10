@@ -196,3 +196,54 @@ tools it was trying to fix.
 that existed, which is the ordinary cost of a warm process and is what `oxn check` from the
 shell is for. A stale server that *fails* is the case where the agent has no way to tell
 whose fault it is, and that is the one worth spending a line on.
+
+---
+
+## Amendment, 2026-09-10 — one row, three facts
+
+A file's row in the cache is written by three different passes, and "is this current" was
+asked as one question with one answer. It has three.
+
+* **Parsed.** Entities and their spans, keyed on the content sha, the profile version and
+  the grammar version. This is what the stamp in `files` records.
+* **Measured.** Metric rows against those entities. A file row can exist with none:
+  `scip.ingest` writes one because symbols and edges need something to reference.
+* **Ingested.** SCIP symbols and edges. A file can be parsed and measured and have none,
+  which is every file until `oxn index` runs.
+
+Three passes, each correct on its own terms, and each destroying another's work:
+
+1. `oxn index` called `put_file`, which is a delete-and-insert the schema cascades from.
+   It took the metrics with it, and the row it left carried the current sha, so `is_current`
+   said current and nothing measured the file again. **On `python-httpx`: 0 metric rows, and
+   `oxn check .` reporting "60 files, 0 violations, passed" on a corpus with 118.** Fixed by
+   `is_current(measured=True)`, which makes "parsed" and "measured" separate questions, and
+   by a guard in `ingest_index` against overwriting a row that is already both.
+
+2. That guard sends the indexer back to any file the ingest wrote a row for — and revisiting
+   called `put_file`, which cascaded away the symbols and edges the ingest had just written.
+   **`oxn index .` wrote 4,176 call edges on `python-httpx` and the next `oxn check .`
+   destroyed all 4,176**, leaving `oxn calls` to answer UNAVAILABLE on a tree that had just
+   been indexed. Fixed by `_Freshness`: only `STALE` — the stamp itself not matching — may
+   replace the row. Keeping it when only measurements are missing is sound *because* the
+   stamp matches, so the same bytes, profile and grammar produced it and `build_file` is
+   deterministic: the entity ids the new metrics are keyed on are the ones already stored.
+
+3. Not freshness but the same disagreement: `oxn index` did not read `oxn.yaml`'s `exclude`,
+   while `oxn check` did, so **`oxn index .` wrote 1,464 benchmark-corpus files into OXN's
+   own cache** — 1,646 documents where the gate measures 184.
+
+**The pattern worth naming: every one of these is two commands disagreeing about what the
+cache holds, with neither wrong on its own terms.** None was caught by a unit test of either
+command, because each command did exactly what it said. They were caught by running two in
+sequence and looking at the result — twice by the guard from the previous fix firing in a
+new place. A cache shared by passes with different jobs needs its invariants stated over the
+*sequence*, not over each writer, and the tests that hold now are sequence tests:
+`test_ingesting_an_index_does_not_throw_away_what_was_measured` and
+`test_measuring_an_ingested_file_does_not_throw_away_its_call_edges`.
+
+**A metric's own version is part of this and is easy to forget.** Cached measurements are
+keyed on `LanguageProfile.version`, so changing what a metric *computes* — not what it reads
+— leaves every already-measured file reporting the old number forever. Both metric fixes on
+2026-09-10 needed a version bump, and the docstring one was noticed only because the gate
+kept reporting a violation that the fixed code no longer produced.
