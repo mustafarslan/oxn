@@ -143,6 +143,20 @@ class SizeSpec:
     statement_kinds: frozenset[str] = frozenset()
     #: Kinds that end a function's execution, counted as exit points.
     return_kinds: frozenset[str] = frozenset()
+    #: Node kinds whose direct children stand where a *statement* stands: Python's `block`
+    #: and `module`, Go's `statement_list`, a JavaScript `statement_block`.
+    #:
+    #: `statement_kinds` alone cannot count logical lines, because a grammar need not wrap a
+    #: statement in a node named for its being one. The Python grammar OXN ships emits
+    #: `block > assignment` and `block > call` directly -- there is no `expression_statement`
+    #: -- so the two commonest statements in the language counted zero, and `lloc` over
+    #: OXN's own `src/` read **4,128 against radon's 9,582: 43%**. Two bare calls on two
+    #: lines scored one logical line between them.
+    #:
+    #: Empty leaves the kind-based rule alone, so a profile that does not set this is
+    #: unchanged.
+    statement_containers: frozenset[str] = frozenset()
+
     #: True when a bare string expression statement is documentation rather than data.
     docstrings_are_comments: bool = False
     #: True where a function body's final *expression* is its return value, with no keyword

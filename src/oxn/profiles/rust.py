@@ -95,6 +95,7 @@ RUST_METRICS = MetricSpec(
         # `if err != nil { return err }`, which is counted, so omitting it here made the two
         # languages incomparable on the most common error-handling shape either has.
         return_kinds=frozenset({"return_expression", "try_expression"}),
+        statement_containers=frozenset({"block", "declaration_list", "source_file"}),
         docstrings_are_comments=False,
         tail_expression_returns=True,
     ),
@@ -165,7 +166,7 @@ RUST = LanguageProfile(
     # the default and publication is the marked case.
     privacy_rules=("visibility",),
     public_marker="visibility_modifier",
-    version=1,
+    version=2,
     function_like=frozenset({"function_item", "function_signature_item", "closure_expression"}),
     implements_field="type",
     supertype_fields=frozenset({"trait"}),

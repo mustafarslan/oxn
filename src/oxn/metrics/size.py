@@ -53,14 +53,17 @@ def line_counts(node: Node, source: bytes, profile: LanguageProfile) -> LineCoun
     stack = [node]
     while stack:
         current = stack.pop()
-        if current.type in spec.statement_kinds and not _wrapped_statement(current, spec):
-            lloc += 1
         is_comment = current.type in profile.comment_kinds or (
             spec.docstrings_are_comments and _is_docstring(current, profile)
         )
         if is_comment:
             comment_lines.update(range(current.start_point[0], current.end_point[0] + 1))
             continue
+        # Counted *after* the comment test, not before: with statement position in the rule
+        # a docstring stands where a statement stands, and a comment on its own line is a
+        # direct child of the block it sits in. Neither is a logical line.
+        if _is_statement(current, profile, spec):
+            lloc += 1
         if current.child_count == 0 and current.type not in profile.comment_kinds:
             code_lines.update(range(current.start_point[0], current.end_point[0] + 1))
         stack.extend(current.children)
@@ -75,6 +78,40 @@ def line_counts(node: Node, source: bytes, profile: LanguageProfile) -> LineCoun
         blank=blank,
         lloc=lloc,
     )
+
+
+def _is_statement(node: Node, profile: LanguageProfile, spec: SizeSpec) -> bool:
+    """One logical line: a statement by kind, or a node standing where a statement stands.
+
+    **The kind test alone counted 43% of the logical lines in this repository.** A grammar
+    is under no obligation to wrap a statement in a node named for its being one, and the
+    Python grammar OXN ships does not: it emits `block > assignment` and `block > call`
+    with no `expression_statement` between, so assignment and the bare call -- the two
+    commonest statements in the language -- matched nothing in `statement_kinds` and scored
+    zero. Two calls on two lines counted one logical line between them. Measured against
+    radon over `src/`: 4,128 against 9,582.
+
+    Position is the general fix and the kind test stays beside it, because the two disagree
+    in opposite directions: a wrapping grammar puts a node named for the statement *and* one
+    standing in statement position around the same line, and a flattening one puts neither
+    where the tables expect. A node satisfying both is still one line.
+
+    Punctuation is excluded by `is_named`: a block's direct children include its own braces.
+
+    Wrappers are excluded rather than counted. A `decorated_definition` stands in statement
+    position and holds the `function_definition` that is the statement, and counting both
+    made every decorated function two logical lines; `export_statement` is the same shape in
+    TypeScript. `profile.wrappers` already names exactly these, for `unwrap`.
+    """
+    if node.type in profile.wrappers:
+        return False
+    parent = node.parent
+    # `is_named`: a block's direct children include its own braces, and `{` standing in
+    # statement position is not a statement. Rust's `{ let b = a; return b; }` counted five.
+    in_position = node.is_named and parent is not None and parent.type in spec.statement_containers
+    if not in_position and node.type not in spec.statement_kinds:
+        return False
+    return not _wrapped_statement(node, spec)
 
 
 def _wrapped_statement(node: Node, spec: SizeSpec) -> bool:

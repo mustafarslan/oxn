@@ -194,3 +194,43 @@ def test_sloc_excludes_docstrings_and_radon_agrees() -> None:
         ).cloc
         == 6
     ), "and the docstring must be counted as comment, not discarded"
+
+
+def test_logical_lines_count_assignments_and_bare_calls() -> None:
+    """`statement_kinds` named a wrapper the shipped Python grammar does not emit.
+
+    It emits `block > assignment` and `block > call` directly, so assignment and the bare
+    call -- the two commonest statements in the language -- matched nothing and scored zero.
+    Two calls on two lines counted one logical line between them, and lloc over OXN's own
+    `src/` read 4,128 against radon's 9,582.
+
+    The remaining divergence from radon is clause counting and is documented in
+    docs/divergences.md; the fixtures here are the ones the two tools must agree on.
+    """
+    from oxn.metrics.size import line_counts
+
+    profile = get_profile("python")
+    for source in (
+        "def f():\n    foo()\n",
+        "def f():\n    foo()\n    bar()\n",
+        "def f():\n    x = 1\n    y = x + 1\n    return y\n",
+        "def f():\n    with open(p) as h:\n        return h.read()\n",
+    ):
+        root = get_parser("python").parse(source.encode()).root_node
+        ours = line_counts(root, source.encode(), profile).lloc
+        assert ours == radon_raw.analyze(source).lloc, f"{source!r} -> {ours}"
+
+
+def test_a_block_brace_is_not_a_logical_line() -> None:
+    """Statement *position* is the general rule, and a block's own braces stand in it.
+
+    Rust's `{ let b = a; return b; }` counted five logical lines -- the two statements, the
+    enclosing function, and both braces. Only named nodes are statements.
+    """
+    from oxn.metrics.size import line_counts
+    from oxn.profiles import get_profile as profile_named
+
+    source = b"fn f(a: i32) -> i32 { let b = a; return b; }"
+    profile = profile_named("rust")
+    root = get_parser("rust").parse(source).root_node
+    assert line_counts(root.named_children[0], source, profile).lloc == 3

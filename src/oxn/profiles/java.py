@@ -103,6 +103,7 @@ JAVA_METRICS = MetricSpec(
             }
         ),
         return_kinds=frozenset({"return_statement", "throw_statement"}),
+        statement_containers=frozenset({"block", "program", "class_body"}),
         docstrings_are_comments=False,
     ),
     halstead=HalsteadSpec(
@@ -187,7 +188,7 @@ JAVA = LanguageProfile(
     privacy_rules=("modifier",),
     private_marker="modifiers",
     dispatch="class_name",
-    version=1,
+    version=2,
     function_like=frozenset({"method_declaration", "constructor_declaration", "lambda_expression"}),
     supertype_fields=frozenset({"superclass", "interfaces"}),
     class_like=frozenset(

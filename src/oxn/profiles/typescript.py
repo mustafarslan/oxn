@@ -112,6 +112,7 @@ _TS_METRICS = MetricSpec(
             }
         ),
         return_kinds=frozenset({"return_statement", "throw_statement"}),
+        statement_containers=frozenset({"statement_block", "program", "switch_case", "class_body"}),
         docstrings_are_comments=False,
     ),
     halstead=HalsteadSpec(
@@ -232,7 +233,7 @@ TYPESCRIPT = LanguageProfile(
     privacy_rules=("name", "modifier", "unexported"),
     private_marker="accessibility_modifier",
     export_wrapper="export_statement",
-    version=1,
+    version=2,
     function_like=_FUNCTION_LIKE,
     class_like=_CLASS_LIKE,
     wrappers=_WRAPPERS,
@@ -261,7 +262,7 @@ JAVASCRIPT = LanguageProfile(
     dispatch="constructor",
     privacy_rules=("name", "unexported"),
     export_wrapper="export_statement",
-    version=1,
+    version=2,
     function_like=_FUNCTION_LIKE,
     # JS has no interfaces or type aliases; a class is the only type declaration.
     class_like=frozenset({"class_declaration", "class"}),

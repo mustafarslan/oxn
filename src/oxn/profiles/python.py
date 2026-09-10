@@ -112,6 +112,7 @@ PYTHON_METRICS = MetricSpec(
             }
         ),
         return_kinds=frozenset({"return_statement", "raise_statement"}),
+        statement_containers=frozenset({"block", "module"}),
         docstrings_are_comments=True,
     ),
     halstead=HalsteadSpec(
@@ -194,7 +195,7 @@ PYTHON = LanguageProfile(
     name="python",
     grammar="python",
     extensions=frozenset({".py", ".pyi"}),
-    version=5,
+    version=6,
     privacy="underscore",
     dispatch="dunder",
     privacy_rules=("name",),

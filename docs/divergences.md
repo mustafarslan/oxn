@@ -195,6 +195,32 @@ that the two move together. Correctness rests on property tests and hand-compute
 
 ---
 
+## Logical lines — Python (oracle: radon)
+
+**Clause counting, and only clause counting.** radon treats each clause of a compound
+statement as its own logical line; OXN counts the statement once.
+
+| source | radon | OXN |
+|---|---|---|
+| `if x:\n a = 1\nelse:\n b = 2` | 4 | 3 |
+| `try:\n a = 1\nexcept E:\n b = 2` | 4 | 3 |
+| `@deco\ndef f():\n return 1` | 3 | 2 |
+
+Neither reading is canonical. An `else:` introduces no logical line of its own under the
+SEI definition, and OXN already treats an `else` as continuing its `if` rather than nesting
+under it in cognitive complexity (`_visit_alternative`) — counting it as a separate logical
+line here would have the same construct answering two different ways in one tool. A
+decorator is excluded for the same reason `unwrap` exists: `decorated_definition` holds the
+`function_definition` that is the statement.
+
+Everything else agrees. This was a **43% undercount** until 2026-09-10: `statement_kinds`
+named `expression_statement`, the shipped Python grammar emits `block > assignment` and
+`block > call` with no such wrapper, and the two commonest statements in the language
+counted zero. Over OXN's own `src/`, lloc read 4,128 against radon's 9,582; it now reads
+7,354, and the remaining gap is the table above.
+
+---
+
 ## Duplication — Python (oracle: PMD-CPD 7.7.0)
 
 **Recall, not equality.** The two tools tokenize differently and resolve overlapping

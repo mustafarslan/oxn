@@ -93,6 +93,7 @@ GO_METRICS = MetricSpec(
             }
         ),
         return_kinds=frozenset({"return_statement"}),
+        statement_containers=frozenset({"statement_list", "source_file", "if_statement"}),
         docstrings_are_comments=False,
     ),
     halstead=HalsteadSpec(
@@ -159,7 +160,7 @@ GO = LanguageProfile(
     name="go",
     grammar="go",
     extensions=frozenset({".go"}),
-    version=3,
+    version=4,
     privacy="casing",
     privacy_rules=("name",),
     # An interface's method, declared without a body. TypeScript counts its
