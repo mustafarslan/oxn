@@ -292,9 +292,13 @@ _NAME_KINDS = frozenset({"identifier", "property_identifier"})
 _BINDING_FIELDS = ("name", "left", "pattern", "property")
 
 #: Grammar nodes that stand between a declaration and the value it binds while naming
-#: nothing themselves. Go's `expression_list` is the whole set: `g := func() {}` puts the
-#: value there exactly as `var Fn = func() {}` does.
-_VALUE_WRAPPERS = frozenset({"expression_list"})
+#: nothing themselves. Go's `expression_list` holds the value of `g := func() {}` exactly as
+#: it holds `var Fn = func() {}`'s, and a parenthesis wraps `f = (lambda: 1)` in every
+#: language here. Named rather than "any parent holding one child", which is what this was:
+#: a one-element container is not a wrapper, and `xs = [lambda: 1]` read through the list to
+#: call the lambda `xs`. A parenthesis is safe to include only because `_USE_KINDS` below
+#: stops `(function () {}).bind(this)` at the member expression.
+_VALUE_WRAPPERS = frozenset({"expression_list", "parenthesized_expression"})
 
 #: Parents that hold a name *field* while declaring nothing. A keyword argument names the
 #: parameter it fills, so `sorted(items, key=lambda v: v)` bound its lambda the name `key` --

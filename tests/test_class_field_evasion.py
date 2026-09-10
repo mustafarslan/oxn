@@ -165,6 +165,44 @@ def test_both_paths_that_count_methods_give_the_same_answer(
     assert len(_model(fields).methods) == EXPECTED_NOM, language
 
 
+#: A class whose class-body member is itself a class. The member model descends through a
+#: member to find the callable it declares, and a nested class is where that descent must
+#: stop -- Java's builder and Python's `class Config` are the everyday shapes.
+NESTED = (
+    (
+        "java",
+        "Outer.java",
+        "class Outer { static class Builder { Outer build() { return 1; } } }\n",
+    ),
+    ("python", "m.py", "class Outer:\n    class Config:\n        def validate(self): pass\n"),
+    ("typescript", "m.ts", "class Outer { static Inner = class { m() { return 1; } }; }\n"),
+)
+
+
+@pytest.mark.parametrize(("language", "path", "source"), NESTED)
+def test_an_inner_class_keeps_its_own_methods(language: str, path: str, source: str) -> None:
+    """The regression the pair above could not see, because no fixture nests.
+
+    Descending through a member to reach `handler = (x) => x` also walked into a nested
+    class and returned its first method as the outer class's. The gate reads containment and
+    counts it under the inner class, so this was the same two-answer split in the other
+    direction -- and `Outer` would have carried a method it does not have into LCOM.
+    """
+    from oxn.languages import get_parser
+    from oxn.profiles import get_profile
+    from oxn.resolve.members import build_class_models
+    from oxn.resolve.scopes import build_scopes
+
+    profile = get_profile(language)
+    data = source.encode()
+    root = get_parser(profile.grammar).parse(data).root_node
+    models = build_class_models(root, profile, build_scopes(root, profile))
+
+    assert models["Outer"].methods == {}, f"{language}: the outer class took an inner method"
+    inner = next(model for name, model in models.items() if name != "Outer")
+    assert len(inner.methods) == 1, language
+
+
 @pytest.mark.parametrize(("language", "_methods", "fields"), PAIRS)
 def test_a_method_written_as_a_field_is_not_also_a_field(
     language: str, _methods: str, fields: str

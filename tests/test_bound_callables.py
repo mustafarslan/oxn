@@ -58,6 +58,9 @@ def named(language: str, source: str) -> list[tuple[str, str | None]]:
             [("function", "h"), ("lambda", "g")],
         ),
         ("rust", "fn f() { let g = |x| x; }\n", [("function", "f"), ("lambda", "g")]),
+        # A parenthesis names nothing, so the declarator is a grandparent here too.
+        ("python", "f = (lambda: 1)\n", [("lambda", "f")]),
+        ("typescript", "const g = (() => 1);\n", [("lambda", "g")]),
         # A class field names its callable too, and the two ECMAScript grammars put that name
         # under different fields -- `name` in TypeScript, `property` in JavaScript. They are
         # `method` rather than `lambda` because they are declared in a class body; the kind

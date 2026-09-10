@@ -302,6 +302,13 @@ def _member_callable(node: Node, profile: LanguageProfile) -> tuple[Node, str] |
     asks, so an inline callback (`x = compose(() => 1)`) yields nothing here exactly as it
     becomes no named entity there.
     """
+    if node.type in profile.class_like:
+        # A nested class is a member, not a callable, and its methods are its own. Without
+        # this the descent walked into `static class Builder { Outer build() ... }` and
+        # returned `build` as a method of `Outer` -- which the gate, reading containment,
+        # correctly counts under `Builder`. Java's builder and Python's `class Config` are
+        # the everyday shapes of it.
+        return None
     if node.type in profile.function_like:
         name = profile.entity_name(node)
         return (node, name) if name else None
