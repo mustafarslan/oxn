@@ -106,3 +106,28 @@ def _walk(node):
         found = stack.pop()
         stack.extend(found.named_children)
         yield found
+
+
+def test_rust_restricted_visibility_is_read_as_public() -> None:
+    """`pub(crate)` is not public to the world and is reachable from elsewhere in the crate.
+
+    Declining is the conservative answer and the correct one: "called once in this file" does
+    not show a helper is dedicated when another file in the same crate may call it. Asserted
+    because the tempting "fix" is to count it as private, which would make the rule fire on
+    code whose callers it cannot see.
+    """
+    from oxn.languages import get_parser
+    from oxn.profiles import get_profile
+    from oxn.profiles.base import declared_private
+
+    profile = get_profile("rust")
+    source = "pub(crate) fn shared(a: i32) -> i32 { a }\nfn hidden(a: i32) -> i32 { a }\n"
+    root = get_parser("rust").parse(source.encode()).root_node
+    answers = {
+        profile.entity_name(node): declared_private(
+            node, profile.entity_name(node) or "", profile, esm=False
+        )
+        for node in root.named_children
+        if node.type in profile.function_like
+    }
+    assert answers == {"shared": False, "hidden": True}

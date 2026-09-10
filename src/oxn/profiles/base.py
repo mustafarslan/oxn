@@ -304,9 +304,14 @@ def _by_rule(rule: str, node: Node, name: str, profile: LanguageProfile, *, esm:
     if rule == "modifier":
         return _has_token(node, profile.private_marker, "private")
     if rule == "visibility":
+        # Any `visibility_modifier` counts as public, `pub(crate)` and `pub(super)` included.
+        # That is deliberate and conservative: both are reachable from other files in the
+        # crate, so "called once in this file" does not show a helper is dedicated. Reading
+        # them as private would make the rule fire on code with callers it cannot see.
         return not any(child.type == profile.public_marker for child in node.named_children)
     if rule == "unexported":
-        return esm and _is_top_level(node) and not _is_wrapped_in(node, profile.export_wrapper)
+        wrapper = profile.export_wrapper
+        return esm and _is_top_level(node, wrapper) and not _is_wrapped_in(node, wrapper)
     return False
 
 
@@ -320,14 +325,17 @@ def _has_token(node: Node, holder: str, token: str) -> bool:
     return False
 
 
-def _is_top_level(node: Node) -> bool:
+def _is_top_level(node: Node, wrapper: str) -> bool:
     """Is this declaration at the top of its file, rather than nested inside something?
 
     Only a top-level declaration is governed by whether the *module* exports it. One inside a
     class or a function has its own scope and its own answer.
+
+    The wrapper is the caller's, not a set written in here: a second table beside a
+    configurable one is what `oxn.languages.EXTENSIONS` was, and it disagreed with the first.
     """
     parent = node.parent
-    if parent is not None and parent.type in {"export_statement"}:
+    if parent is not None and wrapper and parent.type == wrapper:
         parent = parent.parent
     return parent is not None and parent.parent is None
 
