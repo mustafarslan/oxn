@@ -29,12 +29,27 @@ def harness():
 
 
 @pytest.fixture
-def sandbox(harness, tmp_path, monkeypatch):
+def scratch(tmp_path, monkeypatch):
+    """Point `Sandbox` at this test's own scratch root, and mean it.
+
+    `load_harness` returns a *merged namespace*, so `monkeypatch.setattr(harness, "SCRATCH",
+    ...)` rebinds a copy and `Sandbox.__init__` goes on reading `gauntlet.SCRATCH`. That is
+    not a hypothetical: it left fourteen real directories under `/tmp/oxn-dogfood` while a
+    repair run was using that same root. Patch the module, which is what the code reads.
+    """
+    import sys
+
+    root = tmp_path / "scratch"
+    monkeypatch.setattr(sys.modules["gauntlet"], "SCRATCH", root)
+    return root
+
+
+@pytest.fixture
+def sandbox(harness, tmp_path, scratch):
     """A sandbox over an empty directory, with no virtualenv to build."""
     source = tmp_path / "src"
     source.mkdir()
     (source / "marker.txt").write_text("x")
-    monkeypatch.setattr(harness, "SCRATCH", tmp_path / "scratch")
     box = harness.Sandbox("probe", root=source, venv=False)
     box.path = tmp_path / "box"
     shutil.copytree(source, box.path)
@@ -157,12 +172,11 @@ def test_a_bed_that_fails_its_own_untouched_tree_raises_rather_than_scoring(
     harness.verify_bed(sandbox, (("tests", "true"),))
 
 
-def test_a_prepare_step_that_fails_stops_the_sandbox(harness, tmp_path, monkeypatch) -> None:
+def test_a_prepare_step_that_fails_stops_the_sandbox(harness, tmp_path, scratch) -> None:
     """`Bed.prepare` was declared, documented, and read by nothing at all."""
     source = tmp_path / "src"
     source.mkdir()
     (source / "marker.txt").write_text("x")
-    monkeypatch.setattr(harness, "SCRATCH", tmp_path / "scratch")
 
     box = harness.Sandbox("probe", root=source, venv=False, prepare=(("false",),))
     with pytest.raises(harness.SandboxNotReady, match="preparing"):
@@ -208,3 +222,18 @@ def test_a_cut_off_reply_ends_the_loop_instead_of_spending_every_retry(harness) 
     assert harness._was_cut_off(ReplyCutOff("stopped at the token limit"))
     assert not harness._was_cut_off(OllamaError("Ollama is unreachable"))
     assert not harness._was_cut_off(RuntimeError("something else"))
+
+
+def test_a_sandbox_under_test_never_lands_in_the_shared_scratch(harness, tmp_path, scratch) -> None:
+    """The fixture above is load-bearing, so it is asserted rather than trusted.
+
+    `load_harness` merges every harness module into one namespace, and patching an attribute
+    on that namespace rebinds a copy -- `gauntlet.SCRATCH` is what `Sandbox.__init__` reads.
+    The tests here therefore wrote into `/tmp/oxn-dogfood`, the same root a live repair run
+    uses, and left fourteen directories behind in one suite run.
+    """
+    source = tmp_path / "src"
+    source.mkdir()
+    box = harness.Sandbox("probe", root=source, venv=False)
+
+    assert box.path.parent == scratch, f"{box.path} escaped into the shared root"
