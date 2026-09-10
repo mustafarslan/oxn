@@ -25,21 +25,6 @@ LAUNCH_LANGUAGES: dict[str, str] = {
     "java": "java",
 }
 
-#: File extensions -> OXN language name. Provisional; the authoritative mapping becomes
-#: ``LanguageProfile.file_globs`` in P1.
-EXTENSIONS: dict[str, str] = {
-    ".py": "python",
-    ".pyi": "python",
-    ".ts": "typescript",
-    ".tsx": "typescript",
-    ".js": "javascript",
-    ".jsx": "javascript",
-    ".mjs": "javascript",
-    ".go": "go",
-    ".rs": "rust",
-    ".java": "java",
-}
-
 
 class UnknownLanguageError(KeyError):
     """Raised for a language OXN has no grammar mapping for."""
@@ -68,10 +53,3 @@ def get_parser(name: str) -> Parser:
     from tree_sitter import Parser as _Parser
 
     return _Parser(get_language(name))
-
-
-def language_for_path(path: str) -> str | None:
-    """Best-effort language detection from a file extension. ``None`` if unrecognised."""
-    from pathlib import PurePath
-
-    return EXTENSIONS.get(PurePath(path).suffix)

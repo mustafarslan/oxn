@@ -1,0 +1,14 @@
+class Panel:
+    m00 = lambda self, x: 1 if x else 2
+    m01 = lambda self, x: 1 if x else 2
+    m02 = lambda self, x: 1 if x else 2
+    m03 = lambda self, x: 1 if x else 2
+    m04 = lambda self, x: 1 if x else 2
+    m05 = lambda self, x: 1 if x else 2
+    m06 = lambda self, x: 1 if x else 2
+    m07 = lambda self, x: 1 if x else 2
+    m08 = lambda self, x: 1 if x else 2
+    m09 = lambda self, x: 1 if x else 2
+    m10 = lambda self, x: 1 if x else 2
+    m11 = lambda self, x: 1 if x else 2
+    m12 = lambda self, x: 1 if x else 2

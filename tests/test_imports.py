@@ -225,6 +225,48 @@ def test_typescript_directory_import_resolves_to_index(ts_tree) -> None:
     ]
 
 
+@pytest.fixture
+def cjs_tree() -> ResolutionContext:
+    from pathlib import Path
+
+    return ResolutionContext.build(
+        Path("."),
+        {"src/app.js", "src/helper.js", "src/util.cjs", "src/sub/index.js"},
+    )
+
+
+def test_commonjs_requires_reach_the_files_they_name(cjs_tree) -> None:
+    """`require` is the only import a large part of the JavaScript ecosystem writes.
+
+    Extraction has been covered since P4; that a required path *resolves to a file in this
+    tree* had not been, and it is what the layer gate reads. A repository whose every import
+    is a `require` would have had zero in-tree edges and a contract check with nothing to
+    check -- a gate that is silently not there, which is the failure mode P9 already found
+    once in the hook's own diagnostics.
+    """
+    code = (
+        "const h = require('./helper');\n"
+        "const u = require('./util.cjs');\n"
+        "const s = require('./sub');\n"
+        "const l = require('lodash');\n"
+    )
+    assert resolve("src/app.js", "javascript", cjs_tree, code) == [
+        "src/helper.js",
+        "src/util.cjs",
+        "src/sub/index.js",
+        None,
+    ]
+
+
+def test_a_required_module_is_a_runtime_dependency() -> None:
+    """`dynamic` has to be in `depgraph.RUNTIME_KINDS` or these edges exist and never count."""
+    from oxn.graph.depgraph import RUNTIME_KINDS
+
+    kinds = {item.kind for item in imports("javascript", "const h = require('./helper');\n")}
+    assert kinds == {"dynamic"}
+    assert kinds <= RUNTIME_KINDS
+
+
 def test_tsconfig_path_aliases_resolve(ts_tree) -> None:
     assert resolve("app/main.ts", "typescript", ts_tree, 'import a from "@nestjs/core";\n') == [
         "packages/core/index.ts"

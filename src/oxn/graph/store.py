@@ -52,7 +52,10 @@ if TYPE_CHECKING:  # pragma: no cover
 #: Version 10 records a Go interface's `method_spec`s, which were no entity at all, so every
 #: Go interface measured NOM 0. Version 11 labels those as methods rather than functions,
 #: without which the gate still read NOM 0, and labels a Go interface `interface`.
-SCHEMA_VERSION = 11
+#: Version 12 names a class-field callable and labels it a method -- `handler = (x) => x`
+#: is how a TypeScript or JavaScript class writes one, and reading it as an anonymous
+#: lambda made both class ceilings inert against the shape.
+SCHEMA_VERSION = 12
 
 DEFAULT_CACHE_PATH = Path(".oxn/cache/graph.db")
 

@@ -1,0 +1,15 @@
+class Panel {
+  java.util.function.IntUnaryOperator m00 = (x) -> x > 0 ? 1 : 2;
+  java.util.function.IntUnaryOperator m01 = (x) -> x > 0 ? 1 : 2;
+  java.util.function.IntUnaryOperator m02 = (x) -> x > 0 ? 1 : 2;
+  java.util.function.IntUnaryOperator m03 = (x) -> x > 0 ? 1 : 2;
+  java.util.function.IntUnaryOperator m04 = (x) -> x > 0 ? 1 : 2;
+  java.util.function.IntUnaryOperator m05 = (x) -> x > 0 ? 1 : 2;
+  java.util.function.IntUnaryOperator m06 = (x) -> x > 0 ? 1 : 2;
+  java.util.function.IntUnaryOperator m07 = (x) -> x > 0 ? 1 : 2;
+  java.util.function.IntUnaryOperator m08 = (x) -> x > 0 ? 1 : 2;
+  java.util.function.IntUnaryOperator m09 = (x) -> x > 0 ? 1 : 2;
+  java.util.function.IntUnaryOperator m10 = (x) -> x > 0 ? 1 : 2;
+  java.util.function.IntUnaryOperator m11 = (x) -> x > 0 ? 1 : 2;
+  java.util.function.IntUnaryOperator m12 = (x) -> x > 0 ? 1 : 2;
+}

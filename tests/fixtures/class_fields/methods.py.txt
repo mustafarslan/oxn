@@ -1,0 +1,40 @@
+class Panel:
+    def m00(self, x):
+        return 1 if x else 2
+
+    def m01(self, x):
+        return 1 if x else 2
+
+    def m02(self, x):
+        return 1 if x else 2
+
+    def m03(self, x):
+        return 1 if x else 2
+
+    def m04(self, x):
+        return 1 if x else 2
+
+    def m05(self, x):
+        return 1 if x else 2
+
+    def m06(self, x):
+        return 1 if x else 2
+
+    def m07(self, x):
+        return 1 if x else 2
+
+    def m08(self, x):
+        return 1 if x else 2
+
+    def m09(self, x):
+        return 1 if x else 2
+
+    def m10(self, x):
+        return 1 if x else 2
+
+    def m11(self, x):
+        return 1 if x else 2
+
+    def m12(self, x):
+        return 1 if x else 2
+

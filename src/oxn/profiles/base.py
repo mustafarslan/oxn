@@ -279,7 +279,40 @@ def decorator_texts(node: Node, wrappers: Container[str]) -> tuple[str, ...]:
     )
 
 
-_BINDING_FIELDS = ("name", "left", "pattern")
+#: What a name looks like once the grammar has been asked for one. A class member's name is
+#: a `property_identifier` in both ECMAScript grammars, and requiring a bare `identifier` is
+#: why `handler = (x) => x` stayed anonymous there while Java's `Runnable a = () -> {}` did
+#: not -- one shape, two answers, and the two class ceilings inert on the ECMAScript side.
+_NAME_KINDS = frozenset({"identifier", "property_identifier"})
+
+#: `property` is here for JavaScript's `field_definition`, whose name sits under that field
+#: where TypeScript's `public_field_definition` puts it under `name`. Without it the two
+#: grammars disagreed about the same source: `handler = (x) => x` was a named member in
+#: TypeScript and anonymous in JavaScript.
+_BINDING_FIELDS = ("name", "left", "pattern", "property")
+
+#: Grammar nodes that stand between a declaration and the value it binds while naming
+#: nothing themselves. Go's `expression_list` is the whole set: `g := func() {}` puts the
+#: value there exactly as `var Fn = func() {}` does.
+_VALUE_WRAPPERS = frozenset({"expression_list"})
+
+#: Parents that hold a name *field* while declaring nothing. A keyword argument names the
+#: parameter it fills, so `sorted(items, key=lambda v: v)` bound its lambda the name `key` --
+#: a name no call site can reach it by, in the table that exists to be reached by name. An
+#: attribute access names a member of the value on its left, which is what `property` above
+#: would otherwise pick up from `(function () {}).bind(this)`. One entry per grammar's
+#: spelling of the two, because a set that covers four languages and misses two is the shape
+#: of every cross-language defect in this file.
+_USE_KINDS = frozenset(
+    {
+        "keyword_argument",
+        "member_expression",
+        "attribute",
+        "field_expression",
+        "selector_expression",
+        "field_access",
+    }
+)
 
 
 def _bound_name(node: Node) -> Node | None:
@@ -290,13 +323,15 @@ def _bound_name(node: Node) -> Node | None:
     callable can be called by from the bare-name table this feeds.
     """
     parent = node.parent
-    if parent is not None and parent.named_children == [node]:
+    if parent is not None and parent.type in _VALUE_WRAPPERS and parent.named_children == [node]:
         # A wrapper carrying no name of its own: Go puts the value of `var Fn = func() {}`
         # inside an `expression_list`. Only when it is the *sole* child, so that
         # `a, b = 1, func() {}` -- where names bind positionally and `a` is not this
-        # function's name -- stays correctly anonymous.
+        # function's name -- stays correctly anonymous. Named rather than "any parent holding
+        # one child", which is what it was: a one-element container is not a wrapper, and
+        # `xs = [lambda: 1]` was reading through the list to call the lambda `xs`.
         parent = parent.parent
-    if parent is None:
+    if parent is None or parent.type in _USE_KINDS:
         return None
     for binding_field in _BINDING_FIELDS:
         bound = _sole_identifier(parent.child_by_field_name(binding_field))
@@ -306,7 +341,7 @@ def _bound_name(node: Node) -> Node | None:
 
 
 def _sole_identifier(bound: Node | None) -> Node | None:
-    """A plain identifier, seen through a wrapper holding exactly one.
+    """A name, seen through a wrapper holding exactly one.
 
     Go wraps the *name* of `g := func() {}` in an `expression_list` exactly as it wraps the
     value, so the `var Fn = func() {}` form took its name and the short form did not -- one
@@ -316,9 +351,9 @@ def _sole_identifier(bound: Node | None) -> Node | None:
     """
     if bound is None:
         return None
-    if bound.type != "identifier" and len(bound.named_children) == 1:
+    if bound.type not in _NAME_KINDS and len(bound.named_children) == 1:
         bound = bound.named_children[0]
-    return bound if bound.type == "identifier" else None
+    return bound if bound.type in _NAME_KINDS else None
 
 
 def _first_identifier(node: Node) -> str:

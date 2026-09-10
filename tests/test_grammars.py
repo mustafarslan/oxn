@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from oxn.languages import LAUNCH_LANGUAGES, get_parser, language_for_path
+from oxn.languages import LAUNCH_LANGUAGES, get_parser
+from oxn.profiles import profile_for_path
 
 #: Minimal, unambiguous source per language, exercising a function and a branch -- the two
 #: constructs every Tier-1 metric is built on.
@@ -61,6 +62,10 @@ def test_grammar_finds_a_function(language: str) -> None:
         ("a/b/c.py", "python"),
         ("src/index.ts", "typescript"),
         ("src/index.tsx", "typescript"),
+        ("src/index.mts", "typescript"),
+        ("src/index.js", "javascript"),
+        ("src/index.mjs", "javascript"),
+        ("src/index.cjs", "javascript"),
         ("main.go", "go"),
         ("lib.rs", "rust"),
         ("Main.java", "java"),
@@ -69,4 +74,12 @@ def test_grammar_finds_a_function(language: str) -> None:
     ],
 )
 def test_language_detection(path: str, expected: str | None) -> None:
-    assert language_for_path(path) == expected
+    """Asked of the *profile* registry, which is what the walk reads.
+
+    `oxn.languages` carried a second extension table that nothing in `src/` used and this
+    test did: it was missing `.cjs`, `.mts` and `.cts`, so a public mapping disagreed with
+    the one that decides which files get analysed. One table, and it is the one with a
+    consumer.
+    """
+    found = profile_for_path(path)
+    assert (found.name if found is not None else None) == expected

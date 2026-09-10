@@ -1,0 +1,15 @@
+class Panel {
+  m00(x) { return x ? 1 : 2; }
+  m01(x) { return x ? 1 : 2; }
+  m02(x) { return x ? 1 : 2; }
+  m03(x) { return x ? 1 : 2; }
+  m04(x) { return x ? 1 : 2; }
+  m05(x) { return x ? 1 : 2; }
+  m06(x) { return x ? 1 : 2; }
+  m07(x) { return x ? 1 : 2; }
+  m08(x) { return x ? 1 : 2; }
+  m09(x) { return x ? 1 : 2; }
+  m10(x) { return x ? 1 : 2; }
+  m11(x) { return x ? 1 : 2; }
+  m12(x) { return x ? 1 : 2; }
+}

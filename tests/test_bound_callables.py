@@ -58,6 +58,20 @@ def named(language: str, source: str) -> list[tuple[str, str | None]]:
             [("function", "h"), ("lambda", "g")],
         ),
         ("rust", "fn f() { let g = |x| x; }\n", [("function", "f"), ("lambda", "g")]),
+        # A class field names its callable too, and the two ECMAScript grammars put that name
+        # under different fields -- `name` in TypeScript, `property` in JavaScript. They are
+        # `method` rather than `lambda` because they are declared in a class body; the kind
+        # is `tests/test_class_field_evasion.py`'s subject, the *name* is this file's.
+        (
+            "typescript",
+            "class A { handler = (x: number) => x; }\n",
+            [("class", "A"), ("method", "handler")],
+        ),
+        (
+            "javascript",
+            "class A { handler = (x) => x; }\n",
+            [("class", "A"), ("method", "handler")],
+        ),
     ],
 )
 def test_a_callable_bound_to_a_name_takes_it(
@@ -75,6 +89,15 @@ def test_a_callable_bound_to_a_name_takes_it(
         ("typescript", "obj.m = () => {};\n"),
         # Names bind positionally here, so `a` is not this function's name.
         ("go", "package m\nvar a, b = 1, func() {}\n"),
+        # A keyword argument names the *parameter* it fills. This read `key`, which put a
+        # lambda in the bare-name table under a name no call site can reach it by.
+        ("python", "sorted(items, key=lambda v: v.id)\n"),
+        # A one-element container is not a wrapper. Reading through the list to the
+        # assignment called this `xs`, which names the list.
+        ("python", "xs = [lambda: 1]\n"),
+        # `property` binds a class field's name, and must not pick up an attribute access:
+        # `bind` is a member of the function, not a name for it.
+        ("javascript", "const g = (function () { return 1; }).bind(this);\n"),
     ],
 )
 def test_what_stays_anonymous(language: str, source: str) -> None:

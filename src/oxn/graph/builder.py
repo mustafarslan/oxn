@@ -181,11 +181,19 @@ class _Skeleton:
         self.entities.append(entity)
         return entity
 
-    def _classify(self, node: Node, inside_type: bool) -> EntityKind:
+    def _classify(self, node: Node, inside_type: bool, name: str | None) -> EntityKind:
         if node.type in self.profile.class_like:
             return EntityKind.INTERFACE if _is_interface(node) else EntityKind.CLASS
         if node.type in _ANONYMOUS_KINDS:
-            return EntityKind.LAMBDA
+            # A named callable declared in a class body is a method, whatever node kind the
+            # grammar spells it with. `handler = (x) => x` is how a modern TypeScript or
+            # JavaScript class writes one, and reading it as a lambda made both class
+            # ceilings inert against the shape: four methods rewritten as four field arrows
+            # went from NOM 4 / WMC 8.0 to NOM 0 / WMC 0.0, and both are gated. Java, whose
+            # `Runnable a = () -> {}` is not an anonymous *kind*, has always counted it.
+            # `name` and not `inside_type` alone, so `x = [lambda: 1]` in a class body -- a
+            # callable nothing can call by name -- stays the lambda it is.
+            return EntityKind.METHOD if inside_type and name else EntityKind.LAMBDA
         if node.type in _METHOD_KINDS or inside_type:
             return EntityKind.METHOD
         # A declared receiver makes it a method wherever the grammar puts it. Without this
@@ -219,8 +227,8 @@ class _Skeleton:
         self, child: Node, definition: Node, parent: Entity, prefix: str, inside_type: bool
     ) -> None:
         """Add one definition, then walk whatever it contains."""
-        kind = self._classify(definition, inside_type)
         name = self.profile.entity_name(definition)
+        kind = self._classify(definition, inside_type, name)
         local = name or f"<{definition.type}@{definition.start_point[0] + 1}>"
         qualified = f"{prefix}.{local}" if prefix else local
 
