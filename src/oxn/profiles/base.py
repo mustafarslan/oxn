@@ -158,6 +158,21 @@ class LanguageProfile:
     #: The wrapper that publishes a top-level declaration: ``export_statement``.
     export_wrapper: str = ""
 
+    #: How this language invokes a member *without naming it at the call site*, so that no
+    #: call node exists for the join in `scip.join` to find.
+    #:
+    #: A constructor is reached by writing the class; `==` reaches `__eq__`; `for` reaches
+    #: `__iter__`. Measured on `python-httpx` 2026-09-10: **124 of 138** reported dead-code
+    #: candidates were such members, and the remaining 14 were private helpers those members
+    #: were the only callers of -- the whole report, every row of it, a false positive.
+    #:
+    #: * ``"dunder"`` -- Python: ``__init__``, ``__eq__``, ``__iter__``.
+    #: * ``"constructor"`` -- TypeScript and JavaScript: the member named ``constructor``.
+    #: * ``"class_name"`` -- Java: a constructor is named as its class.
+    #: * ``""`` -- no name rule. Go and Rust dispatch through interfaces and traits, which
+    #:   SCIP records as ``OVERRIDES``; see `metrics.callgraph.dispatched_members`.
+    dispatch: str = ""
+
     #: Metric tables: decision points, cognitive increment classes, statement kinds.
     metrics: MetricSpec = field(default_factory=MetricSpec)
 
@@ -273,6 +288,30 @@ def receiver_type(node: Node, field: str) -> str | None:
     written = receiver.text.decode("utf-8", "replace") if receiver and receiver.text else ""
     parts = written.strip("()").strip().split()
     return parts[-1].lstrip("*").split("[")[0] or None if parts else None
+
+
+def dispatched_by_name(name: str, owner: str | None, profile: LanguageProfile) -> bool:
+    """Does ``profile``'s language invoke ``name`` on its own, with no call site to join?
+
+    ``owner`` is the enclosing class's name, which Java needs -- its constructor is named
+    as its class -- and no other language does. Module-level like `declared_private` and
+    for the same reason: `LanguageProfile` is at its `weighted_methods_per_class` ceiling,
+    and neither of these needs anything from the instance but a table lookup.
+
+    Unlike :meth:`LanguageProfile.is_private` this answers ``False`` rather than ``None``
+    where the profile has no rule. Declining would be the wrong shape: a language that
+    dispatches through interfaces or traits records it as an ``OVERRIDES`` edge, which is
+    evidence rather than an absence, and `metrics.callgraph.dispatched_members` reads it.
+    """
+    if not name:
+        return False
+    if profile.dispatch == "dunder":
+        return name.startswith("__") and name.endswith("__")
+    if profile.dispatch == "constructor":
+        return name == "constructor"
+    if profile.dispatch == "class_name":
+        return name == owner
+    return False
 
 
 def declared_private(node: Node, name: str, profile: LanguageProfile, *, esm: bool) -> bool | None:

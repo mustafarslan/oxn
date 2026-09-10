@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from oxn.graph.model import Edge, EdgeKind, Provenance, Resolution
+from oxn.graph.model import Edge, EdgeKind, EntityKind, Provenance, Resolution
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Iterator
@@ -97,6 +97,8 @@ class JoinResult:
     definitions: dict[str, str]
     #: The document these came from, needed to scope its local symbols.
     path: str = ""
+    #: The file's own entity, which owns any call written at module scope.
+    module: Entity | None = None
     call_sites: int = 0
     joined_call_sites: int = 0
     definition_sites: int = 0
@@ -127,7 +129,15 @@ def join_document(
         if "def_range" in entity.attrs
     }
 
-    result = JoinResult(edges=[], definitions={}, path=document.relative_path)
+    result = JoinResult(
+        edges=[],
+        definitions={},
+        path=document.relative_path,
+        module=next(
+            (entity for entity in entities if entity.kind in {EntityKind.FILE, EntityKind.MODULE}),
+            None,
+        ),
+    )
     _map_definitions(by_position, by_def_range, profile, tree_root, result)
     _map_calls(by_position, by_def_range, profile, tree_root, result)
     _map_relationships(document, result)
@@ -198,7 +208,11 @@ def _map_calls(
         if occurrence is None:
             continue
 
-        caller = _enclosing_entity(node, profile, by_def_range)
+        # A call written at module scope has no enclosing definition, and dropping it lost
+        # a real edge: `if __name__ == "__main__": _main()` is how a script reaches its own
+        # entry point, and every `_main` so called was reported as dead code. The file's own
+        # entity is the caller, which is what executes it.
+        caller = _enclosing_entity(node, profile, by_def_range) or result.module
         if caller is None:
             continue
 

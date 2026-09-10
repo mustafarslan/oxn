@@ -200,13 +200,19 @@ def _emit_calls(payload: dict[str, Any], output: Output) -> None:
         console.print(f"\n[bold]Recursion[/bold] ({len(payload['recursion'])} cycles)")
         for cycle in payload["recursion"][:5]:
             console.print(f"  {len(cycle)} callables")
-    if payload["dead_code_candidates"]:
+    dead = payload["dead_code"]
+    if dead["status"] != "OK":
         console.print(
-            f"\n[bold]Dead-code candidates[/bold] ({payload['dead_code_total']})"
+            f"\n[bold]Dead code[/bold]  [yellow]unavailable[/yellow]\n  [dim]{dead['note']}[/dim]"
+        )
+        return
+    if dead["candidates"]:
+        console.print(
+            f"\n[bold]Dead-code candidates[/bold] ({dead['total']})"
             "  [dim]candidates: reflection, DI and framework entry points all reach code"
             " no call edge does[/dim]"
         )
-        for found in payload["dead_code_candidates"][:10]:
+        for found in dead["candidates"][:10]:
             console.print(f"  {found['qualified_name']:<48} [dim]{found['path']}[/dim]")
 
 

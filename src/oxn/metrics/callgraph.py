@@ -92,19 +92,32 @@ def unreachable(
     graph: CallGraph,
     entities: Mapping[str, tuple[str, str, str]],
     roots: Iterable[str],
+    *,
+    dispatch: Mapping[str, Iterable[str]] | None = None,
 ) -> list[DeadCodeCandidate]:
     """Entities not reachable from ``roots``.
 
-    ``entities`` maps id to ``(qualified name, file path, kind)``.
+    ``entities`` maps id to ``(qualified name, file path, kind)``, and only its members are
+    *reported*. Reachability, though, runs over the whole graph: a class is a node here even
+    though a class is not a candidate, because writing ``Client(...)`` is how the language
+    reaches ``Client.__init__``.
+
+    ``dispatch`` maps a class id to the members its language invokes without naming them --
+    see `dispatched_members`. Kept separate from ``graph.edges`` rather than merged into it:
+    fan-in and fan-out are counts of *calls*, and a constructor nobody writes a call for
+    would otherwise gain one.
     """
     reached: set[str] = set()
-    frontier = [root for root in roots if root in entities]
+    dispatch = dispatch or {}
+    # Seeded unfiltered: a root may be a class, which is a node here but not a candidate.
+    frontier = list(roots)
     while frontier:
         current = frontier.pop()
         if current in reached:
             continue
         reached.add(current)
         frontier.extend(graph.edges.get(current, ()))
+        frontier.extend(dispatch.get(current, ()))
 
     return sorted(
         (
@@ -116,27 +129,110 @@ def unreachable(
     )
 
 
+def name_privacy(entities: Mapping[str, tuple[str, str, str]]) -> dict[str, bool | None]:
+    """Is each entity private, judged from its declared name and its language?
+
+    ``None`` where the language cannot say by name -- Java spells privacy with a modifier,
+    Rust with the absence of ``pub``, TypeScript with either -- and `LanguageProfile.is_private`
+    declines rather than guessing. A caller must treat ``None`` as "may be called from
+    outside"; see `default_roots`.
+    """
+    from oxn.profiles import profile_for_path
+
+    privacy: dict[str, bool | None] = {}
+    for entity_id, (qualified_name, path, _) in entities.items():
+        profile = profile_for_path(path)
+        leaf = qualified_name.rsplit(".", 1)[-1]
+        privacy[entity_id] = profile.is_private(leaf) if profile is not None else None
+    return privacy
+
+
+def dispatched_members(
+    entities: Mapping[str, tuple[str, str, str]],
+    owners: Mapping[str, tuple[str, str, str]],
+    parents: Mapping[str, str | None],
+    overriding: Iterable[str] = (),
+) -> dict[str, list[str]]:
+    """Class id -> the members its language reaches without a call site.
+
+    Two sources, because languages split on this. A *name* rule covers what the grammar
+    dispatches -- Python's dunders, a TypeScript ``constructor``, a Java constructor named
+    as its class. An ``OVERRIDES`` edge covers the rest: Go satisfies an interface and Rust
+    implements a trait without either being visible in the member's own name, and SCIP has
+    already established that relation, so it is read rather than inferred.
+
+    These attach to the owning class rather than becoming roots outright, so that a class
+    nobody ever constructs stays reportable -- which is the whole reason a class is a node
+    in `unreachable`'s traversal and not merely a container.
+    """
+    dispatched = set(overriding)
+    for entity_id, row in entities.items():
+        if _dispatches(entity_id, row, owners, parents):
+            dispatched.add(entity_id)
+
+    by_owner: dict[str, list[str]] = {}
+    for entity_id in dispatched:
+        parent = parents.get(entity_id)
+        if parent is not None:
+            by_owner.setdefault(parent, []).append(entity_id)
+    return by_owner
+
+
+def _dispatches(
+    entity_id: str,
+    row: tuple[str, str, str],
+    owners: Mapping[str, tuple[str, str, str]],
+    parents: Mapping[str, str | None],
+) -> bool:
+    """Does this entity's language invoke it by name rule alone? See `dispatched_members`."""
+    from oxn.profiles import profile_for_path
+    from oxn.profiles.base import dispatched_by_name
+
+    qualified_name, path, kind = row
+    profile = profile_for_path(path)
+    if profile is None or kind not in {"method", "function"}:
+        return False
+    owner = owners.get(parents.get(entity_id) or "")
+    owner_name = owner[0].rsplit(".", 1)[-1] if owner else None
+    return dispatched_by_name(qualified_name.rsplit(".", 1)[-1], owner_name, profile)
+
+
 def default_roots(
-    entities: Mapping[str, tuple[str, str, str]], *, test_prefixes: tuple[str, ...] = ("test_",)
+    entities: Mapping[str, tuple[str, str, str]],
+    privacy: Mapping[str, bool | None] | None = None,
+    *,
+    test_prefixes: tuple[str, ...] = ("test_",),
 ) -> set[str]:
     """Entry points every project has, before any configured ones.
 
-    Public API, ``main``, and test functions -- a test is a root because a test runner calls
-    it, and treating tests as dead code would bury the report in noise.
+    ``main``, tests, and anything not private -- a test is a root because a test runner
+    calls it, and treating tests as dead code would bury the report in noise.
+
+    **"Not private" is a library's assumption, and it is the safe one.** A public method
+    with no in-tree caller may be the API someone else imports, so it is rooted and never
+    reported. On an application that is a false-negative machine: a public method nothing
+    calls is invisible here. That direction is deliberate -- a dead-code report that is
+    wrong deletes working code -- and it is why `run_calls` refuses to report a zero it
+    reached because *nothing* could be judged private.
+
+    ``privacy`` maps id to `name_privacy`'s answer. ``None`` there means the language could
+    not tell from the name, and is read as public.
     """
+    from oxn.config import FILE_KINDS
+
+    privacy = name_privacy(entities) if privacy is None else privacy
     roots: set[str] = set()
     for entity_id, (qualified_name, path, kind) in entities.items():
         leaf = qualified_name.rsplit(".", 1)[-1]
         if (
-            leaf in {"main", "__main__"}
+            # A file body runs whenever the file is imported, whatever the file is named,
+            # so it is the one root that privacy has no say over.
+            kind in FILE_KINDS
+            or leaf in {"main", "__main__"}
             or leaf.startswith(test_prefixes)
             or "/test" in path
             or path.startswith("test")
-            or kind in {"class", "interface"}
-            and not leaf.startswith("_")
+            or not privacy.get(entity_id)
         ):
-            roots.add(entity_id)
-        elif not leaf.startswith("_") and "." not in qualified_name.rsplit(".", 2)[-2:][0]:
-            # A public module-level definition is reachable from outside the tree.
             roots.add(entity_id)
     return roots

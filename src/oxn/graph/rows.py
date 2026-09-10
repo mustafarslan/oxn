@@ -57,6 +57,21 @@ def call_edges(store: GraphStore) -> list[tuple[str, str | None, str, float]]:
         (EdgeKind.CALLS.value,),
     ).fetchall()
     return [
-        (row["src_id"], row["dst_id"], row["resolution"], float(row["confidence"]))
-        for row in found
+        (row["src_id"], row["dst_id"], row["resolution"], float(row["confidence"])) for row in found
     ]
+
+
+def dispatch_sources(store: GraphStore) -> set[str]:
+    """Entities that override or implement something declared elsewhere.
+
+    A Go method satisfying an interface and a Rust method implementing a trait are reached
+    through the interface, not by their own name, so no call site names them -- the same
+    shape as a constructor, and neither language marks it in the member's name. SCIP's
+    `is_implementation` has already established the relation (`scip.join._map_relationships`),
+    so this reads it rather than inferring one.
+    """
+    found = store._conn.execute(  # noqa: SLF001
+        "SELECT DISTINCT src_id FROM edges WHERE kind IN (?, ?)",
+        (EdgeKind.OVERRIDES.value, EdgeKind.IMPLEMENTS.value),
+    ).fetchall()
+    return {row["src_id"] for row in found}

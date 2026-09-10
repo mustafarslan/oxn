@@ -228,6 +228,7 @@ TYPESCRIPT = LanguageProfile(
     # Three ways, any of which is sound: `#name`, the `private` modifier, and a top-level
     # declaration an ES module does not export.
     privacy="hash",
+    dispatch="constructor",
     privacy_rules=("name", "modifier", "unexported"),
     private_marker="accessibility_modifier",
     export_wrapper="export_statement",
@@ -257,6 +258,7 @@ JAVASCRIPT = LanguageProfile(
     # rule applies only to a file that uses ES module syntax -- CommonJS can publish anything
     # through `module.exports.x = x`, so the rule declines there rather than guessing.
     privacy="hash",
+    dispatch="constructor",
     privacy_rules=("name", "unexported"),
     export_wrapper="export_statement",
     version=1,

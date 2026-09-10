@@ -314,8 +314,8 @@ def calls(
     so on a tree that has not been indexed this says it has no call graph rather than
     reporting an empty one -- see `oxn index`.
     """
+    from oxn.calls import run_calls
     from oxn.render import Output
-    from oxn.report import run_calls
 
     run_calls(
         paths or ["."],
