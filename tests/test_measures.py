@@ -251,3 +251,41 @@ def test_the_small_sample_warning_is_grounded_in_a_measured_reversal(harness) ->
     assert harness.ENOUGH_SAMPLES > 2, "n=2 was measured to reverse; the bar must exceed it"
     assert "same flags" in harness.SMALL_SAMPLE_NOTE
     assert "judgement rather than a power analysis" in harness.SMALL_SAMPLE_NOTE
+
+
+# ---- a reply the model was not allowed to finish -----------------------------------------
+
+
+def test_a_truncated_attempt_is_counted_apart_from_a_failed_repair() -> None:
+    """The confound this would have introduced runs *against* the treatment.
+
+    Found on the first honest attempt the httpx bed produced: `glm-5.3:cloud` wrote 123,471
+    characters, hit `num_predict`, and the extracted candidate was a function body ending
+    mid-block. The harness filed it as `tests FAIL types FAIL target_present False`, which is
+    indistinguishable from a repair that was simply bad.
+
+    Arms differ in prompt size -- the pilot logged `hybrid` at 646,451 characters against
+    `none` at 54,543, on one budget -- so the arm carrying more guidance has less room to
+    answer and truncates more often. Folding those into "did not converge" would have made
+    the treatment look worse for a reason that is about the budget.
+    """
+    from runlog import TRUNCATION_MARKER, measures
+
+    rows = [
+        _row(target="a", accepted=False, error=f"glm {TRUNCATION_MARKER} with ...", run="r1"),
+        _row(target="b", accepted=True, run="r1"),
+    ]
+    (result,) = measures(rows, run="r1")
+
+    assert result.truncated == 1
+    assert result.converged == 1, "the truncated attempt is not a failure of the arm"
+    assert result.targets == 2
+
+
+def test_an_ordinary_failure_is_not_counted_as_truncation() -> None:
+    from runlog import measures
+
+    rows = [_row(target="a", accepted=False, error="Ollama is unreachable", run="r1")]
+    (result,) = measures(rows, run="r1")
+
+    assert result.truncated == 0

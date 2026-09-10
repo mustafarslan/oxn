@@ -55,7 +55,14 @@ def _arm_table(rows: list[dict[str, Any]]) -> None:
     comparison, and putting one on screen invites reading a single arm's convergence rate as
     though it meant something on its own -- the control is what makes it mean anything.
     """
-    from runlog import COST_NOTE, ENOUGH_SAMPLES, SMALL_SAMPLE_NOTE, latest_run, measures
+    from runlog import (
+        COST_NOTE,
+        ENOUGH_SAMPLES,
+        SMALL_SAMPLE_NOTE,
+        TRUNCATION_NOTE,
+        latest_run,
+        measures,
+    )
 
     run = latest_run(rows)
     found = measures(rows, run or None)
@@ -63,15 +70,21 @@ def _arm_table(rows: list[dict[str, Any]]) -> None:
         return
     scope = f"run {run}" if run else "every attempt ever logged, which is rarely the question"
     say(f"\n{BOLD}arms{RESET} {DIM}({scope}){RESET}")
-    say(f"  {'arm':16s}{'backend':12s}{'n':>3s}{'conv':>6s}{'att/t':>7s}{'ok':>4s}{'chars':>9s}")
+    say(
+        f"  {'arm':16s}{'backend':12s}{'n':>3s}{'conv':>6s}{'att/t':>7s}"
+        f"{'ok':>4s}{'cut':>5s}{'chars':>9s}"
+    )
     for result in found:
         say(
             f"  {result.arm:16s}{result.backend:12s}{result.repeats:>3d}"
             f"{result.convergence_rate:>5.0%} {result.attempts_per_target:>6.1f}"
-            f"{result.correct:>4d}{result.prompt_chars + result.reply_chars:>9,d}"
+            f"{result.correct:>4d}{result.truncated:>5d}"
+            f"{result.prompt_chars + result.reply_chars:>9,d}"
         )
     if any(result.repeats < ENOUGH_SAMPLES for result in found):
         say(f"  {DIM}{SMALL_SAMPLE_NOTE}{RESET}")
+    if any(result.truncated for result in found):
+        say(f"  {DIM}{TRUNCATION_NOTE}{RESET}")
     say(f"  {DIM}{COST_NOTE}{RESET}")
 
 

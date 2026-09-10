@@ -159,9 +159,7 @@ class OllamaClient:
         if self.think is None and reply.starved_by_reasoning:
             reply = self._attempt(prompt, temperature, system, think=False)
 
-        if not reply.saw_completion or not reply.text:
-            raise OllamaError(f"{self.model} returned an empty completion: {reply.why_empty}")
-        return reply.text
+        return reply.answer(self.model, self.num_predict)
 
     def _attempt(
         self, prompt: str, temperature: float, system: str, *, think: bool | None
@@ -265,6 +263,38 @@ class _Reply:
         or a bad prompt, it is a model that never left its scratchpad.
         """
         return bool(self.thinking_chars) and self.stopped_because == "length" and not self.text
+
+    def answer(self, model: str, budget: int) -> str:
+        """The completion, or the reason there is not one. Two ways there is not.
+
+        **Empty**, which this has raised on since a live run produced 67 seconds of thinking
+        and no text -- returning `""` pushed the failure downstream, where the harness read
+        it as the model having deleted the function it was asked to simplify.
+
+        **Cut off**, which it did not. `stopped_because` was captured and consulted only when
+        the completion was empty; a non-empty one carrying the same `done_reason` is the same
+        fact with text attached, and came back as though it were finished. Measured on the
+        httpx bed: `glm-5.3:cloud` wrote 123,471 characters, hit `num_predict`, and the
+        harness scored the half-written function as `tests FAIL types FAIL target_present
+        False` -- indistinguishable from a repair that was simply bad.
+
+        Both questions live here rather than in `generate` because both are about what this
+        reply *is*, and asking them from the client put its `weighted_methods_per_class` over
+        the ceiling -- which is the gate making the same point.
+
+        The budget is named because raising it is the fix and the number is per-client: a
+        reader told "the token limit" still has to find out which one.
+        """
+        if not self.saw_completion or not self.text:
+            raise OllamaError(f"{model} returned an empty completion: {self.why_empty}")
+        if self.stopped_because == "length":
+            raise OllamaError(
+                f"{model} stopped at the token limit with {len(self.text):,} characters of "
+                f"answer written and {self.thinking_chars:,} of reasoning before it. The "
+                f"reply is cut off mid-answer, so it is not a repair to judge -- raise "
+                f"`num_predict` (now {budget:,}) or `num_ctx`, or give it a smaller target."
+            )
+        return self.text
 
     @property
     def why_empty(self) -> str:

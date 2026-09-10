@@ -137,6 +137,14 @@ class ArmResult:
     prompt_chars: int
     reply_chars: int
     seconds: float
+    #: Attempts the model was not allowed to finish -- it stopped at `num_predict` with an
+    #: answer half written. Counted apart from a failed repair because it is not one, and
+    #: because **arms differ in prompt size**: the pilot logged `hybrid` at 646,451 characters
+    #: against `none` at 54,543, on one budget. An arm carrying more guidance has less room
+    #: to answer, truncates more often, and would score worse for a reason that is about the
+    #: budget rather than the guidance. Folding these into "did not converge" would have
+    #: biased the table *against* the treatment.
+    truncated: int = 0
 
     @property
     def convergence_rate(self) -> float:
@@ -160,6 +168,7 @@ class ArmResult:
             "prompt_chars": self.prompt_chars,
             "reply_chars": self.reply_chars,
             "seconds": round(self.seconds, 1),
+            "truncated": self.truncated,
         }
 
 
@@ -178,6 +187,16 @@ SMALL_SAMPLE_NOTE = (
     "here reversed outright -- hybrid 1/2 vs none 0/2, then none 2/2 vs hybrid 0/2, same "
     f"target and same flags. Below n={ENOUGH_SAMPLES} treat an ordering as noise; --repeat "
     "buys samples, and n is a judgement rather than a power analysis."
+)
+
+#: Said whenever `cut` is non-zero, because a truncated attempt is not a failed repair and
+#: the difference decides what the column above it means.
+TRUNCATION_NOTE = (
+    "`cut` counts attempts the model was not allowed to finish -- it stopped at "
+    "`num_predict` with an answer half written. Those are excluded from `conv`'s numerator "
+    "and are not evidence about the arm: arms differ in prompt size, so the one carrying "
+    "more guidance has less room to answer and truncates more. Raise OXN_OLLAMA_NUM_PREDICT "
+    "or pick a smaller target, then re-run -- do not read an ordering across unequal `cut`."
 )
 
 #: Said wherever the cost columns are printed, because a number without it is misread.
@@ -230,6 +249,7 @@ def _result(arm: str, backend: str, rows: list[dict[str, Any]]) -> ArmResult:
         targets=len(by_target),
         repeats=len({row.get("repeat", 0) for row in rows}),
         converged=_converged(by_target),
+        truncated=_truncated(rows),
         attempts=len(rows),
         correct=_functionally_correct(rows),
         prompt_chars=int(_total(rows, "prompt_chars")),
@@ -257,6 +277,22 @@ def _functionally_correct(rows: list[dict[str, Any]]) -> int:
     return sum(
         1 for row in rows if row.get("accepted") and row.get("gauntlet", {}).get("tests_pass")
     )
+
+
+#: What `oxn.llm` says when a model stops at its token budget with an answer half written.
+#: Matched on rather than re-derived, so the log stays readable without the client.
+TRUNCATION_MARKER = "stopped at the token limit"
+
+
+def _truncated(rows: list[dict[str, Any]]) -> int:
+    """Attempts that ended because the model ran out of room, not because it was wrong.
+
+    Found on the first honest attempt the httpx bed produced: `glm-5.3:cloud` wrote 123,471
+    characters, hit `num_predict`, and the extracted candidate was a function body ending
+    mid-block. The harness filed it as `tests FAIL types FAIL target_present False` --
+    indistinguishable from a repair that was simply bad.
+    """
+    return sum(1 for row in rows if TRUNCATION_MARKER in str(row.get("error", "")))
 
 
 def _total(rows: list[dict[str, Any]], key: str) -> float:

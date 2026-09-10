@@ -352,3 +352,35 @@ def test_an_ordinary_empty_completion_is_not_retried(monkeypatch: pytest.MonkeyP
     with pytest.raises(OllamaError, match="no reasoning and no text"):
         OllamaClient().generate("prompt")
     assert len(sent) == 1
+
+
+def test_an_answer_cut_off_at_the_token_limit_is_an_error_not_an_answer(patched: Any) -> None:
+    """`stopped_because` was captured and read only when the completion was *empty*.
+
+    A non-empty one carrying the same `done_reason` is the same fact with text attached, and
+    it came back as though it were finished. Measured on the httpx bed: `glm-5.3:cloud` wrote
+    123,471 characters, hit `num_predict`, and the harness scored the half-written function
+    as `tests FAIL types FAIL target_present False` -- indistinguishable from a bad repair.
+
+    The message names the budget, because raising it is the fix and the number is per-client.
+    """
+    patched(
+        [
+            {"thinking": "weighing the options"},
+            {"response": "def f():\n    if x:\n        return"},
+            {"response": "", "done": True, "done_reason": "length"},
+        ]
+    )
+    with pytest.raises(OllamaError, match="stopped at the token limit") as raised:
+        _client().generate("prompt")
+
+    assert "num_predict" in str(raised.value)
+    assert "characters of answer" in str(raised.value)
+
+
+def test_a_complete_answer_that_happens_to_end_at_done_is_returned(patched: Any) -> None:
+    """The control. `done_reason=stop` is a model that finished, however long it took."""
+    patched(
+        [{"response": "def f(): return 1"}, {"response": "", "done": True, "done_reason": "stop"}]
+    )
+    assert _client().generate("prompt") == "def f(): return 1"
