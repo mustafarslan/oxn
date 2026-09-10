@@ -237,3 +237,30 @@ def test_a_type_whose_methods_live_in_a_sibling_file_is_counted_by_the_hook(
     assert "methods_per_class" in {finding.rule for finding in hook.blocking}, (
         "the file declaring the type must see its package's methods"
     )
+
+
+def test_the_file_that_adds_the_method_is_the_one_the_gate_answers(project: Path) -> None:
+    """The evasion, and the only file an agent adding a method actually edits.
+
+    A finding is reported for the entities in the files the run was given, and the class
+    entity lives where the *type* is declared. So the aggregate could be right and the edit
+    still pass: `oxn check more.go` saw a package with a 13-method type and nothing to say
+    about it. Moving a method to a new file was a one-line escape from a class ceiling.
+
+    Only the class it feeds is added, never the sibling's other entities -- an unrelated
+    long function over there is not this edit's problem, and the retry budget is spent on
+    what the agent can act on.
+    """
+    from oxn.check import run_check
+
+    (project / "kind.go").write_text(_SPLIT_DECLARATION)
+    (project / "more.go").write_text(_SPLIT_METHODS)
+    run_check(["."], deep=True, use_baseline=False)
+
+    report = run_check(["more.go"], use_baseline=False)
+    findings = {(finding.rule, finding.path, finding.entity) for finding in report.blocking}
+
+    assert ("methods_per_class", "kind.go", "kind.Widget") in findings, findings
+    assert all(rule == "methods_per_class" for rule, _, _ in findings), (
+        "the sibling's unrelated entities must not be dragged in"
+    )

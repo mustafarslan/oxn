@@ -230,6 +230,30 @@ def package_class_totals(
     }, fragments
 
 
+def classes_fed_by(entities: Sequence[Entity], path: str) -> set[str]:
+    """Ids of the types in this package that ``path`` declares a method for, elsewhere.
+
+    The gate reports findings for the entities in the files it was asked about, and a class
+    entity lives where its type is declared. In Go a method is declared at file scope with a
+    receiver, so a thirteenth method can be added in a sibling file and the class ceiling is
+    breached by an edit the hook never sees -- `oxn check --deep` fails and the hook passes.
+
+    This is the reverse lookup that closes it: given a package's entities, which types does
+    *this* file contribute methods to? Ownership is decided exactly as `package_class_totals`
+    decides it, by calling the same two steps, because two answers to "whose method is this"
+    is how the class aggregates went wrong before.
+    """
+    by_name, _ = _declared_types(entities)
+    fragments = merged_fragments(entities, by_name)
+    owners = {
+        owner
+        for entity in entities
+        if entity.file_path == path and (owner := _owner_of(entity, by_name, fragments))
+    }
+    elsewhere = {entity.id: entity.file_path for entity in entities if entity.kind in _OWNER_KINDS}
+    return {owner for owner in owners if elsewhere.get(owner, path) != path}
+
+
 def merged_fragments(entities: Sequence[Entity], by_name: Mapping[str, str]) -> dict[str, str]:
     """Member-holding blocks that are part of a named type -> that type's entity id.
 

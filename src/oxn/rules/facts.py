@@ -19,8 +19,11 @@ from oxn.config import CALLABLE_KINDS, CLASS_KINDS, FILE_KINDS, GATED_METRICS
 from oxn.rules.model import Facts
 
 if TYPE_CHECKING:  # pragma: no cover
+    from collections.abc import Mapping
+
     from oxn.config import Config
     from oxn.graph.depgraph import DependencyGraph
+    from oxn.graph.model import Entity, MetricValue
     from oxn.graph.store import GraphStore
 
 
@@ -35,6 +38,7 @@ def file_facts(
             continue
         _one_file(facts, store, path, layer_of.get(path))
         _ceilings(facts, settings, path, layer_of.get(path))
+        _fed_classes(facts, store, settings, path, layer_of)
     return facts
 
 
@@ -44,26 +48,67 @@ def _one_file(facts: Facts, store: GraphStore, path: str, layer: str | None) -> 
         facts.add("layer", (path, layer))
     for entity_id, values in store.measurements_for(path).items():
         entity = entities.get(entity_id)
-        if entity is None:  # pragma: no cover - a store this stale cannot be trusted
+        if entity is not None:
+            _emit(facts, entity, path, values)
+
+
+def _emit(
+    facts: Facts, entity: Entity, path: str, values: Mapping[str, MetricValue]
+) -> None:
+    """One entity and every number measured on it, as rows."""
+    facts.add(
+        "entity",
+        (entity.id, path, entity.kind.value, entity.qualified_name, entity.start_line),
+    )
+    for key, measured in values.items():
+        facts.add("metric", (entity.id, key, measured.value, measured.exactness, measured.bound))
+        # ADR-0002's gate policy as data, and derived from `MetricValue` itself so the
+        # rules and the property cannot drift apart.
+        facts.add("blocking", (measured.exactness, measured.bound, measured.can_block_ceiling))
+        # Always a row, empty tuple included: a positive join must not silently drop
+        # findings for metrics that happen to carry no trail.
+        facts.add("explanation", (entity.id, key, tuple(measured.explanation)))
+
+
+def _fed_classes(
+    facts: Facts,
+    store: GraphStore,
+    settings: Config,
+    path: str,
+    layer_of: Mapping[str, str | None],
+) -> None:
+    """Classes in sibling files that *this* file declares methods for.
+
+    A finding is reported for the entities in the files the run was given, and a class entity
+    lives where its type is declared. Go declares a method at file scope with a receiver, so
+    a thirteenth method added in a sibling file breached `methods_per_class` on an edit the
+    hook never saw: `--deep` failed and `oxn check more.go` passed. The type's own file was
+    already correct -- `aggregate_classes` completes the package -- so what was missing was
+    not the number but a reason to look at it.
+
+    Only the owning class is added, never the sibling's other entities: an unrelated long
+    function in that file is not something this edit should be asked to fix.
+    """
+    from oxn.metrics.coupling import classes_fed_by
+
+    package = path.rpartition("/")[0]
+    members = [
+        known
+        for known in store.known_paths()
+        if known.rpartition("/")[0] == package and not settings.is_advisory(known)
+    ]
+    if len(members) < 2:
+        return
+    entities = {
+        entity.id: entity for member in members for entity in store.entities_for(member)
+    }
+    for owner in classes_fed_by(list(entities.values()), path):
+        entity = entities.get(owner)
+        if entity is None:  # pragma: no cover - the package moved under us
             continue
-        facts.add(
-            "entity",
-            (entity_id, path, entity.kind.value, entity.qualified_name, entity.start_line),
-        )
-        for key, measured in values.items():
-            facts.add(
-                "metric",
-                (entity_id, key, measured.value, measured.exactness, measured.bound),
-            )
-            # ADR-0002's gate policy as data, and derived from `MetricValue` itself so the
-            # rules and the property cannot drift apart.
-            facts.add(
-                "blocking",
-                (measured.exactness, measured.bound, measured.can_block_ceiling),
-            )
-            # Always a row, empty tuple included: a positive join must not silently drop
-            # findings for metrics that happen to carry no trail.
-            facts.add("explanation", (entity_id, key, tuple(measured.explanation)))
+        values = store.measurements_for(entity.file_path).get(owner, {})
+        _emit(facts, entity, entity.file_path, values)
+        _ceilings(facts, settings, entity.file_path, layer_of.get(entity.file_path))
 
 
 def _ceilings(facts: Facts, settings: Config, path: str, layer: str | None) -> None:

@@ -297,14 +297,11 @@ def _by_package(paths: set[str], known: set[str], root: Path) -> dict[str, list[
     A sibling the cache has never seen still cannot be counted, which is the same limit the
     hook has everywhere else and is why `--deep` exists.
 
-    **What this does not close**, stated because it is an evasion path and not a rough edge:
-    the aggregate is now right, but a run reports findings for the entities *in the files it
-    was given*, and the class entity lives in the file that declares the type. Editing
-    `more.go` to add a thirteenth method therefore still passes the hook while `kind.go` and
-    `--deep` both fail. Closing it means reporting a finding against a file the edit did not
-    touch, which is a change to what the enforcement channel says and wants a decision rather
-    than a commit. Measured mitigations: on go-kit all 376 methods sit in the same file as
-    their type, so the shape is rare in real Go, and CI catches it either way.
+    Getting the aggregate right was only half of it: a run reports findings for the entities
+    *in the files it was given*, and the class entity lives in the file that declares the
+    type, so editing `more.go` still passed while `kind.go` and `--deep` failed. That half is
+    closed in `rules.facts._fed_classes`, which adds the class a file feeds methods to -- and
+    nothing else from that file.
     """
     grouped: dict[str, list[str]] = {}
     packages = {path.rpartition("/")[0] for path in paths}
