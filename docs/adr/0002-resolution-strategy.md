@@ -826,3 +826,79 @@ measurement.
 callbacks (`items.map(x => x.id)` has no name a caller could write), 119 parameters — which
 OXN will never have an entity for, correctly — and 115 terms. Inventing a name for any of
 them would put a wrong answer in the bare-name table instead of leaving a gap that is visible.
+
+## Amendment, 2026-09-10 — JavaScript measured, and a filter that had selected its own subset
+
+`javascript-eslint` (ESLint at `ac74e37322eb`; 1,451 JavaScript files) via `scip-typescript
+index --infer-tsconfig`: a **52 MB** index built in **20 s**, L2 coverage **89.0% of
+declarations and 69.3% of call sites**. The sixth language, and the table is complete.
+
+**Its first measurement said 100% precision when certain over 8,185 graded sites — with
+38.18% of the corpus excluded.** The fifth amendment's rule is that an unexamined exclusion
+share is a claim about OXN, so the sites were read: **5,036 of the 5,055 were `local N`
+symbols.**
+
+A `local N` is document-scoped and carries **no descriptor** — no name. The grader requires
+the oracle's descriptor tail to agree with the name written at the call site, so that a
+mis-parsed symbol cannot arbitrate what a name refers to. Against a nameless symbol that
+rule is not *failed*, it is **inapplicable**: it can never match, and in JavaScript a plain
+`function foo()` or `const foo = require(...)` at file scope is exactly what a `local` is.
+The commonest call in the language was being dropped from grading entirely.
+
+| | graded | excluded | confident precision |
+|---|---|---|---|
+| requiring a tail | 8,185 | 38.18% | 100.0% |
+| skipping it on `local N` | **13,221** | **0.14%** | 99.8% |
+
+**The check did a second job, and it was measured rather than assumed.** Besides validating
+the descriptor, matching the tail confirmed the occurrence found at the callee's position is
+*for* the callee. On all 5,036 newly graded sites, the occurrence's range equals the callee's
+last-name node exactly — 0 disagreements — so `_last_name_position` establishes that on its
+own. Confident precision holding at 99.8% across 5,000 more sites is the other half of the
+evidence.
+
+The rule change is not JavaScript-only, and the other rows moved as they should: TypeScript
+**2,362 → 2,470** graded and 1.94% → **1.08%** excluded (its own same-file `local` functions,
+the third category the sixth amendment listed as unexplained), Rust 6,642 → **6,665**, and
+Python **unchanged at 30.48%** — its exclusions are the `scip-python` re-export bug the fifth
+amendment already separated from this one, and re-checking them found no local symbols then
+either.
+
+**The six-language table, 2026-09-10:**
+
+| language | corpus | L2 def / call | index | confident | overall @ recall | excluded | graded |
+|---|---|---|---|---|---|---|---|
+| Python | httpx | 99% / 96% | 4.4 s | 100% | 70.3% @ 100% | 30.48% | 1,453 |
+| Go | go-kit | 100% / 88.3% | 1 s | 99.7% | 71.4% @ 100% | 0% | 1,578 |
+| Rust | ripgrep | 99.2% / 99.2% | 40 s | 99.1% | 52.8% @ 100% | 0.15% | 6,665 |
+| Java | petclinic | 99.6% / 100% | 361 s | 100% | 90.4% @ 100% | 0% | 324 |
+| TypeScript | nest | 99.9% / 83.6% | 3 s | 100% | 69.4% @ 100% | 1.08% | 2,470 |
+| JavaScript | eslint | 89.0% / 69.3% | 20 s | 99.8% | 74.5% @ 100% | 0.14% | 13,221 |
+
+Go and Java are the 2026-09-06 measurements: `scip-go` and `scip-java` are not installed on
+this machine, so those two rows are carried forward rather than re-run. The rule can only
+*add* graded sites, and both corpora excluded **nothing**, so there is nothing in them for it
+to change — which is an argument, not a measurement, and is labelled as one.
+
+**A third exit-criterion miss, named rather than averaged.** JavaScript's 69.3% call coverage
+is the furthest any corpus falls below the >=85% bar, and it is the same two causes the sixth
+amendment counted for TypeScript, in the opposite proportion: over the 43,777 call sites in
+JavaScript files, **15.5% have no SCIP occurrence** at the callee and **14.7% have one and no
+enclosing entity**. TypeScript's split was 10.5% / 5.9%. The second is the criterion's
+denominator disagreeing with the join by design — a `Makefile.js` or a config script calls at
+module level, where there is no caller to hang an edge on — and a JavaScript repository is
+mostly that. It is still reported as a miss: choosing a friendlier denominator after seeing
+the number is how a criterion stops meaning anything.
+
+**A row of this table claims to be one language, and now the grading is.** `measure_corpus`
+graded every file it could parse, so ESLint's 36 TypeScript files were being scored under
+JavaScript's row; `measure_ceilings` had been filtering by profile since the ceiling table
+was built. Resolution still sees the whole tree, because L0/L1 does in production — only the
+grading is confined. Measured: no row moves, which is why this is a correctness fix and not
+a result.
+
+**This is the third row corrected by reading its exclusions instead of its headline** — after
+TypeScript's 441 and Rust's 4,844. In all three the discarded sites were correct oracle
+answers, and in all three the published figure was measured on a subset a defect had chosen.
+The pattern is stable enough to state as a rule: *a filter that protects a measurement
+selects the population it is measured on, and must be counted before the number is quoted.*

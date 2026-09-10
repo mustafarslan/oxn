@@ -102,3 +102,73 @@ def test_the_stored_reference_carries_the_file_that_owns_it() -> None:
 
     assert list(result.definitions) == ["local 7 pkg/a.py"]
     assert [edge.dst_ref for edge in result.edges] == ["local 7 pkg/a.py"]
+
+
+# ---- a nameless symbol cannot be asked to agree about a name ------------------------------
+
+
+def _grade(symbol: str):
+    """Grade `SOURCE`'s one call site against an oracle that answers with `symbol`."""
+    from oxn.resolve.measure import ResolutionAccuracy, _Grading, grade_file  # noqa: PLC2701
+    from oxn.resolve.scopes import build_scopes
+    from oxn.resolve.symbols import build_project_symbols
+
+    profile = get_profile("python")
+    data = SOURCE.encode()
+    root = get_parser("python").parse(data).root_node
+    entities = list(build_file("m.py", data, profile, root).entities)
+    helper = next(entity for entity in entities if entity.name == "helper")
+
+    document = ScipDocument(
+        relative_path="m.py",
+        # `helper(value)` on line 6, at the column the name starts.
+        occurrences=[ScipOccurrence(symbol, 6, 11, 6, 17, 0)],
+    )
+    accuracy = ResolutionAccuracy(language="python")
+    grade_file(
+        _Grading(
+            "m.py",
+            profile,
+            document,
+            build_project_symbols({"m.py": entities}, {"m.py": build_scopes(root, profile)}),
+            {scoped(symbol, "m.py"): helper.id},
+            accuracy,
+        ),
+        root,
+    )
+    return accuracy
+
+
+def test_a_call_through_a_document_local_symbol_is_graded_rather_than_discarded() -> None:
+    """It excluded 38.18% of ESLint's call sites, and reported 100% precision on the rest.
+
+    A `local N` has no descriptor, so the rule "the oracle's name must match the source's"
+    can never be satisfied -- not because the oracle disagrees, but because it said nothing
+    to disagree with. Every call to a module-local binding was dropped, which in JavaScript
+    is most of them. See `is_document_local` for the before/after.
+    """
+    accuracy = _grade("local 4")
+
+    assert accuracy.graded_call_sites == 1
+    assert accuracy.excluded_untrustworthy == 0
+    assert accuracy.correct == 1, "and it grades correctly, not merely loudly"
+
+
+def test_a_named_symbol_that_disagrees_with_the_source_is_still_excluded() -> None:
+    """The control. The rule is narrowed to nameless symbols, not withdrawn.
+
+    An oracle that says `save` where the source says `helper` has mis-parsed one of them, and
+    cannot arbitrate what `helper` refers to.
+    """
+    accuracy = _grade("scip-python python p 1 `m`/save().")
+
+    assert accuracy.graded_call_sites == 0
+    assert accuracy.excluded_untrustworthy == 1
+
+
+def test_a_named_symbol_that_agrees_is_graded() -> None:
+    """And the check still passes what it was written to pass."""
+    accuracy = _grade("scip-python python p 1 `m`/helper().")
+
+    assert accuracy.graded_call_sites == 1
+    assert accuracy.excluded_untrustworthy == 0

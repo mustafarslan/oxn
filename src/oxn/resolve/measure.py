@@ -31,8 +31,10 @@ if TYPE_CHECKING:  # pragma: no cover
 
     from tree_sitter import Node
 
+    from oxn.graph.depgraph import DependencyGraph
     from oxn.graph.model import Entity
     from oxn.profiles.base import LanguageProfile
+    from oxn.resolve.scopes import ScopeTree
     from oxn.resolve.symbols import ProjectSymbols, ResolvedName
     from oxn.scip.index import ScipDocument, ScipOccurrence
 
@@ -150,7 +152,7 @@ def _grade_call(
     source. Only what survives all of that is scored.
     """
     # noqa: PLC2701 on the private import -- one join rule, in one place.
-    from oxn.scip.join import _last_name_position, scoped  # noqa: PLC2701
+    from oxn.scip.join import _last_name_position, is_document_local, scoped  # noqa: PLC2701
 
     spec = grading.profile.metrics.cognitive
     callee = node.child_by_field_name(spec.callee_field)
@@ -169,8 +171,10 @@ def _grade_call(
         return
 
     # The oracle must agree with the source about *what is written* before it can arbitrate
-    # what that name refers to. See the module docstring.
-    if symbol_tail(occurrence.symbol) != name:
+    # what that name refers to. See the module docstring. A `local N` symbol -- a binding the
+    # module never exports -- has no descriptor to agree with, so the rule is inapplicable
+    # rather than failed, and applying it anyway excluded 38% of JavaScript's call sites.
+    if not is_document_local(occurrence.symbol) and symbol_tail(occurrence.symbol) != name:
         grading.accuracy.excluded_untrustworthy += 1
         return
 
@@ -332,63 +336,89 @@ def _callee_name(callee: Node) -> str:
     return current.text.decode("utf-8", "replace") if current.text else ""
 
 
-def measure_corpus(root: Path, index_path: Path, language: str = "python") -> ResolutionAccuracy:
-    """Grade L0/L1 against a SCIP index over a whole tree."""
+@dataclass(frozen=True, slots=True)
+class _ParsedFile:
+    """One file, parsed once and read by all three phases of a corpus measurement."""
+
+    profile: LanguageProfile
+    tree_root: Node
+    entities: list[Entity]
+    scopes: ScopeTree
+
+
+def _parse_corpus(root: Path) -> tuple[dict[str, _ParsedFile], DependencyGraph]:
+    """Parse every file the gate would measure, plus the import graph over them.
+
+    The grader measures the code the gate measures, `oxn.yaml`'s exclusions included:
+    resolution accuracy over vendored code is not a number about this project.
+    """
+    from oxn.config import Config
     from oxn.graph.builder import build_file
     from oxn.graph.depgraph import build_dependency_graph
     from oxn.graph.sources import iter_source_files
     from oxn.languages import get_parser
     from oxn.profiles import profile_for_path
     from oxn.resolve.scopes import build_scopes
-    from oxn.resolve.symbols import build_project_symbols
-    from oxn.scip.index import load_index
-    from oxn.scip.join import join_document
-
-    index = load_index(index_path).by_path()
-    # The grader measures the code the gate measures, `oxn.yaml`'s exclusions included:
-    # resolution accuracy over vendored code is not a number about this project.
-    from oxn.config import Config
 
     files = list(iter_source_files([root], base=root, exclude=Config.load(root).exclude))
-    graph = build_dependency_graph(root, files)
-
-    parsed_files: dict[str, tuple[LanguageProfile, Node, list[Entity]]] = {}
-    entities_by_file: dict[str, list[Entity]] = {}
-    scopes_by_file = {}
-
+    parsed: dict[str, _ParsedFile] = {}
     for path in files:
         profile = profile_for_path(str(path))
         if profile is None:
             continue
-        relative = path.resolve().relative_to(root).as_posix()
         source = path.read_bytes()
         tree = get_parser(profile.name).parse(source)
         if tree.root_node.has_error:
             continue
-        parsed = build_file(relative, source, profile, tree.root_node)
-        entities = list(parsed.entities)
-        parsed_files[relative] = (profile, tree.root_node, entities)
-        entities_by_file[relative] = entities
-        scopes_by_file[relative] = build_scopes(tree.root_node, profile)
+        relative = path.resolve().relative_to(root).as_posix()
+        parsed[relative] = _ParsedFile(
+            profile,
+            tree.root_node,
+            list(build_file(relative, source, profile, tree.root_node).entities),
+            build_scopes(tree.root_node, profile),
+        )
+    return parsed, build_dependency_graph(root, files)
 
-    symbols = build_project_symbols(entities_by_file, scopes_by_file, graph)
 
-    # L2 ground truth: symbol -> entity id, across the whole tree.
-    scip_to_entity: dict[str, str] = {}
-    for relative, (profile, tree_root, entities) in parsed_files.items():
+def _truth_map(parsed: dict[str, _ParsedFile], index: dict[str, ScipDocument]) -> dict[str, str]:
+    """L2 ground truth: SCIP symbol -> the entity id it names, across the whole tree."""
+    from oxn.scip.join import join_document
+
+    truth: dict[str, str] = {}
+    for relative, file in parsed.items():
         document = index.get(relative)
-        if document is None:
-            continue
-        result = join_document(entities, profile, tree_root, document)
-        scip_to_entity.update(result.definitions)
+        if document is not None:
+            result = join_document(file.entities, file.profile, file.tree_root, document)
+            truth.update(result.definitions)
+    return truth
+
+
+def measure_corpus(root: Path, index_path: Path, language: str = "python") -> ResolutionAccuracy:
+    """Grade L0/L1 against a SCIP index over a whole tree."""
+    from oxn.resolve.symbols import build_project_symbols
+    from oxn.scip.index import load_index
+
+    index = load_index(index_path).by_path()
+    parsed, graph = _parse_corpus(root)
+    symbols = build_project_symbols(
+        {relative: file.entities for relative, file in parsed.items()},
+        {relative: file.scopes for relative, file in parsed.items()},
+        graph,
+    )
+    scip_to_entity = _truth_map(parsed, index)
 
     accuracy = ResolutionAccuracy(language=language)
-    for relative, (profile, tree_root, _entities) in parsed_files.items():
+    for relative, file in parsed.items():
+        # A corpus is not one language -- ESLint carries 36 TypeScript files among 1,451
+        # JavaScript ones -- but a row of the accuracy table claims to be. Everything above
+        # this line still sees the whole tree, because L0/L1 does in production; only the
+        # grading is confined to the language being reported. `measure_ceilings` filters the
+        # same way, and did before this did.
         document = index.get(relative)
-        if document is None:
+        if file.profile.name != language or document is None:
             continue
         grade_file(
-            _Grading(relative, profile, document, symbols, scip_to_entity, accuracy),
-            tree_root,
+            _Grading(relative, file.profile, document, symbols, scip_to_entity, accuracy),
+            file.tree_root,
         )
     return accuracy

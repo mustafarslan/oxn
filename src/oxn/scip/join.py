@@ -32,6 +32,40 @@ if TYPE_CHECKING:  # pragma: no cover
     from oxn.scip.index import ScipDocument, ScipOccurrence
 
 
+def is_document_local(symbol: str) -> bool:
+    """Is this a SCIP ``local N`` symbol -- document-scoped, and carrying no name?
+
+    Every other SCIP symbol ends in a *descriptor*, which spells out what the thing is
+    called: ``... `no-unused-vars`/create().``. A ``local 4`` has none. It is how an indexer
+    spells a binding the module never exports -- in JavaScript, a plain ``function foo()``
+    or a ``const foo = require(...)`` at file scope -- and the number is an index into the
+    document, not a name.
+
+    The grader used to require that the oracle's descriptor tail match the name written at
+    the call site, so that a mis-parsed descriptor could not arbitrate anything. Against a
+    nameless symbol that check is not *failed*, it is **inapplicable**: there is no tail, so
+    it can never match, and every call through a module-local binding was thrown away. On
+    ESLint that was **5,036 of 5,055 exclusions** -- 38.18% of the corpus's call sites, and
+    JavaScript's commonest call shape.
+
+    | | graded | excluded | confident precision |
+    |---|---|---|---|
+    | requiring a tail | 8,185 | 38.18% | 100.0% |
+    | this rule | 13,221 | 0.14% | 99.8% |
+
+    The check did a second job as well -- confirming the occurrence is *for* the callee --
+    and skipping it drops that too, so it was measured separately: on all 5,036 newly graded
+    sites the occurrence's range equals the callee's last-name node exactly. The position
+    lookup in `_last_name_position` establishes that on its own; the tail was never what was
+    holding it up. Confident precision across 5,000 more sites moving 100.0% -> 99.8% is the
+    other half of that evidence.
+
+    This is the same shape as the incident `symbol_tail` records, where a filter meant to
+    protect a measurement had quietly selected the subset it was measured on.
+    """
+    return symbol.startswith("local ")
+
+
 def scoped(symbol: str, path: str) -> str:
     """Qualify a SCIP ``local`` symbol with the document that owns it.
 

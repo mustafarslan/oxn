@@ -421,11 +421,12 @@ def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
 
     On `typescript-nest`: L2 coverage **99.9% of declarations and 83.6% of call sites**,
     index built in 3 s. L0/L1 scores **100% precision when certain** at 56.7% confident
-    recall, 69.2% overall at 100% recall, over 2,362 graded sites -- 190 of them gradeable
-    only once a callable bound to a name stopped being anonymous to the SCIP join.
+    recall, 69.4% overall at 100% recall, over 2,470 graded sites -- 190 of them gradeable
+    only once a callable bound to a name stopped being anonymous to the SCIP join, and 108
+    more once a nameless `local N` symbol stopped being asked to agree about a name.
 
-    **99.7% is Python's number, on a corpus larger than Python's.** That is the second high
-    row, and it is the one that makes "only Python is high" no longer the shape of the table:
+    **That is Python's number, on a corpus larger than Python's.** The second high row, and
+    the one that makes "only Python is high" no longer the shape of the table:
     Python and TypeScript sit near 100%, Go and Rust near 90%. This test does not claim to
     know why, and deliberately: the last causal story told from these corpora was an artifact
     of a grader bug, and two rows on each side is a pattern, not a cause.
@@ -435,19 +436,19 @@ def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     the indexer's and that was wrong. **10.5% have no SCIP occurrence** at the callee, which
     is `scip-typescript`'s coverage; **5.9% have one and no enclosing entity**, because a
     module-level call (`bootstrap()` in a `main.ts`) has no caller to hang an edge on. The
-    second is the criterion's denominator disagreeing with the join by design. ADR-0002's
-    sixth amendment carries the split across all five languages.
+    second is the criterion's denominator disagreeing with the join by design, and ADR-0002
+    carries the split for every language that has one.
 
     **This row cost 529 fabricated L2 edges to publish, which is what it was worth.** The
     first measurement excluded 441 sites (16.9%); printing them rather than attributing them
     found that every one was a document-scoped `local N` symbol keyed globally
-    (`tests/test_scip_local_symbols.py`). Exclusions are 1.94% after the fix -- the 441 were
+    (`tests/test_scip_local_symbols.py`). Exclusions are 1.08% after the fix -- the 441 were
     a double error that cancelled.
 
-    The remaining exclusions were read, not assumed: same-file `local` functions with no name
-    in the symbol, `typeLiteral268:commitOffsets` methods on anonymous type literals, and one
-    `<get>id` accessor -- descriptor decoration rather than disagreement, and not worth a
-    speculative strip.
+    The rest were read, not assumed: `typeLiteral268:commitOffsets` methods on anonymous type
+    literals and one `<get>id` accessor -- decoration rather than disagreement. The same-file
+    `local` functions listed there as a third category are graded now; `is_document_local`
+    records what excluding them cost on a JavaScript corpus.
     """
     from oxn.graph.indexer import Indexer
     from oxn.resolve.measure import measure_corpus
@@ -480,4 +481,65 @@ def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     assert accuracy.excluded_share <= 0.05, (
         f"{accuracy.excluded_share:.1%} of TypeScript call sites excluded; this number was "
         "16.9% and the cause was a defect in OXN, not in the oracle -- read the sites"
+    )
+
+
+# ---- javascript ---------------------------------------------------------------------------
+
+JS_CORPUS = CORPUS.parent / "javascript-eslint"
+
+
+@requires_scip_typescript
+@pytest.mark.skipif(not JS_CORPUS.exists(), reason="corpora not fetched")
+@pytest.mark.slow
+def test_javascript_l2_and_l0_l1_accuracy(tmp_path) -> None:
+    """The sixth language, and the one whose oracle was mostly being thrown away.
+
+    On `javascript-eslint` (1,451 JavaScript files; the 36 TypeScript ones are graded under
+    TypeScript's row, not this one): L2 coverage **89.0% of declarations and 69.3% of call
+    sites** over the whole corpus, from a 52 MB index built in 20 s. L0/L1 scores **99.8%
+    precision when certain** at 65.3% confident recall, 74.5% overall at 100% recall, over
+    **13,221 graded call sites** -- the largest graded population of the six.
+
+    **It was 8,185 sites at 38.18% excluded until this run.** 5,036 of the 5,055 exclusions
+    were `local N` symbols, which carry no descriptor and so could never satisfy a rule that
+    the oracle's name match the source's. `is_document_local` records the fix and the
+    measurement that it does not cost the position join anything.
+
+    **69.3% call coverage misses P5's >=85% by more than TypeScript's 83.6% did**, and the
+    30.7% is the same two causes, counted rather than attributed over the 43,777 call sites
+    in JavaScript files: **15.5% have no SCIP occurrence** at the callee, and **14.7% have
+    one and no enclosing entity** (69.7% joined, on that subset). The second is
+    much larger here than in TypeScript's 5.9%, and it is what a JavaScript repository looks
+    like -- `Makefile.js`, config files and scripts call at module level, where there is no
+    caller to hang an edge on. That is the criterion's denominator disagreeing with the join
+    by design, not an indexer gap; it is reported as a miss anyway, because dividing a
+    criterion by a friendlier denominator after the fact is how a number stops meaning
+    anything.
+
+    The precision figures are the lowest of the six, and are not explained here for the same
+    reason TypeScript's high ones are not: one corpus is not a cause.
+    """
+    from oxn.graph.indexer import Indexer
+    from oxn.resolve.measure import measure_corpus
+    from oxn.scip.ingest import ingest_index
+    from oxn.scip.runner import run_indexer
+
+    corpus = JS_CORPUS.resolve()
+    index = run_indexer("javascript", corpus, tmp_path / "eslint.scip", timeout=1200)
+
+    with Indexer(root=corpus, cache_path=tmp_path / "graph.db") as indexer:
+        report = ingest_index(indexer, index)
+    assert report.definition_coverage >= 0.80, f"{report.definition_coverage:.1%}"
+    assert report.call_coverage >= 0.60, f"{report.call_coverage:.1%} (below P5's 85%)"
+
+    accuracy = measure_corpus(corpus, index, language="javascript")
+    assert accuracy.graded_call_sites > 10000, "corpus too small to mean anything"
+    assert accuracy.confident_precision >= 0.95, (
+        f"confident precision {accuracy.confident_precision:.1%}; "
+        f"first disagreements: {accuracy.disagreements[:3]}"
+    )
+    assert accuracy.excluded_share <= 0.05, (
+        f"{accuracy.excluded_share:.1%} of JavaScript call sites excluded; this was 38.18% "
+        "and every one of them was a nameless `local N`, not an oracle disagreement"
     )
