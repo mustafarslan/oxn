@@ -210,6 +210,11 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install oxn
+      # The comment OXN writes itself: every number in it is read out of the measurement,
+      # because nothing here composes one. To have a model phrase it instead, add
+      # `--write ollama` and an `OXN_OLLAMA_HOST` secret pointing at a host this runner can
+      # reach. The body posted below is what a runner with no such host produces, and what
+      # OXN falls back to when a model states a number the measurement does not contain.
       - name: Measure
         env:
           BASE: origin/${{ github.event.repository.default_branch }}
@@ -218,16 +223,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python - <<'PY' > body.md
-          import json
-          payload = json.load(open("review.json"))
-          counts = payload["counts"]
-          print(f"**OXN** — {counts['new']} new, {counts['regression']} regressed, "
-                f"{counts['baselined']} pre-existing")
-          for found in payload["findings"]:
-              if found["origin"] != "baselined":
-                  print(f"- `{found['path']}:{found['line']}` — {found['message']}")
-          PY
+          jq -r .comment.body review.json > body.md
           gh pr comment ${{ github.event.issue.number }} --body-file body.md
 """
 

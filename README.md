@@ -218,20 +218,29 @@ origin/main...HEAD  12 changed, 10 measured, 2 excluded
 ```
 
 `oxn init --github` writes the workflow that runs it: tag `@oxn` in a pull-request comment and
-the job measures the diff and posts a summary. It is opt-in, and an existing workflow file is
+the job measures the diff and posts the summary. It is opt-in, and an existing workflow file is
 never overwritten.
 
 **It does not gate.** Your CI `oxn check` job does that. Two gates disagreeing about one pull
 request is worse than one gate.
 
-### The numbers come from OXN and the sentences come from a model, and the second may not
-invent the first
+### The numbers come from OXN. The sentences may come from a model, which may not invent a
+number
 
-`--write ollama` hands the *measurement* to a language model and asks for prose. Every numeral
-in the reply is then checked against the measurement, and a reply stating a number OXN did not
-measure is **refused** — no comment, rather than a comment with a caveat, because a reader who
-sees prose does not audit it. There is one retry, shown exactly which numbers were rejected,
-and no second one: a tool whose honesty depends on how many times it asked is not honest.
+Without `--write` the comment is OXN's own, and every figure in it is read straight out of the
+measurement because nothing composes one. That is what the generated workflow posts: a GitHub
+runner has no model host, and a review with nothing to say is not a review.
+
+`--write ollama` hands the *measurement* to a language model and asks it to phrase the summary
+instead. Every numeral in the reply is checked against the measurement, and a reply stating a
+number OXN did not measure is **refused** — the prose is thrown away and the mechanical body
+posted in its place, with `invented` naming the numbers that cost the model its turn. There is
+one retry, shown exactly which numbers were rejected, and no second one: a tool whose honesty
+depends on how many times it asked is not honest.
+
+Refusing costs the sentences, not the review. The rule is that prose nobody audits may not
+carry an unmeasured number — not that a pull request goes unanswered because a model
+misbehaved.
 
 The model is never shown the diff. A model given code reviews the code; this one restates
 measurements. It also means a workflow triggered from a fork never hands that fork's contents

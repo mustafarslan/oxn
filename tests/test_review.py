@@ -17,6 +17,8 @@ import pytest
 from oxn.review import changed_files, numeral, quotable_numbers, run_review, unquotable
 from oxn.writers import FakeWriter, ReviewComment, write_review
 
+STAMP = {"commit": "a" * 40, "oxn_version": "0.1.0", "profiles": {}, "ceilings": {}}
+
 OVER_CEILING = "def wide(a, b, c, d, e, f):\n    return a + b + c + d + e + f\n"
 
 
@@ -230,6 +232,105 @@ def test_an_empty_reply_is_a_refusal_not_an_empty_comment() -> None:
     assert comment.refused
 
 
+# ---- the comment OXN writes itself ---------------------------------------------------------
+
+
+def test_the_body_is_written_without_a_model_at_all() -> None:
+    """A GitHub runner has no Ollama host, and a review with nothing to post is not a review.
+
+    This is also the floor the refusal falls to, which is what makes refusing affordable: the
+    rule is that unaudited prose may not carry an unmeasured number, not that a pull request
+    goes unanswered because a model misbehaved.
+    """
+    from oxn.writers import review_body
+
+    body = review_body({**PAYLOAD, "base": "main", "head": "HEAD", "measured": STAMP})
+
+    assert "1 new" in body
+    assert "`added.py:1`" in body
+    assert unquotable(body, quotable_numbers({**PAYLOAD, "measured": STAMP})) == [], body
+
+
+def test_the_writer_that_cannot_lie_is_held_to_the_same_rule() -> None:
+    """Asserted rather than asserted-by-inspection: `review_body` composes no number, so the
+    honesty check must pass over its output for every payload shape, including the empty one.
+    """
+    from oxn.writers import review_body
+
+    empty = {
+        "status": "OK",
+        "base": "main",
+        "head": "HEAD",
+        "measured": STAMP,
+        "files": {"changed": 0, "measured": 0, "excluded": 0},
+        "counts": {"new": 0, "regression": 0, "baselined": 0},
+        "findings": [],
+        "errors": [],
+    }
+    for payload in (empty, {**PAYLOAD, "base": "main", "head": "HEAD", "measured": STAMP}):
+        body = review_body(payload)
+        assert unquotable(body, quotable_numbers(payload)) == [], body
+
+
+def test_a_refused_prose_still_posts_the_measurement(repo: Path, monkeypatch) -> None:
+    """The narrowing of what refusing means, at the surface that acts on it.
+
+    `status` still says REFUSED and `invented` still names the numbers -- the model gets no
+    credit for sentences it did not earn -- but `body` carries OXN's own summary, because the
+    measurement was already made and withholding it punishes the author for the writer's fault.
+    """
+    import oxn.writers as writers
+    from oxn.report import run_review_report
+
+    monkeypatch.setattr(
+        writers, "ollama_writer", lambda model="": FakeWriter(replies=["Up 40%.", "Still 40%."])
+    )
+    payload = run_review_report("main", "HEAD", write="ollama")
+
+    assert payload["comment"]["status"] == "REFUSED"
+    assert payload["comment"]["invented"] == ["40"]
+    assert "**OXN**" in payload["comment"]["body"], "the review survives the writer"
+
+
+def test_without_a_writer_the_comment_is_oxn_own(repo: Path) -> None:
+    from oxn.report import run_review_report
+
+    comment = run_review_report("main", "HEAD")["comment"]
+
+    assert comment == {
+        "status": "OK",
+        "body": comment["body"],
+        "model": "oxn",
+        "invented": [],
+        "attempts": 0,
+    }
+    assert "parameter_count" in comment["body"]
+
+
+def test_an_unknown_writer_is_named_and_the_review_still_happens(repo: Path) -> None:
+    from oxn.report import run_review_report
+
+    comment = run_review_report("main", "HEAD", write="anthropic")["comment"]
+
+    assert comment["status"] == "REFUSED"
+    assert "anthropic" in comment["note"]
+    assert "**OXN**" in comment["body"]
+
+
+def test_the_writer_is_not_handed_the_bag_of_quotable_numbers() -> None:
+    """`quotable` is the audit trail for a refusal, not an input to the prose.
+
+    A model shown a list of integers and told to use numbers from it writes numerically-valid
+    nonsense: the numbers belong to the findings they were measured on. It stays in the JSON
+    `oxn review` prints, where a person auditing a refusal wants exactly that bag.
+    """
+    writer = FakeWriter(replies=["No findings."])
+    write_review({**PAYLOAD, "quotable": ["7777"]}, writer)
+
+    assert "7777" not in writer.prompts[0], writer.prompts[0]
+    assert "quotable" not in writer.prompts[0]
+
+
 # ---- the trigger ---------------------------------------------------------------------------
 
 
@@ -274,7 +375,31 @@ def test_the_workflow_parses_and_runs_oxn_review_without_gating(tmp_path) -> Non
     assert parsed["permissions"] == {"contents": "read", "pull-requests": "write"}
     assert "github.event.issue.pull_request" in job["if"], "an issue has no diff to measure"
     assert "@oxn" in job["if"]
-    runs = " ".join(str(step.get("run", "")) for step in job["steps"])
-    assert "oxn review" in runs
-    assert "oxn check" not in runs, "the review never gates; CI's check job does"
     assert "fetch-depth: 0" in _WORKFLOW, "the merge base is not in a shallow clone"
+    assert "oxn check" not in _runs(job), "the review never gates; CI's check job does"
+
+
+def test_the_workflow_posts_the_body_oxn_rendered_rather_than_building_its_own(tmp_path) -> None:
+    """One owner for the comment, and it is the one the suite can reach.
+
+    The first version of this job rebuilt the summary in inline Python from `review.json`. That
+    is a second renderer living in YAML where no test runs -- and it meant `--write` could
+    never take effect there, so a file documenting a model-written comment produced one OXN had
+    written. `oxn review` renders the body now and the job posts it.
+    """
+    yaml = pytest.importorskip("yaml")
+    from oxn.init import _WORKFLOW
+
+    runs = _runs(yaml.safe_load(_WORKFLOW)["jobs"]["review"])
+
+    assert "oxn review" in runs
+    assert ".comment.body" in runs, "the job posts what OXN rendered"
+    assert "import json" not in runs, "and does not rebuild it"
+    assert "OXN_OLLAMA_HOST" in _WORKFLOW, (
+        "a runner has no model host, so the file has to say what it would take to get prose"
+    )
+
+
+def _runs(job: dict) -> str:
+    """Every shell command in a job, as one string to search."""
+    return " ".join(str(step.get("run", "")) for step in job["steps"])

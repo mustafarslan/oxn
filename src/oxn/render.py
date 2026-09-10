@@ -516,15 +516,20 @@ def _emit_review(payload: dict[str, Any], output: Output) -> None:
 
 
 def _emit_comment(comment: dict[str, Any] | None, console: Console) -> None:
-    """What the writer produced, or which numbers cost it the chance to say anything."""
+    """The comment that would be posted, and who lost the right to phrase it.
+
+    A refusal is shown *above* the body it fell back to, not instead of it: the body is still
+    there, and a reader who sees the prose without the reason would credit the model for
+    sentences it did not get to write.
+    """
     if comment is None:
         return
+    console.print(f"\n[bold]Comment[/bold]  [dim]{comment.get('model', 'oxn')}[/dim]")
     if comment["status"] != "OK":
-        note = comment.get("note")
         invented = ", ".join(comment.get("invented", ()))
-        reason = note or f"the comment stated {invented}, which the measurement does not contain"
-        console.print(f"\n[bold]Comment[/bold]  [yellow]refused[/yellow]\n  [dim]{reason}[/dim]")
-        return
-    console.print(f"\n[bold]Comment[/bold]  [dim]{comment['model']}[/dim]")
-    for line in comment["body"].splitlines():
+        reason = comment.get("note") or (
+            f"the writer stated {invented}, which the measurement does not contain"
+        )
+        console.print(f"  [yellow]prose refused[/yellow] — [dim]{reason}[/dim]")
+    for line in comment.get("body", "").splitlines():
         console.print(f"  {line}")

@@ -502,17 +502,34 @@ def run_review_report(
     on, and a refused comment is only legible beside the numbers it failed to quote.
     """
     from oxn.review import run_review
+    from oxn.writers import review_body
 
     payload = run_review(base, head)
-    if write:
-        from oxn.writers import ollama_writer, write_review
-
-        if write != "ollama":
-            payload["comment"] = {
-                "status": "REFUSED",
-                "note": UNKNOWN_WRITER.format(name=write),
-            }
-        else:
-            payload["comment"] = write_review(payload, ollama_writer(model)).as_dict()
+    payload["comment"] = _comment(review_body(payload), payload, write=write, model=model)
     _emit_review(payload, output)
     return payload
+
+
+def _comment(mechanical: str, payload: dict[str, Any], *, write: str, model: str) -> dict[str, Any]:
+    """What to post, who wrote it, and what a model said that cost it the chance.
+
+    **`body` is always populated.** Without `--write` it is OXN's own summary; with a working
+    writer it is the model's prose; and when the model states a number the measurement does
+    not contain it is OXN's own summary again, with `invented` naming the numbers and `status`
+    saying `REFUSED` so nobody reads the fallback as an endorsement.
+
+    That is a narrowing of what refusing used to mean here, and the narrower reading is the
+    right one. The rule is that *prose nobody audits may not carry an unmeasured number* -- not
+    that a pull request deserves no answer because a model misbehaved. The measurement was
+    already made; withholding it punishes the author for the writer's fault.
+    """
+    if not write:
+        return {"status": "OK", "body": mechanical, "model": "oxn", "invented": [], "attempts": 0}
+    if write != "ollama":
+        note = UNKNOWN_WRITER.format(name=write)
+        return {"status": "REFUSED", "body": mechanical, "model": "oxn", "note": note}
+
+    from oxn.writers import ollama_writer, write_review
+
+    written = write_review(payload, ollama_writer(model)).as_dict()
+    return written if written["status"] == "OK" else {**written, "body": mechanical}

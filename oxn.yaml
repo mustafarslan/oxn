@@ -32,9 +32,21 @@ ceilings:
 # that makes the indexer an orchestrator, not a data structure. The rule was right and the
 # layer assignment was wrong; the file moved layers rather than the contract being weakened.
 layers:
+  # `review.py`, `writers.py`, `calls.py`, `doctor.py`, `calibration.py` and `__main__.py`
+  # were in no layer until 2026-09-10, which is the `rules/*` mistake described below
+  # happening a second time: an unassigned source means every import it makes is skipped by
+  # the check, so six modules were building call graphs and running git under no contract at
+  # all. Naming them cost zero violations -- they were already well-behaved, merely
+  # ungoverned, which is exactly why nobody noticed.
+  #
+  # Still deliberately unassigned: `config.py`, `render.py`, `thresholds.py`, `languages.py`,
+  # `llm.py` and `profiles/*`. Those are foundation -- every layer reads them and they read
+  # almost nothing back -- and a `foundation` layer at the inner end would immediately flag
+  # `config.py -> graph/contracts.py`. That edge deserves a decision (move `Contract`, or
+  # accept it) and not a layer assignment chosen to avoid making one.
   # `server.py` is a surface, not orchestration: it decodes a request, calls the same
   # functions `_app.py` calls, and encodes the answer. It holds no analysis of its own.
-  surfaces: ["src/oxn/cli.py", "src/oxn/_app.py", "src/oxn/report.py", "src/oxn/check.py", "src/oxn/init.py", "src/oxn/server.py", "src/oxn/health.py"]
+  surfaces: ["src/oxn/cli.py", "src/oxn/_app.py", "src/oxn/__main__.py", "src/oxn/report.py", "src/oxn/calls.py", "src/oxn/check.py", "src/oxn/review.py", "src/oxn/writers.py", "src/oxn/init.py", "src/oxn/server.py", "src/oxn/health.py", "src/oxn/doctor.py", "src/oxn/calibration.py"]
   orchestration: ["src/oxn/graph/indexer.py"]
   # `sources.py` is graph, not orchestration: finding source files is not orchestrating
   # anything, and every tier needs the walk. It lived beside `Indexer` until this contract

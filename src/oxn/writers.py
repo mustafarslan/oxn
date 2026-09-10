@@ -13,7 +13,9 @@ say OXN supports four providers when it supports one. `Writer` is the seam they 
 `write_review` needs nothing from a backend but `generate`.
 
 The refusal is the interesting part and it belongs to no backend. `review.unquotable` is
-applied to whatever comes back, so a model that invents a number produces no comment at all.
+applied to whatever comes back, so a model that invents a number loses the right to phrase the
+summary. It does not cost the review: `review_body` here writes one from the measurement alone,
+which is what an Actions runner with no model host posts and what a refusal falls back to.
 """
 
 from __future__ import annotations
@@ -113,22 +115,32 @@ def write_review(payload: dict[str, Any], writer: Writer, *, attempts: int = 2) 
     third: a model that keeps inventing numbers after being shown them is not going to stop,
     and a review tool whose honesty depends on how many times it asked is not honest.
 
-    Refusing produces no comment at all rather than a comment with a warning attached. A
-    reader who sees prose does not audit it -- that is the whole reason the numbers come from
-    the measurement -- so a comment that says "some of these figures may be invented" is worse
-    than silence, and silence is at least actionable: `oxn review` exits with the reason.
+    Refusing produces no *prose* rather than prose with a warning attached. A reader who sees
+    sentences does not audit them -- that is the whole reason the numbers come from the
+    measurement -- so a comment saying "some of these figures may be invented" is worse than
+    none. What the pull request gets instead is `review_body`: OXN's own summary, which cannot
+    state an unmeasured number because it composes none. `report.run_review_report` makes that
+    substitution and records `invented` beside it, so the fallback is never read as an
+    endorsement.
     """
     from oxn.review import quotable_numbers, unquotable
 
-    allowed = quotable_numbers({key: value for key, value in payload.items() if key != "quotable"})
-    prompt = _prompt(payload)
+    # `quotable` is dropped from both halves, and from the prompt for a different reason than
+    # from the check. Deriving `allowed` from it would make the rule circular. Showing it to
+    # the writer would hand a model a bag of loose integers and an instruction to use numbers
+    # from a list, which is how numerically-valid nonsense gets written: the numbers belong to
+    # the findings they were measured on, and the writer should quote them from there. It stays
+    # in the JSON `oxn review` prints, where a person auditing a refusal wants exactly that bag.
+    measurement = {key: value for key, value in payload.items() if key != "quotable"}
+    allowed = quotable_numbers(measurement)
+    prompt = _prompt(measurement)
     invented: Sequence[str] = ()
     for attempt in range(1, attempts + 1):
         body = writer.generate(prompt, system=SYSTEM).strip()
         invented = unquotable(body, allowed)
         if body and not invented:
             return ReviewComment(body=body, model=writer.model, attempts=attempt)
-        prompt = _retry(payload, body, invented)
+        prompt = _retry(measurement, body, invented)
     return ReviewComment(invented=tuple(invented), model=writer.model, attempts=attempts)
 
 
@@ -164,3 +176,47 @@ def ollama_writer(model: str = "") -> Writer:
 
     client = OllamaClient.from_env()
     return dataclasses.replace(client, model=model) if model else client
+
+
+def review_body(payload: dict[str, Any]) -> str:
+    """The comment OXN writes itself, from the measurement and nothing else.
+
+    **A writer that cannot invent a number**, because it never composes one: every figure here
+    is read straight out of the payload. That makes it the floor rather than a fallback --
+    `oxn review` has something to post with no model, no network and no Ollama host, which is
+    the situation every GitHub Actions runner is in by default.
+
+    It is also the answer to what a refusal costs. `write_review` refusing means the *prose* is
+    lost, not the review: `report.run_review_report` keeps this body and records which numbers
+    cost the model its turn. A model earns the right to phrase the summary; it is not the only
+    thing that can produce one.
+    """
+    counts, files = payload["counts"], payload["files"]
+    lines = [
+        f"**OXN** — {counts['new']} new, {counts['regression']} regressed, "
+        f"{counts['baselined']} pre-existing.",
+        "",
+        f"`{payload['base']}...{payload['head']}`: {files['changed']} files changed, "
+        f"{files['measured']} measured, {files['excluded']} excluded.",
+    ]
+    actionable = [row for row in payload["findings"] if row["origin"] != "baselined"]
+    if actionable:
+        lines += [
+            "",
+            *(f"- `{row['path']}:{row['line']}` — {row['message']}" for row in actionable),
+        ]
+    if payload.get("errors"):
+        lines += ["", f"{len(payload['errors'])} files could not be measured."]
+    lines += ["", _footer(payload["measured"])]
+    return "\n".join(lines)
+
+
+def _footer(stamp: dict[str, Any]) -> str:
+    """Which commit these numbers came from, so a comment can be recognised as stale.
+
+    A pull request gets pushed to and the comment stays where it was. `oxn.review._stamp`
+    makes the argument in full; this is the one line of it a reader sees.
+    """
+    commit = str(stamp.get("commit", ""))[:7]
+    version = stamp.get("oxn_version", "")
+    return f"<sub>Measured on `{commit or 'unknown'}` by oxn {version}. This does not gate.</sub>"
