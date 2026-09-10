@@ -131,11 +131,11 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_COGNITIVE_COMPLEXITY",
         value=float(thresholds.MAX_COGNITIVE_COMPLEXITY),
         evidence=Evidence.JUDGEMENT,
-        observations=10378,
+        observations=10369,
         provenance=(
             "12, between idea.md's proposed 8 and SonarSource's default 15. Neither endpoint "
             "is measured either: 15 is a product default, not a finding. Measured cost: it "
-            "rejects 0.49% (java) to 3.32% (go) of named callables across the five corpora."
+            "rejects 0.53% (java) to 3.03% (go) of named callables across the five corpora."
         ),
         fit_when=(
             "not an unweighted percentile -- p95 of these distributions is 2 in TypeScript and 9 "
@@ -149,7 +149,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_CYCLOMATIC_COMPLEXITY",
         value=float(thresholds.MAX_CYCLOMATIC_COMPLEXITY),
         evidence=Evidence.LITERATURE,
-        observations=10378,
+        observations=10369,
         provenance=(
             "McCabe (1976); NIST SP 500-235 discusses 10 and 15 as the usual band. Measured "
             "cost: rejects 0.48% (typescript) to 2.03% (python) of named callables."
@@ -160,7 +160,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_PARAMETERS",
         value=float(thresholds.MAX_PARAMETERS),
         evidence=Evidence.LITERATURE,
-        observations=10378,
+        observations=10369,
         provenance=(
             "Fowler, Refactoring (Long Parameter List); the 4-5 band from Clean Code. "
             "Measured cost: rejects 0.00% (java) to 3.62% (python) of named callables -- the "
@@ -172,7 +172,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_NESTING_DEPTH",
         value=float(thresholds.MAX_NESTING_DEPTH),
         evidence=Evidence.JUDGEMENT,
-        observations=10378,
+        observations=10369,
         provenance=(
             "conventional; nesting is what cognitive complexity already charges for. Measured "
             "cost: rejects 0.00% (go, java) to 0.18% (httpx) of named callables -- the least "
@@ -189,9 +189,9 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_FUNCTION_SLOC",
         value=float(thresholds.MAX_FUNCTION_SLOC),
         evidence=Evidence.JUDGEMENT,
-        observations=10378,
+        observations=10369,
         provenance=(
-            "conventional rather than derived. Measured cost: rejects 0.49% (java) to 2.47% "
+            "conventional rather than derived. Measured cost: rejects 0.53% (java) to 2.47% "
             "(go) of named callables."
         ),
         fit_when="the same labelled set as the cognitive ceiling",

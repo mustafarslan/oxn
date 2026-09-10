@@ -45,7 +45,20 @@ _METHOD_KINDS = frozenset(
 #: function population as `write`. Gating does not change (`lambda` is a callable kind
 #: either way); what changes is that the label is now true.
 _ANONYMOUS_KINDS = frozenset(
-    {"lambda", "arrow_function", "function_expression", "func_literal", "closure_expression"}
+    {
+        "lambda",
+        "arrow_function",
+        "function_expression",
+        "func_literal",
+        "closure_expression",
+        # The last two languages to disagree with the rest, found the same way Go's and
+        # Rust's were: by asking every profile which of its `function_like` kinds can carry
+        # no name of its own. Java's `x -> x` and ECMAScript's `function* () {}` were both
+        # sitting in the *named function* population, which is the population two languages
+        # get compared on.
+        "lambda_expression",
+        "generator_function",
+    }
 )
 #: A declaration that is an interface by its own node kind. Rust's `trait` is one: it
 #: declares a contract and holds no state, which is what the label means, and leaving it out

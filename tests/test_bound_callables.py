@@ -60,6 +60,13 @@ def named(language: str, source: str) -> list[tuple[str, str | None]]:
         ("rust", "fn f() { let g = |x| x; }\n", [("function", "f"), ("lambda", "g")]),
         # A parenthesis names nothing, so the declarator is a grandparent here too.
         ("python", "f = (lambda: 1)\n", [("lambda", "f")]),
+        # The last two `function_like` kinds that can carry no name of their own.
+        (
+            "java",
+            "class A { void m() { Runnable r = () -> {}; } }\n",
+            [("class", "A"), ("method", "m"), ("lambda", "r")],
+        ),
+        ("javascript", "const g = function* () { yield 1; };\n", [("lambda", "g")]),
         ("typescript", "const g = (() => 1);\n", [("lambda", "g")]),
         # A class field names its callable too, and the two ECMAScript grammars put that name
         # under different fields -- `name` in TypeScript, `property` in JavaScript. They are
@@ -143,3 +150,16 @@ def test_a_declared_function_is_unaffected() -> None:
 
     assert profile.entity_name(definition) == "declared"
     assert profile.name_node(definition) == definition.child_by_field_name(profile.name_field)
+
+
+def test_an_argument_list_is_not_a_wrapper() -> None:
+    """`xs.forEach(x -> x.trim())` read the name `forEach` -- the method being *called*.
+
+    The unwrap that finds Go's `expression_list` used to accept any parent holding a single
+    child, and a Java argument list holding one lambda is exactly that shape; the invocation
+    above it has a `name` field, so the callback took the callee's name. Corpus-scale: 15 of
+    `java-spring-petclinic`'s 205 named callables were names of this kind, which is why the
+    fix shows up as a *fall* in the named population.
+    """
+    source = "class A { void m(java.util.List<String> xs) { xs.forEach(x -> x.trim()); } }\n"
+    assert named("java", source) == [("class", "A"), ("method", "m"), ("lambda", None)]

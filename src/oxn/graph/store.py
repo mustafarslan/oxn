@@ -54,8 +54,10 @@ if TYPE_CHECKING:  # pragma: no cover
 #: without which the gate still read NOM 0, and labels a Go interface `interface`.
 #: Version 12 names a class-field callable and labels it a method -- `handler = (x) => x`
 #: is how a TypeScript or JavaScript class writes one, and reading it as an anonymous
-#: lambda made both class ceilings inert against the shape.
-SCHEMA_VERSION = 12
+#: lambda made both class ceilings inert against the shape. Version 13 labels Java's
+#: `lambda_expression` and ECMAScript's `generator_function` as lambdas, the last two
+#: `function_like` kinds that can carry no name and were counted as named functions.
+SCHEMA_VERSION = 13
 
 DEFAULT_CACHE_PATH = Path(".oxn/cache/graph.db")
 
