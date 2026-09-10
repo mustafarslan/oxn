@@ -98,12 +98,33 @@ def _non_empty_only(candidates: set[int], source: bytes, first: int, last: int) 
     return {i for i in candidates if first <= i <= last and not lines[i].strip()}
 
 
+#: Node kinds whose direct children are statements. A string sitting immediately under one
+#: of these is a bare string expression -- a docstring -- rather than a value being used.
+_STATEMENT_POSITION = frozenset({"expression_statement", "block", "module"})
+
+
 def _is_docstring(node: Node, profile: LanguageProfile) -> bool:
-    """A bare string expression in statement position -- documentation, not data."""
+    """A bare string expression in statement position -- documentation, not data.
+
+    **Requiring an `expression_statement` parent meant this never fired.** The Python
+    grammar OXN ships emits a docstring as a `string` directly under its `block` -- there is
+    no wrapper -- so `docstrings_are_comments` was set, read, and could not match. Every
+    Python docstring counted as code: `sloc` on an eight-line function with a six-line
+    docstring read 8, `cloc` read 0, and `comment_density` read 0.0 on files that are more
+    prose than statements. `MAX_FUNCTION_SLOC` and `MAX_FILE_SLOC` gate on that number, so
+    the gate had been charging this repository -- whose house style is long explanatory
+    docstrings -- for writing them.
+
+    `block` and `module` are kept alongside `expression_statement` rather than replacing it,
+    because which of the three a grammar emits is a grammar-version detail and a metric must
+    not depend on one. What all three share is the property the docstring names: the string
+    stands where a *statement* stands. A string under `assignment`, `pair` or `argument_list`
+    is a value, and none of those is in the set.
+    """
     if node.type not in profile.string_kinds:
         return False
     parent = node.parent
-    return parent is not None and parent.type == "expression_statement"
+    return parent is not None and parent.type in _STATEMENT_POSITION
 
 
 def max_nesting_depth(node: Node, profile: LanguageProfile) -> int:

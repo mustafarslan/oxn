@@ -19,6 +19,7 @@ pytestmark = pytest.mark.oracle
 
 radon_complexity = pytest.importorskip("radon.complexity")
 radon_metrics = pytest.importorskip("radon.metrics")
+radon_raw = pytest.importorskip("radon.raw")
 complexipy = pytest.importorskip("complexipy")
 lizard = pytest.importorskip("lizard")
 
@@ -157,3 +158,39 @@ def _spearman(first: list[float], second: list[float]) -> float:
     spread_a = sum((x - mean_a) ** 2 for x in a) ** 0.5
     spread_b = sum((y - mean_b) ** 2 for y in b) ** 0.5
     return covariance / (spread_a * spread_b)
+
+
+def test_sloc_excludes_docstrings_and_radon_agrees() -> None:
+    """The defect: `docstrings_are_comments` was set, was read, and could not match.
+
+    `_is_docstring` required the string's parent to be an `expression_statement`; the Python
+    grammar OXN ships puts a docstring directly under its `block`. So every Python docstring
+    counted as code, and `MAX_FUNCTION_SLOC` -- a gated ceiling -- charged this repository
+    for documenting itself. radon is the oracle because it makes the same distinction with
+    an entirely different implementation: it tokenizes, and reports docstring lines as
+    `multi` rather than as `sloc`.
+
+    The second case is the one that makes the fix non-trivial: a string in *statement*
+    position is documentation, a string being assigned or passed is data, and widening the
+    parent test must not lose that.
+    """
+    from oxn.metrics.size import line_counts
+
+    documented = 'def f():\n    """One.\n\n    Two.\n    Three.\n    Four.\n    """\n    return 1\n'
+    data = 'def g():\n    x = "one"\n    return {"k": "v"}\n'
+
+    profile = get_profile("python")
+    for source, expected in ((documented, 2), (data, 3)):
+        root = get_parser("python").parse(source.encode()).root_node
+        counts = line_counts(root.named_children[0], source.encode(), profile)
+        assert counts.sloc == expected, f"{source!r} -> {counts}"
+        assert counts.sloc == radon_raw.analyze(source).sloc, "radon must agree"
+
+    assert (
+        line_counts(
+            get_parser("python").parse(documented.encode()).root_node.named_children[0],
+            documented.encode(),
+            profile,
+        ).cloc
+        == 6
+    ), "and the docstring must be counted as comment, not discarded"
