@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -153,6 +154,7 @@ def _emit_arch(payload: dict[str, Any], output: Output) -> None:
 
     _arch_summary(payload, console)
     _arch_cycles(payload, console)
+    _arch_visibility(payload, console)
     _arch_smells(payload, console)
     _arch_components(payload, console)
     _arch_unresolved(payload, console)
@@ -189,6 +191,44 @@ def _arch_cycles(payload: dict[str, Any], console: Console) -> None:
     console.print(f"\n[bold red]Cycles[/bold red] ({len(payload['cycles'])})")
     for cycle in payload["cycles"][:5]:
         console.print(f"  {cycle['size']} components: {', '.join(cycle['members'][:6])}")
+
+
+#: What each role means, in the order a reader should meet them.
+_ROLES = (
+    ("core", "red", "reaches most of the system and is reached by most of it"),
+    ("shared", "yellow", "reached by many, reaches few -- a utility"),
+    ("control", "cyan", "reaches many, reached by few -- an entry point"),
+    ("peripheral", "green", "neither"),
+)
+
+
+def _arch_visibility(payload: dict[str, Any], console: Console) -> None:
+    """Core/periphery, with the one caveat that decides how to read it.
+
+    The roles are **relative to this project**: the threshold is its own largest cyclic
+    group, so every system with a cycle has a core and the split says where the weight sits,
+    never that a project is bad. What it is for is the cost asymmetry -- Sturtevant &
+    MacCormack (JSS 120, 2016) measured a line in a central file costing over 15x as much
+    per year to maintain as one on the periphery.
+    """
+    visibility = payload.get("visibility") or {}
+    if not visibility:
+        return
+    counts = Counter(seen["role"] for seen in visibility.values())
+    console.print(f"\n[bold]Core / periphery[/bold] ({len(visibility)} components)")
+    for role, colour, meaning in _ROLES:
+        if not counts[role]:
+            continue
+        share = counts[role] / len(visibility)
+        members = sorted(name for name, seen in visibility.items() if seen["role"] == role)
+        console.print(
+            f"  [{colour}]{role:11}[/{colour}] {counts[role]:3} ({share:4.0%})"
+            f"  [dim]{meaning}[/dim]"
+        )
+        console.print(f"    [dim]{', '.join(members[:5])}[/dim]")
+    console.print(
+        "  [dim]relative to this project's own largest cycle: every system has a core[/dim]"
+    )
 
 
 def _arch_smells(payload: dict[str, Any], console: Console) -> None:

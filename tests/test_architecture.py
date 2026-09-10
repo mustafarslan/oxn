@@ -421,3 +421,70 @@ def test_a_misspelled_contract_kind_is_refused_rather_than_silently_inert(tmp_pa
     with pytest.raises(ConfigError) as raised:
         Config.load(tmp_path)
     assert "acylic" in str(raised.value) and "acyclic" in str(raised.value)
+
+
+# ---- core / periphery ----------------------------------------------------------------------
+
+
+def _ring(size: int, extras: dict[str, set[str]] | None = None) -> dict[str, set[str]]:
+    """A cycle of `size` components, plus whatever else is named."""
+    graph: dict[str, set[str]] = {
+        f"c{index}": {f"c{(index + 1) % size}"} for index in range(size)
+    }
+    for name, targets in (extras or {}).items():
+        graph.setdefault(name, set()).update(targets)
+        for target in targets:
+            graph.setdefault(target, set())
+    return graph
+
+
+def test_the_four_roles_come_out_where_a_reader_would_put_them() -> None:
+    """`shared` is reached by everything and reaches nothing; `control` is the reverse.
+
+    Measured on OXN's own tree, which is the case this was written against: `src/oxn/profiles`
+    is shared (fan-in 12, fan-out 1), `scripts` and `tests` are control (1 and 11), and the
+    nine components of its ring are the core.
+    """
+    graph = _ring(10, {"entry": {"c0"}, "util": set()})
+    graph["c0"].add("util")
+
+    found = analyse(graph).visibility
+
+    assert {name: seen.role for name, seen in found.items()}["util"] == "shared"
+    assert found["entry"].role == "control"
+    assert all(found[f"c{index}"].role == "core" for index in range(10))
+
+
+def test_a_cycle_ties_every_member_and_the_threshold_must_survive_that() -> None:
+    """The bug this method replaced, and the reason MacCormack uses the cyclic group.
+
+    Every member of a cycle reaches and is reached by every other, so all of them carry
+    identical visibility -- and a median lands exactly on that tie. On OXN's own tree the
+    nine ring members took fan-in 11 and fan-out 10 against medians of 11 and 10, and a
+    strict `>` filed **the entire core under `peripheral`**: the most misleading label
+    available, on the components that matter most.
+    """
+    found = analyse(_ring(11, {"entry": {"c0"}})).visibility
+    ring = [found[f"c{index}"] for index in range(11)]
+
+    assert len({(seen.fan_in, seen.fan_out) for seen in ring}) == 1, "a ring ties by definition"
+    assert {seen.role for seen in ring} == {"core"}
+
+
+def test_visibility_is_refused_on_a_tree_too_small_to_have_a_structure() -> None:
+    """A threshold over four components is a coin toss; the paper's systems had ~20,000 files."""
+    assert analyse({"a": {"b"}, "b": {"c"}, "c": set()}).visibility == {}
+
+
+def test_fan_in_and_fan_out_are_reflexive_and_agree_with_propagation_cost() -> None:
+    """Propagation cost is the density of the same matrix, so the two must not disagree.
+
+    If they were counted under different conventions -- one reflexive, one not -- the report
+    would carry two numbers about one structure that could never be reconciled by a reader.
+    """
+    report = analyse(_ring(10, {"entry": {"c0"}}))
+    total = len(report.components)
+    reachable = sum(seen.fan_out for seen in report.visibility.values())
+
+    assert report.propagation_cost == pytest.approx(reachable / (total * total))
+    assert all(seen.fan_out >= 1 for seen in report.visibility.values()), "reflexive"

@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from statistics import median
 from typing import TYPE_CHECKING
 
 from oxn.graph.algos import condensation, cycles, levels, topological_order, transitive_closure
 from oxn.thresholds import GOD_COMPONENT_MIN_LOC
 
 if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Iterator, Mapping, Sequence
 
     from oxn.graph.algos import Graph
 
@@ -99,6 +100,29 @@ class Smell:
     members: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class Visibility:
+    """One component's place in the dependency structure (MacCormack, Rusnak & Baldwin 2006).
+
+    ``fan_out`` is how many components this one can reach, directly or transitively;
+    ``fan_in`` how many can reach it. Both are *reflexive* -- a component sees itself -- which
+    is the convention propagation cost already uses here, so the two numbers stay comparable.
+
+    The `role` is the paper's four-way split, and it is the part with defect evidence behind
+    it: Sturtevant & MacCormack (*JSS* 120, 2016) measured two enterprise systems of ~20,000
+    files each and found **Core files were 26% of the components and 62% of defect-related
+    activity**, with a defect touching 30% of Core files against 5.8% of Peripheral ones, and
+    a line in a central file costing over 15 times as much per year to maintain.
+    """
+
+    fan_in: int
+    fan_out: int
+    #: ``core`` (reaches much and is reached by much), ``shared`` (reached by much, reaches
+    #: little -- a utility), ``control`` (reaches much, reached by little -- a composition
+    #: root), ``peripheral`` (neither).
+    role: str
+
+
 @dataclass
 class ArchitectureReport:
     """Everything Tier 2 says about a component graph."""
@@ -111,6 +135,9 @@ class ArchitectureReport:
     cycles: list[list[str]] = field(default_factory=list)
     smells: list[Smell] = field(default_factory=list)
     levels: dict[str, int] = field(default_factory=dict)
+    #: Empty below `_MIN_COMPONENTS_FOR_PERCENTILE`: the roles are defined against this
+    #: project's own medians, and a median over four components is not a structure.
+    visibility: dict[str, Visibility] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -118,6 +145,10 @@ class ArchitectureReport:
             "cycles": [{"size": len(cycle), "members": cycle} for cycle in self.cycles],
             "propagation_cost": round(self.propagation_cost, 4),
             "modularity": round(self.modularity, 4),
+            "visibility": {
+                name: {"fan_in": seen.fan_in, "fan_out": seen.fan_out, "role": seen.role}
+                for name, seen in sorted(self.visibility.items())
+            },
             "lakos": None
             if self.lakos is None
             else {
@@ -187,6 +218,9 @@ def analyse(
     # the density of the visibility matrix.
     total = len(components)
     report.propagation_cost = sum(reachable_counts.values()) / (total * total)
+    report.visibility = _visibility(
+        components, reachable_counts, _reaching(components, reach, membership, groups), groups
+    )
 
     if partition:
         from oxn.graph.algos import modularity
@@ -195,6 +229,67 @@ def analyse(
 
     report.smells = detect_smells(graph, report, sizes or {})
     return report
+
+
+def _reaching(
+    components: list[str],
+    reach: Mapping[int, int],
+    membership: Mapping[str, int],
+    groups: Sequence[Sequence[str]],
+) -> dict[str, int]:
+    """Visibility fan-in: how many components can reach each one, reflexively.
+
+    The transpose of what `reach` already holds, counted rather than recomputed: a second
+    transitive closure over the reversed graph would answer the same question twice.
+    """
+    counts = dict.fromkeys(components, 0)
+    for name in components:
+        for index in _bits(reach.get(membership[name], 0)):
+            for member in groups[index]:
+                counts[member] += 1
+    return counts
+
+
+def _visibility(
+    components: list[str],
+    fan_out: Mapping[str, int],
+    fan_in: Mapping[str, int],
+    groups: Sequence[Sequence[str]],
+) -> dict[str, Visibility]:
+    """The four-way core/periphery split (MacCormack, Rusnak & Baldwin 2006).
+
+    **The threshold is the largest cyclic group, which is the paper's own method and not a
+    convenience.** Every member of a cycle reaches and is reached by every other, so they all
+    carry identical visibility, and a median lands exactly on that tie: measured on OXN's own
+    tree, all nine members of its ring took `fan_in` 11 and `fan_out` 10 against medians of
+    11 and 10, and a strict `>` filed the entire core under **peripheral** -- the most
+    misleading label available. Comparing against the cyclic group instead makes the tie the
+    definition rather than an edge case.
+
+    With no cycle at all there is no core in the paper's terms, and the medians are the
+    fallback -- stated, because it is a different question answered by the same word.
+
+    Refused below `_MIN_COMPONENTS_FOR_PERCENTILE`, like the hub-like smell: a threshold over
+    four components is a coin toss, and the paper's systems had ~20,000 files.
+    """
+    if len(components) < _MIN_COMPONENTS_FOR_PERCENTILE:
+        return {}
+    largest = max(groups, key=len)
+    if len(largest) > 1:
+        least_in: float = fan_in[largest[0]]
+        least_out: float = fan_out[largest[0]]
+    else:
+        least_in = median(fan_in[name] for name in components)
+        least_out = median(fan_out[name] for name in components)
+    roles = {(True, True): "core", (True, False): "shared", (False, True): "control"}
+    return {
+        name: Visibility(
+            fan_in=fan_in[name],
+            fan_out=fan_out[name],
+            role=roles.get((fan_in[name] >= least_in, fan_out[name] >= least_out), "peripheral"),
+        )
+        for name in components
+    }
 
 
 def _bits(mask: int) -> list[int]:
