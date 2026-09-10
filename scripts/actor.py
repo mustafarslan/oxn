@@ -28,16 +28,31 @@ if TYPE_CHECKING:  # pragma: no cover
 
 # ---- the actor ----------------------------------------------------------------------------
 
-ACTOR_SYSTEM = """You are refactoring Python for readability, not for a metric.
-You reply with one complete Python function definition and nothing else: no prose, no
+#: The system prompt, per language. It said "Python" for every bed -- and the harness has
+#: six, so a Go repair was asked for "one complete Python function definition" with the Go
+#: source inside a ```python fence. The whole point of the bed set is that a result measured
+#: only on Python says nothing about the five languages whose metrics were fixed this week.
+ACTOR_SYSTEM = """You are refactoring {language} for readability, not for a metric.
+You reply with one complete {language} {unit} and nothing else: no prose, no
 markdown fences, no surrounding code."""
+
+#: What each language calls the thing being replaced, and the fence its source belongs in.
+#: `oxn.profiles` knows the language for a path; the words are this file's business.
+_UNIT = {
+    "python": "function definition",
+    "javascript": "function declaration",
+    "typescript": "function declaration",
+    "go": "function declaration",
+    "rust": "function item",
+    "java": "method declaration",
+}
 
 ACTOR_PROMPT = """This function exceeds a cognitive-complexity ceiling of {ceiling}.
 It currently scores {score}.
 {context}{guidance}
 Here is the whole file for context:
 
-```python
+```{language}
 {file_source}
 ```
 
@@ -120,6 +135,7 @@ def ask_actor(client: Any, ask: Ask) -> tuple[str, str, str]:
     reconstructing it afterwards would measure a second construction rather than the one
     that was sent.
     """
+    language = _language_of(ask.target.path)
     prompt = ACTOR_PROMPT.format(
         ceiling=ask.ceiling,
         score=int(ask.target.score),
@@ -127,10 +143,26 @@ def ask_actor(client: Any, ask: Ask) -> tuple[str, str, str]:
         guidance=_guidance_block(ask),
         file_source=ask.file_source,
         name=ask.target.leaf,
+        language=language,
         feedback=FEEDBACK.format(failures=ask.feedback) if ask.feedback else "",
     )
-    reply = client.generate(prompt, system=ACTOR_SYSTEM)
+    system = ACTOR_SYSTEM.format(language=language, unit=_UNIT.get(language, "function definition"))
+    reply = client.generate(prompt, system=system)
     return _strip_fences(reply, ask.target.leaf), reply, prompt
+
+
+def _language_of(path: str) -> str:
+    """The bed's language, from the target's own path.
+
+    Asked of `oxn.profiles`, which is the single answer to "what is this file" -- the same
+    table the walk reads, so a bed cannot be analysed as one language and prompted as
+    another. Falls back to Python only because a prompt with no language at all reads worse
+    than a wrong one, and no bed reaches it: every target came from a profiled file.
+    """
+    from oxn.profiles import profile_for_path
+
+    profile = profile_for_path(path)
+    return profile.name if profile is not None else "python"
 
 
 def _context_block(ask: Ask) -> str:

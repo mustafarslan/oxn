@@ -43,6 +43,7 @@ def _prompt(harness, arm) -> str:
         guidance=harness._guidance_block(ask),
         file_source="pass",
         name="walk",
+        language="python",
         feedback="",
     )
 
@@ -117,3 +118,36 @@ def test_budgeting_caps_the_breakdown_without_closing_the_channel(harness) -> No
     assert budgeted.context and budgeted.budget == harness.DEFAULT_BUDGET
     assert budgeted.trail([f"l{i}" for i in range(20)]) == [f"l{i}" for i in range(5)]
     assert harness.arm("hybrid").trail([f"l{i}" for i in range(20)]) == [f"l{i}" for i in range(20)]
+
+
+def test_the_prompt_speaks_the_bed_s_language() -> None:
+    """It said "Python" for every bed, and the harness has six.
+
+    A Go repair was asked for "one complete Python function definition", with the Go source
+    inside a ```python fence. The bed set exists so a result is not measured only on Python
+    -- `tests/test_beds.py` asserts one runnable bed per supported language -- and the prompt
+    was quietly undoing that for five of them.
+    """
+    import actor as actor_module
+    from actor import Ask, ask_actor
+    from targets import Target
+
+    seen: dict[str, str] = {}
+
+    class Recorder:
+        def generate(self, prompt: str, system: str = "", **_: object) -> str:
+            seen["prompt"], seen["system"] = prompt, system
+            return "func Route(a int) int { return a }"
+
+    ask = Ask(
+        target=Target(qualified_name="pkg.Route", path="pkg/x.go", score=20.0),
+        ceiling=12,
+        file_source="package pkg\n",
+    )
+    ask_actor(Recorder(), ask)
+
+    assert "refactoring go" in seen["system"].lower(), seen["system"]
+    assert "python" not in seen["system"].lower()
+    assert "```go" in seen["prompt"]
+    assert "```python" not in seen["prompt"]
+    assert actor_module._language_of("src/lib.rs") == "rust"

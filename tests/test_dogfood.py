@@ -492,6 +492,7 @@ def _prompt(harness, *, allow: bool) -> str:
             guidance=harness._guidance_block(ask),
             file_source="pass",
             name="f",
+            language="python",
             feedback="",
         )
     )
