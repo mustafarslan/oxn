@@ -82,6 +82,18 @@ def test_a_call_through_an_imported_name_resolves_at_l1(tmp_path) -> None:
     assert resolved[0]["resolution"] == "L1", "SCIP found the call; L1 found the callee"
     assert resolved[0]["confidence"] == 1.0
 
+    # The row is only half the promise. `build_call_graph` admits L2, or L1 at confidence
+    # 1.0, and nothing else -- so an edge that is written but declined would leave dead code
+    # exactly as wrong as before while looking fixed in the cache.
+    from oxn.graph.rows import call_edges
+    from oxn.metrics.callgraph import build_call_graph
+
+    with Indexer(root=tmp_path, cache_path=tmp_path / "graph.db", measure=False) as indexer:
+        graph = build_call_graph(call_edges(indexer.store))
+    assert any(resolved[0]["dst_id"] in targets for targets in graph.edges.values()), (
+        "the recovered edge must reach the call graph, not merely the cache"
+    )
+
 
 def test_a_local_holding_a_callable_is_not_an_import_and_stays_unresolved(tmp_path) -> None:
     """**The gate that keeps this from fabricating edges.**

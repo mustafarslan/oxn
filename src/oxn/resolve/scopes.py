@@ -109,6 +109,11 @@ class ScopeTree:
     #: must know a name was *re-bound* -- `scip.aliases`, which will not resolve a call
     #: through an import the file has since overwritten -- cannot get that from the scopes,
     #: so it is recorded here rather than each caller re-walking the tree to find out.
+    #:
+    #: **File-wide, not per scope.** A name assigned inside any function counts, so
+    #: `def use(): f = 1; return f()` refuses a resolution the module-level import would
+    #: have supported. That is the conservative direction, and the cost of the other one is
+    #: a confidently wrong edge.
     assigned: set[str] = field(default_factory=set)
 
     def scope_at(self, byte_offset: int) -> Scope:

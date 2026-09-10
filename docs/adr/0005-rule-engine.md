@@ -505,12 +505,13 @@ anywhere in the project" and reaches an unrelated `handler` in another file -- t
 `from m import f; f = wrap(f)`; `ScopeTree` now records assigned names, because `Scope.declare`
 keeps the first binding, so the import hides the assignment and a lookup cannot tell.
 
-| corpus | calls resolved before | after | recovered | ambiguous |
-|---|---|---|---|---|
-| oxn (self) | 30.2% | **41.9%** | 992 | 0 |
-| typescript-nest | 40.1% | **52.7%** | 788 | 468 |
-| javascript-eslint | 63.8% | 63.8% | 0 | 0 |
-| python-httpx | 51.3% | 51.3% | 0 | 0 |
+| corpus | calls resolved before | after | recovered | ambiguous | refused |
+|---|---|---|---|---|---|
+| oxn (self) | 30.2% | **41.9%** | 992 | 0 | 520 |
+| typescript-nest | 40.1% | **52.7%** | 788 | 468 | 177 |
+| javascript-eslint | 63.8% | 63.8% | 0 | 0 | 883 |
+| python-httpx | 51.3% | 51.3% | 0 | 0 | 348 |
+| go-kit | 31.2% | 31.2% | 0 | 0 | 225 |
 
 **The gap is a function of layout, not of language, and the two zeroes say so.** httpx is a
 flat package whose intra-package imports scip-python resolves to real symbols, so its 408
@@ -519,3 +520,12 @@ unresolvable, and not a gap at all. eslint is CommonJS: `const x = require("y")`
 *assignment*, so the import gate declines all 883, which is conservative and currently a miss.
 OXN itself is the worst case, a `src/` layout under an editable install where every first-party
 import names a module the indexer never indexed under that name.
+
+**Go is the measurement that justifies the import gate.** `scip-go` places package-qualified
+calls on real symbols, so go-kit has no alias gap at all -- and its 225 local-target calls are
+`f` (36), `option` (24), `mw` (15), `next` (13), `cancel` (11), `reqFunc` (10): local variables
+holding functions, which is what middleware-heavy Go looks like. Run with the gate removed, the
+resolver answers **2 of them with confidence 1.0 and 56 more ambiguously** -- 2 fabricated call
+edges between files that never mention each other, from a corpus where the correct recovery is
+zero. The gate is not a precaution against a hypothetical; it is what stops the one language
+here with no gap from being given a wrong one.
