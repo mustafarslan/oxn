@@ -181,9 +181,23 @@ _CEILINGS: tuple[Parameter, ...] = (
             "stopped depending on the grammar: TypeScript and Rust wrap it in an "
             "`else_clause`, and counting the wrapper *and* the `if` it holds rejected ripgrep "
             "at 0.96% against Python's 0.35% for the same shape. Cognitive complexity had the "
-            "rule right all along; this metric reused its node set and re-derived its rule."
+            "rule right all along; this metric reused its node set and re-derived its rule. "
+            "**The question `fit_when` asked has been answered, and the answer is no.** "
+            "Across the six corpora at default ceilings this rule flags 25 entities and "
+            "**every one of them is already flagged by another rule** -- all 25 by "
+            "`cognitive_complexity`, 18 also by `cyclomatic_complexity`. It is the only "
+            "gated rule with no catch of its own: the next lowest, `shredding`, has 1 of 3, "
+            "and `cyclomatic_complexity` -- the one the literature calls redundant -- keeps "
+            "98 of 351. As a *gate* it spends a constraint to repeat a finding; as a line in "
+            "the remediation it is the most actionable thing the cognitive trail says, which "
+            "is why it stays measured and reported."
         ),
-        fit_when="evidence it catches anything `cognitive_complexity` does not catch first",
+        fit_when=(
+            "answered rather than open: 0 unique catches of 25 over six corpora. What would "
+            "reopen it is a fix-rate -- whether an agent shown `max_nesting_depth 6` repairs "
+            "more often than one shown only `cognitive_complexity 21` -- which is a P11 "
+            "measurement and not a corpus one."
+        ),
     ),
     Parameter(
         name="MAX_FUNCTION_SLOC",
