@@ -211,6 +211,16 @@ the *declared* target. Expanding to concrete implementations needs a CHA-style c
 resolved symbol set** but remain a *static approximation of runtime coupling*, and call-graph-derived
 fan-in/fan-out is always `APPROX` for higher-order functions, reflection, DI containers and callbacks.
 
+**And the resolved symbol set is smaller than it looks, for a reason that is not about
+dispatch.** `scip-python` binds an imported name as a **document-local** symbol: `from
+oxn.check import _measure` produces `local 3`, the call site resolves to that, and a local has
+no cross-file meaning (`scip.join.scoped`), so the edge resolves to nothing. Measured on OXN's
+own tree on 2026-09-10: **2,303 of 9,497 call edges — 24% — are unresolved for this reason**,
+against 4,570 that genuinely leave the tree. A call through an imported name is the ordinary
+way Python code crosses a file boundary, so this is not a corner. The import occurrence at the
+same position carries the real symbol, which is the route to recovering them; ADR-0005's
+2026-09-10 amendment has the detail.
+
 ### 2.3 What becomes exact at each rung
 
 | Metric | L0 only | +L1 | +L2 (SCIP) |

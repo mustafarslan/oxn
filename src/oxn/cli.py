@@ -237,12 +237,6 @@ def _exists(path: str) -> bool:
     return os.path.exists(path)
 
 
-def _version() -> str:
-    from oxn import __version__
-
-    return __version__
-
-
 def main(argv: list[str] | None = None) -> NoReturn:
     """Entry point for the ``oxn`` script."""
     args = list(sys.argv[1:] if argv is None else argv)
