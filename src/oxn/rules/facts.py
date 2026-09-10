@@ -89,17 +89,30 @@ def _fed_classes(
     Only the owning class is added, never the sibling's other entities: an unrelated long
     function in that file is not something this edit should be asked to fix.
     """
-    from oxn.graph.model import EntityKind
     from oxn.metrics.coupling import classes_fed_by
 
-    # One read before the package one: a file declaring no method cannot be feeding a class
-    # anywhere. Measured on the largest package in the corpora -- ESLint's `lib/rules`, 293
-    # files -- the package read is **14 ms** against a 200 ms hook budget, and this guard
-    # does not avoid it there, because a rule module does declare methods. It avoids it for
-    # the files that have none, which is most of them.
-    if not any(entity.kind is EntityKind.METHOD for entity in store.entities_for(path)):
-        return
+    entities = _package_entities(store, settings, path)
+    for owner in classes_fed_by(list(entities.values()), path):
+        entity = entities[owner]
+        values = store.measurements_for(entity.file_path).get(owner, {})
+        _emit(facts, entity, entity.file_path, values)
+        _ceilings(facts, settings, entity.file_path, layer_of.get(entity.file_path))
 
+
+def _package_entities(store: GraphStore, settings: Config, path: str) -> dict[str, Entity]:
+    """Everything the edited file's directory declares, or nothing when it cannot matter.
+
+    Two cheap refusals before the expensive read. A file that declares no method is not
+    feeding a class anywhere, and a directory holding one file has no sibling to feed. What
+    is left costs one `entities_for` per sibling: measured on the largest package in the
+    corpora -- ESLint's `lib/rules`, 293 files -- **14 ms** against a 200 ms hook budget.
+    The method guard does not save that one, because a rule module does declare methods; it
+    saves the files that have none, which is most of them.
+    """
+    from oxn.graph.model import EntityKind
+
+    if not any(entity.kind is EntityKind.METHOD for entity in store.entities_for(path)):
+        return {}
     package = path.rpartition("/")[0]
     members = [
         known
@@ -107,17 +120,8 @@ def _fed_classes(
         if known.rpartition("/")[0] == package and not settings.is_advisory(known)
     ]
     if len(members) < 2:
-        return
-    entities = {
-        entity.id: entity for member in members for entity in store.entities_for(member)
-    }
-    for owner in classes_fed_by(list(entities.values()), path):
-        entity = entities.get(owner)
-        if entity is None:  # pragma: no cover - the package moved under us
-            continue
-        values = store.measurements_for(entity.file_path).get(owner, {})
-        _emit(facts, entity, entity.file_path, values)
-        _ceilings(facts, settings, entity.file_path, layer_of.get(entity.file_path))
+        return {}
+    return {entity.id: entity for member in members for entity in store.entities_for(member)}
 
 
 def _ceilings(facts: Facts, settings: Config, path: str, layer: str | None) -> None:
