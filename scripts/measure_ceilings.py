@@ -169,11 +169,13 @@ def _require_fresh_caches() -> None:
     indefinitely under a green suite.
 
     **Partial.** Schema alone is not enough either, because a cache is written by whoever
-    opened it. On 2026-09-10 these held 23 of httpx's 60 files, 901 of nest's 1,913 and 30 of
-    petclinic's 50, *at the current schema*: anything that indexes a subset of a corpus in
-    place -- the P11 harness picking targets is one -- leaves a cache that passes a version
-    check and answers for a third of the tree. Freezing that would have put a distribution
-    over 4,000 callables into `calibration.py` as one over 10,000.
+    opened it, and the writers do not all want the same files. On 2026-09-10 these held 23 of
+    httpx's 60, 901 of nest's 1,913 and 30 of petclinic's 50, *at the current schema*.
+    Tracked down rather than guessed at: the P11 harness picks its targets from the bed's
+    declared `sources` -- `httpx`, not the repository -- so it indexes a subtree **by
+    design**, into the same `.oxn/cache/graph.db` this script reads. Neither tool is wrong;
+    the assumption that a corpus cache is a whole-tree index is. Freezing one of those would
+    have put a distribution over 4,000 callables into `calibration.py` as one over 10,000.
 
     So the count is checked against the walk, and against the same walk the indexer uses:
     `Indexer.sources` exists precisely so a caller cannot measure one file set and report

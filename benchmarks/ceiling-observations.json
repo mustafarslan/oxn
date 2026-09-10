@@ -952,11 +952,11 @@
       "corpora": {
         "go-kit": {
           "all_callables": {
-            "ceiling_at_percentile": 99.79,
-            "exceedance": 0.2064,
+            "ceiling_at_percentile": 99.69,
+            "exceedance": 0.3096,
             "max": 7.0,
             "n": 1938,
-            "over_ceiling": 4,
+            "over_ceiling": 6,
             "quantiles": {
               "p50": 1.0,
               "p75": 2.0,
@@ -966,17 +966,17 @@
             }
           },
           "named": {
-            "ceiling_at_percentile": 99.72,
-            "exceedance": 0.2821,
+            "ceiling_at_percentile": 99.58,
+            "exceedance": 0.4231,
             "max": 7.0,
             "n": 1418,
-            "over_ceiling": 4,
+            "over_ceiling": 6,
             "quantiles": {
               "p50": 1.0,
               "p75": 1.0,
               "p90": 3.0,
               "p95": 3.0,
-              "p99": 4.0
+              "p99": 5.0
             }
           }
         },
