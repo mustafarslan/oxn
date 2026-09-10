@@ -483,31 +483,31 @@
         },
         "python-httpx": {
           "all_callables": {
-            "ceiling_at_percentile": 90.0,
-            "exceedance": 10.0,
-            "max": 1786.0,
+            "ceiling_at_percentile": 91.67,
+            "exceedance": 8.3333,
+            "max": 1434.0,
             "n": 60,
-            "over_ceiling": 6,
+            "over_ceiling": 5,
             "quantiles": {
-              "p50": 167.0,
-              "p75": 296.0,
-              "p90": 548.0,
-              "p95": 786.0,
-              "p99": 1786.0
+              "p50": 147.0,
+              "p75": 254.0,
+              "p90": 454.0,
+              "p95": 758.0,
+              "p99": 1434.0
             }
           },
           "named": {
-            "ceiling_at_percentile": 90.0,
-            "exceedance": 10.0,
-            "max": 1786.0,
+            "ceiling_at_percentile": 91.67,
+            "exceedance": 8.3333,
+            "max": 1434.0,
             "n": 60,
-            "over_ceiling": 6,
+            "over_ceiling": 5,
             "quantiles": {
-              "p50": 167.0,
-              "p75": 296.0,
-              "p90": 548.0,
-              "p95": 786.0,
-              "p99": 1786.0
+              "p50": 147.0,
+              "p75": 254.0,
+              "p90": 454.0,
+              "p95": 758.0,
+              "p99": 1434.0
             }
           }
         },
@@ -668,31 +668,31 @@
         },
         "python-httpx": {
           "all_callables": {
-            "ceiling_at_percentile": 99.21,
-            "exceedance": 0.793,
+            "ceiling_at_percentile": 99.3,
+            "exceedance": 0.7048,
             "max": 88.0,
             "n": 1135,
-            "over_ceiling": 9,
+            "over_ceiling": 8,
             "quantiles": {
-              "p50": 7.0,
-              "p75": 12.0,
-              "p90": 21.0,
-              "p95": 32.0,
-              "p99": 52.0
+              "p50": 6.0,
+              "p75": 11.0,
+              "p90": 20.0,
+              "p95": 29.0,
+              "p99": 48.0
             }
           },
           "named": {
-            "ceiling_at_percentile": 99.21,
-            "exceedance": 0.7937,
+            "ceiling_at_percentile": 99.29,
+            "exceedance": 0.7055,
             "max": 88.0,
             "n": 1134,
-            "over_ceiling": 9,
+            "over_ceiling": 8,
             "quantiles": {
-              "p50": 7.0,
-              "p75": 12.0,
-              "p90": 21.0,
-              "p95": 32.0,
-              "p99": 52.0
+              "p50": 6.0,
+              "p75": 11.0,
+              "p90": 20.0,
+              "p95": 29.0,
+              "p99": 48.0
             }
           }
         },
