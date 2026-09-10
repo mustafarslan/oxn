@@ -255,3 +255,68 @@ def test_rename_chains_resolve_to_the_current_name() -> None:
     histories = file_histories(parse_log(log).commits)
     assert set(histories) == {"c.py"}
     assert histories["c.py"].commits == 2
+
+
+# ---- and the wiring, which is what was missing ---------------------------------------------
+
+
+def test_ownership_and_co_change_reach_the_volume_report(repo: Path, tmp_path: Path) -> None:
+    """`change_coupling`, `ownership` and `bus_factor` were implemented and called by nothing.
+
+    Every function here was tested and correct, and `oxn volume` -- the surface that already
+    parses this exact commit stream for hotspots -- showed none of it. A metric a user cannot
+    see is a metric the project does not have, and this is the test that says so: it asserts
+    the *report*, not the analysis.
+
+    The pairing is the value. A co-change pair with no import between it is Modularity
+    Violation (Mo et al., TSE 47(5), 2021); the low-expertise contributor count is what Bird
+    et al. (FSE 2011) found correlating with pre-release failures at 0.86-0.93 on Vista and
+    Windows 7, above size, churn and every complexity metric Microsoft collected.
+    """
+    from oxn.graph.indexer import Indexer
+    from oxn.volume.scan import scan_volume
+
+    with Indexer(root=repo, cache_path=tmp_path / "graph.db") as indexer:
+        indexer.index()
+        report = scan_volume(indexer, [repo], repo=repo)
+
+    # `renamed.py`, not `helper.py`: the log parser follows the rename into one continuous
+    # history, which `test_rename_keeps_one_continuous_history` pins. Co-change inherits that
+    # for free, and asserting the pre-rename name here would have asserted a defect.
+    pairs = {(pair.first, pair.second) for pair in report.coupling}
+    assert ("core.py", "renamed.py") in pairs, f"the paired files must couple: {pairs}"
+    assert report.bus_factor >= 1
+
+    core = report.file_metrics["core.py"]
+    assert "minor_contributors" in core and "top_share" in core
+    assert 0.0 < core["top_share"] <= 1.0
+
+
+def test_the_oversized_commit_still_couples_nothing(repo: Path, tmp_path: Path) -> None:
+    """The filter that makes co-change mean anything, asserted through the surface.
+
+    One reformatting commit touching 40 files would otherwise couple all 780 pairs of them to
+    each other, and drown every real pair in the report.
+    """
+    from oxn.graph.indexer import Indexer
+    from oxn.volume.scan import scan_volume
+
+    with Indexer(root=repo, cache_path=tmp_path / "graph.db") as indexer:
+        indexer.index()
+        report = scan_volume(indexer, [repo], repo=repo)
+
+    assert not [pair for pair in report.coupling if pair.first.startswith("bulk")]
+
+
+def test_a_tree_with_no_history_reports_none_of_it_rather_than_zero(tmp_path: Path) -> None:
+    """Absent and zero are different claims, and only one of them is true here."""
+    from oxn.graph.indexer import Indexer
+    from oxn.volume.scan import scan_volume
+
+    (tmp_path / "m.py").write_text("def f():\n    return 1\n")
+    with Indexer(root=tmp_path, cache_path=tmp_path / "graph.db") as indexer:
+        indexer.index()
+        report = scan_volume(indexer, [tmp_path], repo=tmp_path)
+
+    assert report.coupling == [] and report.bus_factor == 0
+    assert "minor_contributors" not in report.file_metrics.get("m.py", {})

@@ -142,6 +142,31 @@ def _emit_volume(payload: dict[str, Any], output: Output) -> None:
                 f"  [bold]{spot['score']:.3f}[/bold]  {spot['path']:<52}"
                 f" [dim]{spot['commits']} commits, complexity {spot['complexity']:.0f}[/dim]"
             )
+    _volume_history(payload, console)
+
+
+def _volume_history(payload: dict[str, Any], console: Console) -> None:
+    """Co-change and ownership -- what the *history* says, next to what the code says.
+
+    Both were implemented and reached no surface. The pairing is the point: a co-change pair
+    with no import between them is Modularity Violation (Mo et al., TSE 47(5), 2021), and a
+    file with many low-expertise contributors is the signal Bird et al. (FSE 2011) found
+    correlating with pre-release failures at 0.86-0.93 on Vista and Windows 7 -- above size,
+    churn, and every complexity metric Microsoft collected.
+    """
+    coupling = payload.get("coupling") or []
+    if coupling:
+        console.print("\n[bold]Change coupling[/bold] [dim](files that move together)[/dim]")
+        for pair in coupling[:10]:
+            console.print(
+                f"  [bold]{pair['support']:3}[/bold] commits, {pair['confidence']:.0%} of them"
+                f"  [dim]{pair['first']} <-> {pair['second']}[/dim]"
+            )
+    if payload.get("bus_factor"):
+        console.print(
+            f"\n[bold]Bus factor[/bold] {payload['bus_factor']}"
+            "  [dim]authors owning more than half the files; counts files, not knowledge[/dim]"
+        )
 
 
 def _emit_arch(payload: dict[str, Any], output: Output) -> None:
