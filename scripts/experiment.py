@@ -104,7 +104,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=3, help="targets, shared by every arm")
     parser.add_argument("--retries", type=int, default=3)
     parser.add_argument("--repeat", type=int, default=1, help="samples per (arm, target)")
-    parser.add_argument("--backend", default="ollama")
+    from actors import backend_help
+
+    parser.add_argument("--backend", default="ollama", help=backend_help())
     parser.add_argument("--dry-run", action="store_true", help="print the grid and stop")
     args = parser.parse_args(argv)
 

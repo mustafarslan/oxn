@@ -75,6 +75,18 @@ def backend_names() -> tuple[str, ...]:
     return tuple(sorted(_REGISTRY))
 
 
+def backend_help() -> str:
+    """Each backend and what choosing it means, for an argument parser.
+
+    `Backend.describe` was the one field in this harness that nothing read -- the same shape
+    as `Bed.prepare`, and found by the same sweep for it. The descriptions were written for a
+    help text and never shown, so a reader learned that `ollama` and `dry-run` exist and
+    nothing about the difference. Here rather than in the caller so the registry stays
+    private: `backend_names` is next to it for the same reason.
+    """
+    return "; ".join(f"{name}: {backend.describe}" for name, backend in sorted(_REGISTRY.items()))
+
+
 # ---- the backends -------------------------------------------------------------------------
 
 
