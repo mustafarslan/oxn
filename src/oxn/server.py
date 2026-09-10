@@ -355,8 +355,10 @@ def _staleness() -> str:
     return (
         "\n\nNOTE: this `oxn serve` process imported OXN before the code on disk was last"
         " changed, so it may be answering from an older version -- including about rules"
-        " `oxn.yaml` names and this build does not have. Restart the MCP server before"
-        " trusting this failure; `oxn check` from the shell always runs the current code."
+        " `oxn.yaml` names and this build does not have. `oxn check` from the shell always"
+        " runs the current code, and is the way to get an answer now. Fixing the server"
+        " means starting a new client session: killing this process does not bring a fresh"
+        " one back, it removes the tools for the rest of the session."
     )
 
 

@@ -356,5 +356,6 @@ def test_a_failure_from_a_server_older_than_the_code_says_so(monkeypatch) -> Non
     current = server._ran(tool, server.ContextRequest(task="x"))["content"][0]["text"]
 
     assert "is not a gated rule" in current
-    assert "Restart the MCP server" not in current, "a current server must not blame itself"
-    assert "Restart the MCP server" in stale
+    assert "new client session" not in current, "a current server must not blame itself"
+    assert "new client session" in stale
+    assert "oxn check" in stale, "the note must name a way to get an answer now"

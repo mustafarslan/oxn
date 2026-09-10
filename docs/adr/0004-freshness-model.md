@@ -184,6 +184,14 @@ moved since, the failure carries a line saying so and naming the remedy. Restart
 client's business — a stdio server cannot restart itself, and re-importing under a live
 session would be worse than the disease.
 
+**And "restart the server" is a coarser instruction than it sounds, tested rather than
+assumed.** The stale process was killed on 2026-09-10 to see what would happen: Claude Code
+did *not* launch a replacement. The four tools simply left the session, and getting them
+back means starting a new one. So the honest remedy is `oxn check` from the shell for an
+answer now, and a new session for a current server — which is what the note says, because
+telling an agent to "restart the MCP server" invites it to kill the process and lose the
+tools it was trying to fix.
+
 **Why only on failure.** A stale server that answers is answering about a version of OXN
 that existed, which is the ordinary cost of a warm process and is what `oxn check` from the
 shell is for. A stale server that *fails* is the case where the agent has no way to tell
