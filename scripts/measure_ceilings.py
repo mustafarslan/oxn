@@ -55,6 +55,7 @@ import bisect
 import json
 import sqlite3
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -67,12 +68,42 @@ CORPORA = ROOT / "benchmarks" / "corpora"
 #: this measurement asks for is a **second** Rust and a second Python repository, to tell
 #: "Rust is written this way" apart from "ripgrep is written this way". Keying by language
 #: would have made that the schema change it should not be.
-BEDS: tuple[tuple[str, str], ...] = (
-    ("python-httpx", "python"),
-    ("go-kit", "go"),
-    ("rust-ripgrep", "rust"),
-    ("java-spring-petclinic", "java"),
-    ("typescript-nest", "typescript"),
+#: Corpus -> the language its row is *about*. Not a label: every value below is filtered to
+#: files of that language, because no real repository holds only one. nest carries 10
+#: JavaScript files and eslint 36 TypeScript ones, so without the filter the TypeScript row
+#: measured a little JavaScript and the JavaScript row measured rather more TypeScript --
+#: the two languages that share a grammar family contaminating each other's numbers, in a
+#: table whose whole purpose is to compare languages.
+#: Paths inside a corpus that are not that project's code. OXN has had `exclude` in
+#: `oxn.yaml` since 2026-08-30 and `oxn init` ships the globs that matter, and nobody had
+#: ever pointed it at a corpus -- so the JavaScript row was about to publish 10.96%
+#: cognitive exceedance with **1.1 MB of vendored JSHint** in the population: `tests/bench/
+#: large.js` is JSHINT 2.4.3, `tests/performance/jshint.js` is JSHINT 2.1.8, and
+#: `docs/src/assets/js/css-vars-ponyfill@2.js` is a minified third-party library. 72 of the
+#: over-ceiling functions came from those three files. The other five corpora need nothing:
+#: every one of their worst functions is the project's own source, checked rather than
+#: assumed.
+@dataclass(frozen=True, slots=True)
+class Bed:
+    """One threshold corpus: what to read, which language's row it is, and what to leave out.
+
+    The three travel together everywhere -- a corpus that is not filtered to its own language
+    or not stripped of vendored code is a different measurement, not a looser one -- so they
+    are one value rather than three arguments passed in step.
+    """
+
+    corpus: str
+    language: str
+    excluded: tuple[str, ...] = ()
+
+
+BEDS: tuple[Bed, ...] = (
+    Bed("python-httpx", "python"),
+    Bed("go-kit", "go"),
+    Bed("rust-ripgrep", "rust"),
+    Bed("java-spring-petclinic", "java"),
+    Bed("typescript-nest", "typescript"),
+    Bed("javascript-eslint", "javascript", ("docs/", "tests/bench/", "tests/performance/")),
 )
 
 #: Mirrors `config.GATED_METRICS`: rule name -> (metric key, the kinds it is gated on).
@@ -98,22 +129,41 @@ _QUANTILES = (50, 75, 90, 95, 99)
 MAX_CYCLOMATIC = 10
 
 
-def _values(db: Path, metric_key: str, kinds: tuple[str, ...], *, named: bool) -> list[float]:
+def _values(
+    db: Path, metric_key: str, kinds: tuple[str, ...], bed: Bed, *, named: bool
+) -> list[float]:
     """Every measured value for one metric, over the entity kinds that metric gates.
 
     ``named`` drops the anonymous callables. `entity.name is None` is the builder's own
     marker for them -- it is what makes it synthesise `<arrow_function@12>` -- so this asks
     the question in the same terms the graph stores rather than matching that shape back out.
+
+    ``language`` keeps a corpus's row about the language it is named for. Filtered by asking
+    `oxn.profiles` what each file is -- the same table the walk reads -- rather than by
+    extension here, so the measurement and the analysis cannot disagree about what a `.mts`
+    file is.
     """
     placeholders = ",".join("?" * len(kinds))
     clause = " AND e.name IS NOT NULL" if named else ""
     with sqlite3.connect(db) as conn:
         rows = conn.execute(
-            "SELECT m.value FROM metrics m JOIN entities e ON e.id = m.entity_id"
+            "SELECT m.value, e.file_path FROM metrics m JOIN entities e ON e.id = m.entity_id"
             f" WHERE m.metric_key = ? AND e.kind IN ({placeholders}){clause}",
             (metric_key, *kinds),
         ).fetchall()
-    return sorted(value for (value,) in rows)
+    return sorted(
+        value
+        for value, path in rows
+        if _language_of(path) == bed.language and not path.startswith(bed.excluded)
+    )
+
+
+def _language_of(path: str) -> str:
+    """What OXN calls this file, or `""` for one it does not analyse."""
+    from oxn.profiles import profile_for_path
+
+    profile = profile_for_path(path)
+    return profile.name if profile is not None else ""
 
 
 def _distribution(values: list[float], ceiling: float) -> dict[str, object]:
@@ -145,10 +195,14 @@ def measure(ceilings: dict[str, float]) -> dict[str, object]:
     observed: dict[str, object] = {}
     for rule, metric_key, kinds in GATED:
         per_corpus = {
-            corpus: _populations(
-                CORPORA / corpus / ".oxn/cache/graph.db", metric_key, kinds, ceilings[rule]
+            bed.corpus: _populations(
+                CORPORA / bed.corpus / ".oxn/cache/graph.db",
+                metric_key,
+                kinds,
+                ceilings[rule],
+                bed,
             )
-            for corpus, _ in BEDS
+            for bed in BEDS
         }
         observed[rule] = {
             "ceiling": ceilings[rule],
@@ -185,7 +239,8 @@ def _require_fresh_caches() -> None:
     from oxn.graph.store import SCHEMA_VERSION
 
     stale: list[str] = []
-    for name, _ in BEDS:
+    for bed in BEDS:
+        name = bed.corpus
         db = CORPORA / name / ".oxn/cache/graph.db"
         if not db.exists():
             stale.append(f"{name}: no cache")
@@ -230,7 +285,7 @@ def _schema_version(db: Path) -> str:
 
 
 def _populations(
-    db: Path, metric_key: str, kinds: tuple[str, ...], ceiling: float
+    db: Path, metric_key: str, kinds: tuple[str, ...], ceiling: float, bed: Bed
 ) -> dict[str, object]:
     """One corpus, one metric, both populations -- and empty when it measures neither.
 
@@ -238,8 +293,8 @@ def _populations(
     identical there; that is the honest answer rather than a special case.
     """
     measured = {
-        "all_callables": _values(db, metric_key, kinds, named=False),
-        "named": _values(db, metric_key, kinds, named=True),
+        "all_callables": _values(db, metric_key, kinds, bed, named=False),
+        "named": _values(db, metric_key, kinds, bed, named=True),
     }
     return {name: _distribution(values, ceiling) for name, values in measured.items() if values}
 
@@ -267,8 +322,8 @@ def audit_class_ceilings(ceilings: dict[str, float]) -> dict[str, object]:
         "in_test_files": 0,
         "interfaces": 0,
     }
-    for corpus, _ in BEDS:
-        _audit_corpus(CORPORA / corpus / ".oxn/cache/graph.db", nom_limit, wmc_limit, tally)
+    for bed in BEDS:
+        _audit_corpus(CORPORA / bed.corpus / ".oxn/cache/graph.db", nom_limit, wmc_limit, tally)
     return tally
 
 
@@ -327,7 +382,7 @@ def _payload() -> dict[str, object]:
             "have median 0, so a p95 ceiling would be 2 in TypeScript and 9 in Go. Read "
             "`named` to compare languages and `all_callables` to see what the gate rejects."
         ),
-        "corpora": dict(BEDS),
+        "corpora": {bed.corpus: bed.language for bed in BEDS},
         "observed": measure(ceilings),
     }
 

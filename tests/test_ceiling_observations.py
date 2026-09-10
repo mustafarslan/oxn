@@ -184,13 +184,22 @@ def test_the_known_false_positive_shape_is_small_and_recorded(audit: dict[str, i
 
 
 def _measure_ceilings():
-    """`scripts/` is not a package, so the module is loaded by path."""
+    """`scripts/` is not a package, so the module is loaded by path.
+
+    Registered in `sys.modules` **before** it is executed, which is what the import system
+    does and this loader did not: a `@dataclass(slots=True)` rebuilds its class and looks
+    itself up by `__module__` to do it, so declaring one in a script loaded this way failed
+    with a bare `AttributeError` from inside `dataclasses`. The same shape breaks pickling
+    and `typing.get_type_hints`, so the fix belongs in the loader rather than in the script.
+    """
     import importlib.util
+    import sys
 
     path = Path(__file__).resolve().parent.parent / "scripts" / "measure_ceilings.py"
     spec = importlib.util.spec_from_file_location("measure_ceilings", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 

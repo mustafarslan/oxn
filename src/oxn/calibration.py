@@ -131,11 +131,11 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_COGNITIVE_COMPLEXITY",
         value=float(thresholds.MAX_COGNITIVE_COMPLEXITY),
         evidence=Evidence.JUDGEMENT,
-        observations=10369,
+        observations=14291,
         provenance=(
             "12, between idea.md's proposed 8 and SonarSource's default 15. Neither endpoint "
             "is measured either: 15 is a product default, not a finding. Measured cost: it "
-            "rejects 0.53% (java) to 3.03% (go) of named callables across the five corpora."
+            "rejects 0.53% (java) to 10.57% (javascript) of named callables across the six corpora."
         ),
         fit_when=(
             "not an unweighted percentile -- p95 of these distributions is 2 in TypeScript and 9 "
@@ -149,10 +149,10 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_CYCLOMATIC_COMPLEXITY",
         value=float(thresholds.MAX_CYCLOMATIC_COMPLEXITY),
         evidence=Evidence.LITERATURE,
-        observations=10369,
+        observations=14291,
         provenance=(
             "McCabe (1976); NIST SP 500-235 discusses 10 and 15 as the usual band. Measured "
-            "cost: rejects 0.48% (typescript) to 2.03% (python) of named callables."
+            "cost: rejects 0.48% (typescript) to 5.11% (javascript) of named callables."
         ),
         fit_when="a published threshold with a corpus behind it, rather than a band",
     ),
@@ -160,7 +160,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_PARAMETERS",
         value=float(thresholds.MAX_PARAMETERS),
         evidence=Evidence.LITERATURE,
-        observations=10369,
+        observations=14291,
         provenance=(
             "Fowler, Refactoring (Long Parameter List); the 4-5 band from Clean Code. "
             "Measured cost: rejects 0.00% (java) to 3.62% (python) of named callables -- the "
@@ -172,10 +172,10 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_NESTING_DEPTH",
         value=float(thresholds.MAX_NESTING_DEPTH),
         evidence=Evidence.JUDGEMENT,
-        observations=10369,
+        observations=14291,
         provenance=(
             "conventional; nesting is what cognitive complexity already charges for. Measured "
-            "cost: rejects 0.00% (go, java) to 0.18% (httpx) of named callables -- the least "
+            "cost: rejects 0.00% (go, java) to 0.46% (javascript) of named callables -- the least "
             "load-bearing ceiling here by an order of magnitude, which is consistent with it "
             "being double-charged. It was ten times that until the depth of an `else if` "
             "stopped depending on the grammar: TypeScript and Rust wrap it in an "
@@ -189,10 +189,10 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_FUNCTION_SLOC",
         value=float(thresholds.MAX_FUNCTION_SLOC),
         evidence=Evidence.JUDGEMENT,
-        observations=10369,
+        observations=14291,
         provenance=(
-            "conventional rather than derived. Measured cost: rejects 0.53% (java) to 2.47% "
-            "(go) of named callables."
+            "conventional rather than derived. Measured cost: rejects 0.53% (java) to 8.16% "
+            "(javascript) of named callables."
         ),
         fit_when="the same labelled set as the cognitive ceiling",
     ),
@@ -200,12 +200,13 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_FILE_SLOC",
         value=float(thresholds.MAX_FILE_SLOC),
         evidence=Evidence.JUDGEMENT,
-        observations=2389,
+        observations=3796,
         provenance=(
             "conventional rather than derived, and the one ceiling the measurement argues "
-            "with. Measured cost across 2,389 files: 0.00% (java), 0.39% (go), 1.57% "
-            "(typescript), 10.00% (python), **20.91% (rust)** -- a 50x spread where every "
-            "other ceiling holds inside 7x. The Rust files above it are hand-written core, "
+            "with. Measured cost across 3,796 files: 0.00% (java), 0.39% (go), 1.58% "
+            "(typescript), 10.00% (python), 14.96% (javascript), **20.91% (rust)** -- a 50x "
+            "spread where every other ceiling holds inside 20x. The Rust files above it are "
+            "hand-written core, "
             "not generated: ripgrep's flag table (6,916), its printer (3,220), its directory "
             "walker (1,899). Held at 500 anyway, because one repository per language cannot "
             "distinguish 'Rust is written this way' from 'ripgrep is written this way', and "
@@ -220,7 +221,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_METHODS_PER_CLASS",
         value=float(thresholds.MAX_METHODS_PER_CLASS),
         evidence=Evidence.JUDGEMENT,
-        observations=3415,
+        observations=3501,
         provenance=(
             "12, a round number inside a window a control defines rather than a percentile. "
             "The two shred shapes `shredding` cannot see -- public helper names, and helpers "
@@ -284,7 +285,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_WEIGHTED_METHODS_PER_CLASS",
         value=float(thresholds.MAX_WEIGHTED_METHODS_PER_CLASS),
         evidence=Evidence.JUDGEMENT,
-        observations=3415,
+        observations=3501,
         provenance=(
             "25, positioned like its sibling: the escapes score WMC 27 and the legitimate "
             "decomposition 17, so 18..26 separates them. Weighted by *cyclomatic* complexity "

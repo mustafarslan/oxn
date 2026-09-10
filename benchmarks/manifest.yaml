@@ -73,7 +73,13 @@ corpora:
       required path resolves to a file in the tree. Layered the way this list asks for:
       `lib/linter`, `lib/rules`, `lib/source-code`, `lib/config`, `lib/cli-engine`. Read the
       `named` distribution knowing that `lib/rules` is several hundred files of one shape,
-      which is a fact about ESLint rather than about JavaScript.
+      which is a fact about ESLint rather than about JavaScript: one `create()` per rule,
+      and `no-unused-vars.js`'s scores **579**. That architecture is most of why JavaScript's
+      cognitive exceedance is 10.57% against 0.53%-3.03% everywhere else.
+      `scripts/measure_ceilings.py` excludes `docs/`, `tests/bench/` and
+      `tests/performance/`: those hold 1.1 MB of vendored JSHint and a minified ponyfill,
+      which is somebody else's code. Excluding them moved the figure only 10.96% -> 10.57%,
+      so the number is ESLint's own and the exclusion is about honesty rather than rescue.
 
   - name: go-kit
     use: threshold

@@ -6,6 +6,7 @@
   "adr-tessellation": "65b3667d414760763fe342e720a9486d2c0beb82",
   "go-kit": "78fbbceece7bbcf073bee814a7772f4397ea756c",
   "java-spring-petclinic": "818c4136ea971c21674525f9053de0d9c7ad8cfe",
+  "javascript-eslint": "ac74e37322ebf122ada676f153dc55c81f3caab0",
   "python-airflow": "144a87dfe94747f322e4ddcab476fb40dd1a24d4",
   "python-httpx": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
   "realworld-conduit": "ebbcdeb8d55b42a3a613c787560498b8ef10003f",
