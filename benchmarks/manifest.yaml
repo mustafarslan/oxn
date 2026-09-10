@@ -60,6 +60,21 @@ corpora:
     ref: master
     why: Explicitly layered TS with DI; a good stress test for import resolution and DI-driven dead-code false positives.
 
+  - name: javascript-eslint
+    use: threshold
+    language: javascript
+    url: https://github.com/eslint/eslint
+    ref: main
+    why: >
+      The one launch language with a profile and no measurement. Pure JavaScript with no
+      TypeScript build, so it exercises the `javascript` profile rather than borrowing
+      TypeScript's numbers, and it is CommonJS throughout -- `require` is the only import a
+      large part of this ecosystem writes, and until 2026-09-10 nothing tested that a
+      required path resolves to a file in the tree. Layered the way this list asks for:
+      `lib/linter`, `lib/rules`, `lib/source-code`, `lib/config`, `lib/cli-engine`. Read the
+      `named` distribution knowing that `lib/rules` is several hundred files of one shape,
+      which is a fact about ESLint rather than about JavaScript.
+
   - name: go-kit
     use: threshold
     language: go

@@ -82,6 +82,14 @@ class Bed:
 
 #: This repository, which is the bed every result so far was measured on. Its verification is
 #: the gauntlet's -- tests, lint, types -- and it is the only bed that needs no fetch.
+#:
+#: **It has no targets when the gate passes, which is its normal state.** A target is a
+#: callable over the ceiling, and `oxn check --deep` here reports 0 violations, so
+#: `--bed self` answers "nothing over 12 in self" and stops. Every earlier `self` result was
+#: therefore measured on a tree that happened to be dirty -- worth knowing before comparing
+#: one to another. `--ceiling 8` is the honest way to get real OXN functions as targets: the
+#: code is unchanged and the bar moves, rather than a violation being introduced to have
+#: something to repair.
 SELF = Bed(
     name="self",
     corpus="",

@@ -94,7 +94,13 @@ INDEXERS: dict[str, Indexer] = {
         "javascript",
         "scip-typescript",
         "npm install -g @sourcegraph/scip-typescript",
-        ("index", "--output", "{output}", "--cwd", "{root}"),
+        # `--infer-tsconfig`, and without it this entry could never have indexed anything.
+        # It was a copy of the TypeScript row, which is right about the binary and wrong
+        # about the flag: a JavaScript project has no `tsconfig.json`, and scip-typescript
+        # then exits with "no files got indexed" rather than writing an empty index. So
+        # JavaScript was wired, listed by `oxn doctor`, and unusable. Measured on a
+        # two-file CommonJS package: 0 bytes without the flag, a 2,158-byte index with it.
+        ("index", "--infer-tsconfig", "--output", "{output}", "--cwd", "{root}"),
     ),
     "go": Indexer(
         "go",

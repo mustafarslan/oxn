@@ -91,6 +91,13 @@ def test_the_go_install_hint_names_the_module_path_that_resolves() -> None:
             "scip-python index --project-name p --project-version 1 --output /o.scip /tree",
         ),
         ("typescript", "scip-typescript index --output /o.scip --cwd /tree"),
+        # The same binary and *not* the same argv: a JavaScript project has no
+        # `tsconfig.json`, and without `--infer-tsconfig` scip-typescript indexes nothing at
+        # all. This row was absent, which is how a copied entry stayed unusable.
+        (
+            "javascript",
+            "scip-typescript index --infer-tsconfig --output /o.scip --cwd /tree",
+        ),
         # No `--cwd` flag exists; `--module-root` defaults to the working directory.
         ("go", "scip-go index --output /o.scip"),
         # Not an `index` subcommand: SCIP emission is a mode of the language server, and the
