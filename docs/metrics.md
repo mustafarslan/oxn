@@ -212,14 +212,16 @@ resolved symbol set** but remain a *static approximation of runtime coupling*, a
 fan-in/fan-out is always `APPROX` for higher-order functions, reflection, DI containers and callbacks.
 
 **And the resolved symbol set is smaller than it looks, for a reason that is not about
-dispatch.** `scip-python` binds an imported name as a **document-local** symbol: `from
-oxn.check import _measure` produces `local 3`, the call site resolves to that, and a local has
-no cross-file meaning (`scip.join.scoped`), so the edge resolves to nothing. Measured on OXN's
-own tree on 2026-09-10: **2,303 of 9,497 call edges — 24% — are unresolved for this reason**,
-against 4,570 that genuinely leave the tree. A call through an imported name is the ordinary
-way Python code crosses a file boundary, so this is not a corner. The import occurrence at the
-same position carries the real symbol, which is the route to recovering them; ADR-0005's
-2026-09-10 amendment has the detail.
+dispatch.** An indexer that cannot place a module binds the names imported from it as
+**document-local** symbols: `from oxn.check import _measure` produces `local 3`, the call site
+resolves to that, and a local has no cross-file meaning (`scip.join.scoped`), so the edge
+resolves to nothing. The index carries no way back — the occurrence on the import line is a
+plain read with no relationships, and the module symbol beside it names a prefix nothing in
+the index defines. `scip.aliases` recovers these from OXN's own L1 resolver and records the
+rung change on the row: **calls resolved rose 30.2% → 41.9% on OXN and 40.1% → 52.7% on
+`typescript-nest`**, and did not move on `python-httpx` or `javascript-eslint`, whose layouts
+do not produce the shape. ADR-0005's 2026-09-10 amendment has the table and the two gates that
+keep it from answering a local variable.
 
 ### 2.3 What becomes exact at each rung
 

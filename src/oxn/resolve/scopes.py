@@ -102,6 +102,14 @@ class ScopeTree:
     class_members: dict[str, dict[str, Binding]] = field(default_factory=dict)
     #: Local alias -> the name it was imported as, e.g. ``np`` -> ``numpy``.
     import_aliases: dict[str, str] = field(default_factory=dict)
+    #: Every name this file assigns to, anywhere.
+    #:
+    #: `Scope.declare` keeps the *first* binding for a name, so `from m import f` on line 1
+    #: hides `f = wrap(f)` on line 3 and a lookup answers "import" for both. Any rule that
+    #: must know a name was *re-bound* -- `scip.aliases`, which will not resolve a call
+    #: through an import the file has since overwritten -- cannot get that from the scopes,
+    #: so it is recorded here rather than each caller re-walking the tree to find out.
+    assigned: set[str] = field(default_factory=set)
 
     def scope_at(self, byte_offset: int) -> Scope:
         """Innermost scope containing a byte offset."""
@@ -355,18 +363,19 @@ def _bind_from(
     """
     kind = node.type
     if kind in spec.assignment_kinds:
-        _bind_assignment(node, scope, spec)
+        _bind_assignment(node, scope, tree, spec)
     elif kind in spec.alias_kinds:
         _bind_alias(node, scope)
     elif kind in profile.metrics.imports.statement_kinds:
         _bind_import(node, scope, tree, profile)
 
 
-def _bind_assignment(node: Node, scope: Scope, spec: ScopeSpec) -> None:
+def _bind_assignment(node: Node, scope: Scope, tree: ScopeTree, spec: ScopeSpec) -> None:
     """Every identifier an assignment or loop binds, destructuring included."""
     for name_node in _binding_targets(node, spec):
         text = _text(name_node)
         if text:
+            tree.assigned.add(text)
             scope.declare(
                 Binding(
                     text,

@@ -48,12 +48,15 @@ def run_calls(paths: list[str], output: Output = TO_JSON, *, limit: int = 20) ->
     that has never ingested a SCIP index -- which is every tree by default. `_dead_code`
     refuses a second way, for a language whose privacy no name can decide.
 
-    **What dead code still over-reports, measured rather than guessed.** A call through an
-    *imported* name resolves to a SCIP document-local symbol, and a local has no cross-file
-    meaning, so the edge resolves to nothing: **2,303 of OXN's 9,497 call edges, 24%**, against
-    4,570 that genuinely leave the tree. Anything reached only from another file's import is
-    therefore still reported. On OXN's own `src/` on 2026-09-10 that is 3 of 4 candidates --
-    the fourth, `cli._version`, is real. Read a candidate as a question, not a verdict.
+    **Still a question rather than a verdict, and the reason has narrowed.** Reflection,
+    dependency injection and framework entry points reach code no edge does, which is why this
+    never blocks. The two *mechanical* gaps are closed: a callable used as a value is reached
+    through `REFERENCES`, and a call through an imported name is resolved by `scip.aliases`.
+    On OXN's own `src/` on 2026-09-10 the report is **0** -- from 138 false positives out of
+    138 on `python-httpx` when this surface shipped, by way of 69, then 4, then the one true
+    positive deleted. A language whose imports bind by assignment rather than by an import
+    statement -- CommonJS `require` -- is the gap that remains, and `oxn index` reports it as
+    `not_an_import`.
 
     Two false-positive sources have been removed and the numbers are worth keeping. Members
     the language dispatches without naming -- a constructor, `__eq__`, `__iter__` -- were

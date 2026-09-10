@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from oxn.graph.rows import drop_unresolved_references
+from oxn.scip.aliases import AliasReport, resolve_import_aliases
 from oxn.scip.index import load_index
 from oxn.scip.join import join_document
 
@@ -39,8 +40,11 @@ class IngestReport:
     #: tree that is 1,464 corpus files, and a list of them is not a report.
     excluded: int = 0
     #: `REFERENCES` edges naming a symbol outside the tree, discarded after resolution.
-    #: See `GraphStore.drop_unresolved_references` for why these and not unresolved calls.
+    #: See `graph.rows.drop_unresolved_references` for why these and not unresolved calls.
     dropped_references: int = 0
+    #: Calls made through an imported name, which SCIP leaves as a document-local symbol.
+    #: See `scip.aliases`.
+    aliases: AliasReport = field(default_factory=lambda: AliasReport())
 
     @property
     def call_coverage(self) -> float:
@@ -72,6 +76,7 @@ class IngestReport:
             "skipped": self.skipped[:20],
             "excluded": self.excluded,
             "dropped_references": self.dropped_references,
+            "import_aliases": self.aliases.as_dict(),
         }
 
 
@@ -139,6 +144,10 @@ def ingest_index(indexer: Indexer, index_path: Path | str) -> IngestReport:
         report.joined_definition_sites += result.joined_definition_sites
 
     report.resolved_edges = indexer.store.resolve_edge_targets()
+    # After SCIP's own resolution, never instead of it: a target SCIP can name is compiler
+    # evidence, and only what is left over is worth asking a name resolver about.
+    report.aliases = resolve_import_aliases(indexer)
+    report.resolved_edges += report.aliases.resolved
     report.dropped_references = drop_unresolved_references(indexer.store)
     report.seconds = time.perf_counter() - started
     return report

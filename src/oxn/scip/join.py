@@ -235,9 +235,27 @@ def _map_calls(join: _Join) -> None:
                 dst_ref=scoped(occurrence.symbol, result.path),
                 provenance=Provenance.SCIP,
                 resolution=Resolution.L2,
-                attrs={"line": node.start_point[0] + 1},
+                attrs=_call_attrs(node, callee, occurrence),
             )
         )
+
+
+def _call_attrs(node: Node, callee: Node, occurrence: ScipOccurrence) -> dict[str, object]:
+    """What the row needs to carry, plus what a document-local target needs to be recovered.
+
+    A `local N` target resolves to nothing outside its own file, and for a call through an
+    imported name that is the ordinary case rather than a corner. `scip.aliases` can recover
+    those, but only if it knows *which name* was called and *where*: the symbol itself carries
+    neither -- a local has no descriptor, which is the whole point of `is_document_local`.
+
+    Carried only for the local case. Every other call target names itself, and 8,671 rows
+    holding a name they do not need is a cache that got wider for nothing.
+    """
+    attrs: dict[str, object] = {"line": node.start_point[0] + 1}
+    if is_document_local(occurrence.symbol):
+        attrs["name"] = callee.text.decode(errors="replace") if callee.text else ""
+        attrs["at"] = callee.start_byte
+    return attrs
 
 
 def _map_references(join: _Join, document: ScipDocument) -> None:

@@ -202,7 +202,7 @@ def test_a_baselined_class_may_stay_but_may_not_grow(project: Path) -> None:
 # ---- the package is only a package if all of it is present -------------------------------
 
 _SPLIT_DECLARATION = "package split\n\ntype Widget struct {\n\tname string\n}\n\n" + (
-    'func (w *Widget) Name() string { return w.name }\n'
+    "func (w *Widget) Name() string { return w.name }\n"
 )
 _SPLIT_METHODS = "package split\n\n" + "".join(
     f"func (w *Widget) M{index}() string {{ return w.name }}\n" for index in range(12)

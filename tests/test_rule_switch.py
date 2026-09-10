@@ -73,9 +73,7 @@ def test_switching_off_the_rule_shredding_protects_switches_shredding_off(projec
     split version of a function whose honest version now passes. It also cannot be left on
     mechanically: `ceiling_for` reads the followed rule's limit, which is no longer there.
     """
-    settings = Config._from_mapping(
-        project, {"ceilings": {"cognitive_complexity": "off"}}
-    )
+    settings = Config._from_mapping(project, {"ceilings": {"cognitive_complexity": "off"}})
     assert settings.disabled == {"cognitive_complexity", "shredding"}
     assert "shredding" not in settings.ceilings
 

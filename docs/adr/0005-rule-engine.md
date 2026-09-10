@@ -478,13 +478,44 @@ httpx's 4,025 call sites leave the tree — and is worth its rows. A reference t
 tree can never contribute to in-tree reachability and has no reader at all: **33,589 of 35,332
 resolved to nothing**, mostly the standard library.
 
-### Known gap, measured: calls through an imported name
+### Calls through an imported name, and where the answer had to come from
 
 `scip-python` binds `from oxn.check import _measure` as a **document-local** symbol, so the
-call site resolves to `local 3 tests/test_rules_parity.py` — and a local is document-scoped
-(see `scip.join.scoped`), so it resolves to nothing. **2,303 of OXN's 9,497 call edges — 24% —
-are unresolved for this reason**, against 4,570 that genuinely leave the tree. The three
-remaining dead-code candidates that are not true positives are all of this shape: reached only
-from a test that imports them. Recovering these means mapping a document's local import
-bindings to the symbols they alias, which the import occurrence at the same position already
-carries. Not attempted here.
+call site resolves to `local 3 tests/test_rules_parity.py` -- and a local is document-scoped
+(see `scip.join.scoped`), so it resolves to nothing.
+
+**This section first claimed the import occurrence at the same position carries the real
+symbol, and that is false.** Both occurrences of `local 3` -- the one on the import line and
+the one at the call -- are plain reads: role 8, no definition bit, no relationships, nothing
+tying the local to what it aliases. The module symbol on that line is no help either, because
+an editable install makes it `` `oxn.check` `` while every definition in the index is
+`` `src.oxn.check` ``, a prefix nothing in the index defines. The index does not contain the
+answer in any form.
+
+So the answer comes from OXN's own L1 resolver, and `scip.aliases` is the rung change made
+explicit: the call site is SCIP's, the target is L1's, and `build_call_graph` admits an L1
+edge only at confidence 1.0. An ambiguous target is counted and **not written** -- a row with
+`dst_id` set is fact-shaped, and 468 of these on `typescript-nest` would be 468 probably-wrong
+targets waiting for a reader who forgets to check `confidence`.
+
+Two gates, because a local is not always an import binding. The binding at the call site must
+be an *import*, or `handler = lambda: 1; handler()` gets answered from "a unique declaration
+anywhere in the project" and reaches an unrelated `handler` in another file -- the shape
+`scip.join.scoped` records. And the name must not be assigned anywhere in the file, which is
+`from m import f; f = wrap(f)`; `ScopeTree` now records assigned names, because `Scope.declare`
+keeps the first binding, so the import hides the assignment and a lookup cannot tell.
+
+| corpus | calls resolved before | after | recovered | ambiguous |
+|---|---|---|---|---|
+| oxn (self) | 30.2% | **41.9%** | 992 | 0 |
+| typescript-nest | 40.1% | **52.7%** | 788 | 468 |
+| javascript-eslint | 63.8% | 63.8% | 0 | 0 |
+| python-httpx | 51.3% | 51.3% | 0 | 0 |
+
+**The gap is a function of layout, not of language, and the two zeroes say so.** httpx is a
+flat package whose intra-package imports scip-python resolves to real symbols, so its 408
+local-target calls are `isinstance` (159), `len` (108) and other builtins -- correctly
+unresolvable, and not a gap at all. eslint is CommonJS: `const x = require("y")` binds by
+*assignment*, so the import gate declines all 883, which is conservative and currently a miss.
+OXN itself is the worst case, a `src/` layout under an editable install where every first-party
+import names a module the indexer never indexed under that name.

@@ -428,9 +428,7 @@ def test_a_misspelled_contract_kind_is_refused_rather_than_silently_inert(tmp_pa
 
 def _ring(size: int, extras: dict[str, set[str]] | None = None) -> dict[str, set[str]]:
     """A cycle of `size` components, plus whatever else is named."""
-    graph: dict[str, set[str]] = {
-        f"c{index}": {f"c{(index + 1) % size}"} for index in range(size)
-    }
+    graph: dict[str, set[str]] = {f"c{index}": {f"c{(index + 1) % size}"} for index in range(size)}
     for name, targets in (extras or {}).items():
         graph.setdefault(name, set()).update(targets)
         for target in targets:
