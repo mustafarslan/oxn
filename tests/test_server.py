@@ -320,3 +320,41 @@ def test_get_metrics_reports_without_judging(tightened: Path) -> None:
     assert served["entities"][0]["qualified_name"] == "src.bad.tangled"
     assert "violations" not in served, "a report must not carry a verdict"
     assert any("nested 2 deep" in line for line in served["explanation"])
+
+
+# ---- the warm process, and the one thing it does not refresh ----------------------------
+
+
+def test_a_failure_from_a_server_older_than_the_code_says_so(monkeypatch) -> None:
+    """ADR-0004 makes this process the warm path for the *index*, not for itself.
+
+    Found from the receiving end: `get_architectural_context` answered ``ConfigError:
+    'methods_per_class' is not a gated rule`` against an `oxn.yaml` that declares exactly
+    that rule, because the server had been running since before the rule existed. Every word
+    of the error was true of the code the process holds and false of the code on disk, and
+    nothing in it said which -- so the agent's only recourse was to disbelieve the tool.
+
+    On a project that gates itself, a server outliving its own code is the normal case.
+    """
+    from oxn import server
+
+    def boom(_request):
+        raise ValueError("'methods_per_class' is not a gated rule")
+
+    tool = server.Tool(
+        name="pretend",
+        description="",
+        request=server.ContextRequest,
+        run=boom,
+    )
+
+    monkeypatch.setattr(server, "_SOURCE_STAMP", 1.0)
+    monkeypatch.setattr(server, "_newest_source", lambda: 2.0)
+    stale = server._ran(tool, server.ContextRequest(task="x"))["content"][0]["text"]
+
+    monkeypatch.setattr(server, "_newest_source", lambda: 1.0)
+    current = server._ran(tool, server.ContextRequest(task="x"))["content"][0]["text"]
+
+    assert "is not a gated rule" in current
+    assert "Restart the MCP server" not in current, "a current server must not blame itself"
+    assert "Restart the MCP server" in stale

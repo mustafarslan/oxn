@@ -310,7 +310,7 @@ def _ran(tool: Tool, request: BaseModel) -> dict[str, Any]:
     try:
         payload = tool.run(request)
     except Exception as error:  # noqa: BLE001 -- see the docstring
-        return _failed(f"{tool.name} failed: {type(error).__name__}: {error}")
+        return _failed(f"{tool.name} failed: {type(error).__name__}: {error}{_staleness()}")
     return {
         "content": [{"type": "text", "text": json.dumps(payload, indent=2, default=str)}],
         "structuredContent": payload,
@@ -320,6 +320,44 @@ def _ran(tool: Tool, request: BaseModel) -> dict[str, Any]:
 
 def _failed(reason: str) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": reason}], "isError": True}
+
+
+def _newest_source() -> float:
+    """The most recent mtime under the installed package, or 0.0 if it cannot be read."""
+    try:
+        return max(
+            (path.stat().st_mtime for path in Path(__file__).resolve().parent.rglob("*.py")),
+            default=0.0,
+        )
+    except OSError:
+        return 0.0
+
+
+#: What the package looked like when this process imported it. ADR-0004 makes the server the
+#: warm path *for the index*, and it refreshes that incrementally -- but nothing refreshes the
+#: server's own code, so a process outlives the OXN it is running. On a project that gates
+#: itself that is the normal case, not an edge one.
+_SOURCE_STAMP = _newest_source()
+
+
+def _staleness() -> str:
+    """Why a tool may have failed for a reason that is not in this repository.
+
+    Found by being on the receiving end: `get_architectural_context` answered
+    ``ConfigError: 'methods_per_class' is not a gated rule`` against an `oxn.yaml` that
+    declares exactly that, because the server had been running since before the rule existed.
+    The error was true of the code the process holds and false of the code on disk, and
+    nothing in it said which -- an unactionable message from the tool whose whole job is to
+    be actionable.
+    """
+    if _SOURCE_STAMP == 0.0 or _newest_source() <= _SOURCE_STAMP:
+        return ""
+    return (
+        "\n\nNOTE: this `oxn serve` process imported OXN before the code on disk was last"
+        " changed, so it may be answering from an older version -- including about rules"
+        " `oxn.yaml` names and this build does not have. Restart the MCP server before"
+        " trusting this failure; `oxn check` from the shell always runs the current code."
+    )
 
 
 def _params(message: dict[str, Any]) -> dict[str, Any]:

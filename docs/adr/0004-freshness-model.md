@@ -153,3 +153,38 @@ findings (656 on `typescript-nest`, the number ADR-0005's parity tests pin).
 the server removes the per-call startup tax, which is the whole cost of the per-file
 operations an agent actually repeats, and roughly a tenth of the session-scale ones it
 does not.
+
+## Amendment, 2026-09-10 — the warm process refreshes the index and never itself
+
+The mechanisms above make the server current about the *tree*. Nothing makes it current
+about **OXN**. A `oxn serve` process holds the code it imported at startup for as long as
+the agent session lasts, and on a project that gates its own development that code goes
+out of date within the hour.
+
+Found from the receiving end, which is the only place it is visible: a call to
+`get_architectural_context` came back with
+
+```
+ConfigError: 'methods_per_class' is not a gated rule. Known rules: cognitive_complexity,
+cyclomatic_complexity, file_sloc, function_sloc, max_nesting_depth, parameter_count, shredding
+```
+
+against an `oxn.yaml` that declares `methods_per_class` on line 22. Every word of it was
+true of the code the process was holding — the server had been started before the class
+aggregates shipped — and false of the code on disk. Nothing in the message said which, so
+the only available reading was that the configuration was wrong, and it was not.
+
+That is worse than a stale answer. A stale answer is wrong quietly; this was a **failure
+attributed to the repository**, from the tool whose entire purpose is to tell an agent what
+the repository requires.
+
+**The mechanism is a stamp, not a reload.** The server records the newest mtime under its
+own package at import, and any tool failure is checked against it: if the code on disk has
+moved since, the failure carries a line saying so and naming the remedy. Restarting is the
+client's business — a stdio server cannot restart itself, and re-importing under a live
+session would be worse than the disease.
+
+**Why only on failure.** A stale server that answers is answering about a version of OXN
+that existed, which is the ordinary cost of a warm process and is what `oxn check` from the
+shell is for. A stale server that *fails* is the case where the agent has no way to tell
+whose fault it is, and that is the one worth spending a line on.
