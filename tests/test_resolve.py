@@ -355,3 +355,60 @@ def test_declarations_in_omits_the_ambiguous_names() -> None:
 
     assert "With" not in declared
     assert "use" in declared
+
+
+# ---- destructuring, and the require binding that was measured and not taken ----------------
+
+
+REQUIRES = """const fs = require("fs");
+const { helper, other: renamed } = require("./m");
+const plain = compute();
+const { destructured } = compute();
+
+function use() {
+  return helper() + renamed() + plain() + destructured() + fs.x();
+}
+"""
+
+
+def test_a_shorthand_destructuring_binds_at_all() -> None:
+    """`const { helper } = anything` yields `shorthand_property_identifier_pattern`, which is
+    neither `identifier` nor a container of one -- so `_binding_targets` walked straight past
+    the commonest destructuring in the language and bound nothing.
+
+    Every consumer of the scope tree saw those names as undeclared, not only the resolver.
+    Measured on `javascript-eslint`, fixing it moves no graded answer at all: 8,633 confident
+    at 99.815% before and after. A binding the language makes and OXN did not is worth having
+    right whether or not a number moves.
+    """
+    tree, text = scopes("javascript", REQUIRES)
+
+    assert resolve(tree, text, "destructured", "return ") is not None
+    assert resolve(tree, text, "helper", "return ") is not None
+    assert resolve(tree, text, "renamed", "return ") is not None
+
+
+def test_the_key_of_a_renaming_destructure_is_not_bound() -> None:
+    """`const { other: renamed } = m` binds `renamed`. `other` is the exporter's name for it
+    and names nothing here -- binding it would invent a local out of a property name."""
+    tree, text = scopes("javascript", REQUIRES)
+
+    assert resolve(tree, text, "other", "return ") is None
+
+
+def test_a_commonjs_require_is_not_an_import_binding_and_that_is_measured() -> None:
+    """**The null result, asserted so it cannot be undone by accident.**
+
+    `const fs = require("fs")` *is* an import, and binding it as one recovers 427 of 883
+    refusals on `javascript-eslint` and 77 call edges. It also makes ten call sites
+    confidently answered, all ten wrong, with the correct count flat -- because a
+    shorthand-destructured require resolves into a CommonJS module that re-exports through
+    `module.exports = require("./other")`, which nothing here follows. `resolve.scopes` carries
+    the table. Closing the gap needs re-export chains, not a binding rule.
+    """
+    tree, text = scopes("javascript", REQUIRES)
+    binding = resolve(tree, text, "fs", "return ")
+
+    assert binding is not None and binding[0].kind == "local"
+    assert "fs" not in tree.import_aliases
+    assert resolve(tree, text, "plain", "return ")[0].kind == "local"

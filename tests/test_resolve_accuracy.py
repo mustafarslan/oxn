@@ -98,3 +98,47 @@ def test_a_call_site_scip_did_not_place_is_skipped_silently() -> None:
     assert accuracy.graded_call_sites == 0
     assert accuracy.excluded_untrustworthy == 0
     assert not accuracy.disagreements
+
+
+def test_step_two_answers_from_the_file_the_name_came_from() -> None:
+    """**"Any file this one imports" is a guess dressed as evidence.**
+
+    Step 2 asked whether *any* imported file declares the name and took the first in sorted
+    order -- so a file importing two modules that both declare `helper` answered confidently
+    from whichever sorted first. The import table already knows better: `aliases` records which
+    specifier bound the name and `specifier_targets` records where that specifier was placed.
+
+    On `javascript-eslint` this fires for 1,950 of 1,965 step-2 answers, so it is the common
+    path rather than a corner, and it moves no published number -- which is what a change that
+    replaces a coincidence with the same answer for the right reason looks like.
+    """
+    from oxn.graph.model import Entity, EntityKind
+    from oxn.resolve.symbols import ProjectSymbols
+
+    def declared(name: str, path: str) -> Entity:
+        return Entity(
+            id=f"{path}::{name}",
+            kind=EntityKind.FUNCTION,
+            name=name,
+            qualified_name=f"{path}.{name}",
+            file_path=path,
+            start_byte=0,
+            end_byte=1,
+            start_line=1,
+            end_line=1,
+        )
+
+    symbols = ProjectSymbols()
+    symbols.by_file = {
+        "a/first.js": {"helper": [declared("helper", "a/first.js")]},
+        "b/second.js": {"helper": [declared("helper", "b/second.js")]},
+    }
+    symbols.imports = {"caller.js": {"a/first.js", "b/second.js"}}
+    symbols.aliases = {"caller.js": {"helper": "./b/second"}}
+    symbols.specifier_targets = {"caller.js": {"./b/second": ("b/second.js",)}}
+
+    found = symbols.resolve_call("caller.js", "helper")
+
+    assert found is not None
+    assert found.file_path == "b/second.js", "the file the name was imported from, not the first"
+    assert found.confidence == 1.0

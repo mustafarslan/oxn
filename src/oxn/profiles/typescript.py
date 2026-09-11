@@ -185,6 +185,7 @@ _TS_METRICS = MetricSpec(
         assignment_kinds=frozenset(
             {"variable_declarator", "assignment_expression", "for_in_statement"}
         ),
+        binding_identifier_kinds=frozenset({"shorthand_property_identifier_pattern"}),
         alias_kinds=frozenset({"import_specifier", "namespace_import", "catch_clause"}),
         rebinding_kinds=frozenset(),
         attribute_kind="member_expression",

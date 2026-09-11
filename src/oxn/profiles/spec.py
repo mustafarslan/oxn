@@ -243,6 +243,12 @@ class ScopeSpec:
     parameter_containers: frozenset[str] = frozenset()
     #: Node kinds that bind on the left of an assignment or loop.
     assignment_kinds: frozenset[str] = frozenset()
+    #: Node kinds that bind a name but are not ``identifier_kind``. JavaScript's
+    #: ``const { helper } = m`` yields ``shorthand_property_identifier_pattern``, which is
+    #: neither an identifier nor a container of one -- so a walker looking only for
+    #: ``identifier_kind`` bound nothing at all for the commonest destructuring in the
+    #: language, and every consumer of the scope tree saw those names as undeclared.
+    binding_identifier_kinds: frozenset[str] = frozenset()
     #: Node kinds for ``x as y`` bindings (``with``, ``except``, imports).
     alias_kinds: frozenset[str] = frozenset()
     #: Statements that rebind a name to an outer scope.

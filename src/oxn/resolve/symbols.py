@@ -63,6 +63,12 @@ class ProjectSymbols:
     aliases: dict[str, dict[str, str]] = field(default_factory=dict)
     #: file -> imported files
     imports: dict[str, set[str]] = field(default_factory=dict)
+    #: file -> import specifier -> the files that specifier was placed at.
+    #:
+    #: The difference from `imports` is which file a *name* came from rather than which files
+    #: the caller reaches, and it is the difference between an answer and a guess: see
+    #: `_from_imports`.
+    specifier_targets: dict[str, dict[str, tuple[str, ...]]] = field(default_factory=dict)
 
     def declarations_in(self, path: str) -> dict[str, Entity]:
         """The unambiguous file-level declarations, one per name.
@@ -146,9 +152,42 @@ class ProjectSymbols:
         """
         if qualifier is not None and qualifier not in self.aliases.get(path, ()):
             return None
+        named = self._from_the_named_file(path, name, qualifier)
+        if named is not None:
+            return named
         for imported in sorted(self.imports.get(path, ())):
             found = _answer(
                 name, self.by_file.get(imported, {}).get(name) or [], imported, Resolution.L1
+            )
+            if found is not None:
+                return found
+        return None
+
+    def _from_the_named_file(
+        self, path: str, name: str, qualifier: str | None
+    ) -> ResolvedName | None:
+        """Step 2a: a declaration in **the** file this name was imported from.
+
+        The rest of step 2 asks "does any file this one imports declare `name`" and takes the
+        first in sorted order. That is a guess dressed as evidence whenever a file imports more
+        than one module declaring the same bare name, and it is *why* the import table is worth
+        keeping: `aliases` already records which specifier bound this name, and
+        `specifier_targets` already records where that specifier was placed.
+
+        **Measured on `javascript-eslint`.** Binding `const {{ helper }} = require("./m")` as
+        the import it is made ten call sites newly answerable -- and step 2 answered all ten
+        confidently and wrongly, by finding some other imported file's `helper` first. Correct
+        count flat while confident answers rose is the same signature this class's own step-2
+        note records for Rust, and the same diagnosis: a rule reaching past the evidence it
+        had. With the named file preferred, those ten are answered from `./m` or not at all.
+        """
+        governing = name if qualifier is None else qualifier
+        specifier = self.aliases.get(path, {}).get(governing)
+        if specifier is None:
+            return None
+        for target in self.specifier_targets.get(path, {}).get(specifier, ()):
+            found = _answer(
+                name, self.by_file.get(target, {}).get(name) or [], target, Resolution.L1
             )
             if found is not None:
                 return found
@@ -180,6 +219,9 @@ def build_project_symbols(
         symbols.external_aliases[path] = _external_aliases(tree, graph, path)
     if graph is not None:
         symbols.imports = {path: set(targets) for path, targets in graph.files.items()}
+        symbols.specifier_targets = {
+            path: dict(placed) for path, placed in graph.specifier_targets.items()
+        }
     return symbols
 
 

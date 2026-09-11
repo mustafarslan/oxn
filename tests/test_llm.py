@@ -1,8 +1,8 @@
 """Tests that need a language model, run through Ollama.
 
 Configured by `OXN_OLLAMA_HOST` and `OXN_OLLAMA_MODEL`, defaulting to a local Ollama and
-`kimi-k3:cloud`. Marked `llm` and skipped when the host is unreachable, so the default lane
-never depends on a model being up.
+`kimi-k3:cloud`. Marked `llm` and skipped when the model will not answer -- unreachable,
+throttled, or absent -- so the default lane never depends on a model being up.
 
 **Why so few tests live here.** OXN's metrics are deterministic by design -- `idea.md` §1.1
 argues that computing a metric with a model yields an approximation of something a parser
@@ -28,9 +28,26 @@ pytestmark = pytest.mark.llm
 
 @pytest.fixture(scope="module")
 def model() -> OllamaClient:
+    """A model that will actually answer, or a skip saying why not.
+
+    **`available()` answers a different question than this lane needs.** It pings `/api/tags`,
+    which reports whether the *host* is up -- and on a machine serving only cloud models that
+    listing is empty while every request still routes. So the guard passed and the generate
+    came back HTTP 429, failing three tests for a rate limit. A cloud endpoint throttling is an
+    environmental condition exactly like an unreachable host, and neither is a defect in OXN.
+
+    So the probe is a real completion. It costs one request per module and it is the only thing
+    that answers "will this model reply to me right now".
+    """
+    from oxn.llm import OllamaError
+
     client = OllamaClient.from_env()
     if not client.available():
         pytest.skip(f"Ollama not reachable at {client.host}")
+    try:
+        client.generate("Reply with the single word: ok")
+    except OllamaError as error:
+        pytest.skip(f"{client.model} will not answer: {error}")
     return client
 
 
