@@ -12,13 +12,50 @@ something useful, immediately, with nothing to read first.
 
 from __future__ import annotations
 
+import fnmatch
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from oxn import thresholds
-from oxn.graph.contracts import Contract, Layer
+
+
+@dataclass(frozen=True, slots=True)
+class Layer:
+    """A named set of paths, matched by glob."""
+
+    name: str
+    patterns: tuple[str, ...]
+
+    def matches(self, path: str) -> bool:
+        return any(fnmatch.fnmatch(path, pattern) for pattern in self.patterns)
+
+
+@dataclass
+class Contract:
+    """A rule the architecture is supposed to obey."""
+
+    name: str
+    kind: str
+    #: For ``layered``: **outermost first**. A layer may depend on every layer *after* it and
+    #: on none before it. So ``order=("infrastructure", "application", "domain")`` is the
+    #: usual clean-architecture arrangement -- infrastructure may reach application and
+    #: domain, application may reach domain, and domain may reach neither. The direction is
+    #: easy to read backwards, which is why it is spelled out here.
+    order: tuple[str, ...] = ()
+    source: str | None = None
+    forbidden: tuple[str, ...] = ()
+    modules: tuple[str, ...] = ()
+    package: str | None = None
+    allowed_entrypoints: tuple[str, ...] = ()
+    #: For ``acyclic``: count imports that Python and CommonJS defer to call time. Off by
+    #: default, because a function-body import is how both languages *break* a cycle, and a
+    #: check that counts it reports the fix as the fault. On, the contract asks the stricter
+    #: question -- "no component may reach itself by any path at all" -- which is a real
+    #: thing to want and not the default thing.
+    deferred: bool = False
+
 
 #: The file OXN looks for, in the directory it is run from.
 CONFIG_NAME = "oxn.yaml"

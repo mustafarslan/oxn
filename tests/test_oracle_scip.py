@@ -536,15 +536,14 @@ def test_javascript_l2_and_l0_l1_accuracy(tmp_path) -> None:
 
     **47.0% call coverage is the largest miss of the six**, by a distance, and it is the same
     two causes. They were counted over the 43,777 call sites in JavaScript files **at 69.3%
-    coverage and have not been recounted since the receiver fallback went** -- so they
-    describe the shape of the gap and no longer its size: **15.5% had no SCIP occurrence** at
-    the callee, and **14.7% had one and no enclosing entity** (69.7% joined, on that subset).
-    The second is much larger here than in TypeScript's 5.9%, and it is what a JavaScript
-    repository looks like -- `Makefile.js`, config files and scripts call at module level, where there is no
-    caller to hang an edge on. That is the criterion's denominator disagreeing with the join
-    by design, not an indexer gap; it is reported as a miss anyway, because dividing a
-    criterion by a friendlier denominator after the fact is how a number stops meaning
-    anything.
+    coverage and have not been recounted since the receiver fallback went** -- so they describe
+    the shape of the gap and no longer its size: **15.5% had no SCIP occurrence** at the callee,
+    and **14.7% had one and no enclosing entity** (69.7% joined, on that subset). The second is
+    much larger here than in TypeScript's 5.9%, and it is what a JavaScript repository looks
+    like -- `Makefile.js`, config files and scripts call at module level, where there is no
+    caller to hang an edge on. That is the criterion's denominator disagreeing with the join by
+    design, not an indexer gap; it is reported as a miss anyway, because dividing a criterion by
+    a friendlier denominator after the fact is how a number stops meaning anything.
 
     The precision figures are the lowest of the six, and are not explained here for the same
     reason TypeScript's high ones are not: one corpus is not a cause.

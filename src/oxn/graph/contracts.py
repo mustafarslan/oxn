@@ -14,8 +14,13 @@ Every violation carries the **shortest import chain** that produced it. "domain 
 infrastructure" is not actionable; "domain/order.py -> app/repo.py -> infra/db.py" names the
 edge to delete.
 
-Contracts are passed in rather than read from configuration: `oxn.yaml` arrives in a later
-phase, and nothing here should have to change when it does.
+**`Layer` and `Contract` live in `oxn.config`, and this module only checks them.** They were
+written here when `oxn.yaml` was still a later phase and contracts were passed in by hand. That
+phase arrived, and the split it left behind was the wrong one: a layer and a contract are what
+the configuration file *declares*, and the code that compares them against an import graph is a
+consumer of that vocabulary like any other. Keeping the declarations here made `oxn.config`
+depend on `oxn.graph`, which is the one edge that stopped the layered contract in this
+repository's own `oxn.yaml` from governing its foundation modules at all.
 """
 
 from __future__ import annotations
@@ -30,16 +35,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
     from oxn.graph.algos import Graph
 
-
-@dataclass(frozen=True, slots=True)
-class Layer:
-    """A named set of paths, matched by glob."""
-
-    name: str
-    patterns: tuple[str, ...]
-
-    def matches(self, path: str) -> bool:
-        return any(fnmatch.fnmatch(path, pattern) for pattern in self.patterns)
+from oxn.config import Contract, Layer
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,31 +52,6 @@ class Violation:
     def __str__(self) -> str:
         route = " -> ".join(self.chain) if self.chain else f"{self.source} -> {self.target}"
         return f"[{self.contract}] {route}" + (f": {self.detail}" if self.detail else "")
-
-
-@dataclass
-class Contract:
-    """A rule the architecture is supposed to obey."""
-
-    name: str
-    kind: str
-    #: For ``layered``: **outermost first**. A layer may depend on every layer *after* it and
-    #: on none before it. So ``order=("infrastructure", "application", "domain")`` is the
-    #: usual clean-architecture arrangement -- infrastructure may reach application and
-    #: domain, application may reach domain, and domain may reach neither. The direction is
-    #: easy to read backwards, which is why it is spelled out here.
-    order: tuple[str, ...] = ()
-    source: str | None = None
-    forbidden: tuple[str, ...] = ()
-    modules: tuple[str, ...] = ()
-    package: str | None = None
-    allowed_entrypoints: tuple[str, ...] = ()
-    #: For ``acyclic``: count imports that Python and CommonJS defer to call time. Off by
-    #: default, because a function-body import is how both languages *break* a cycle, and a
-    #: check that counts it reports the fix as the fault. On, the contract asks the stricter
-    #: question -- "no component may reach itself by any path at all" -- which is a real
-    #: thing to want and not the default thing.
-    deferred: bool = False
 
 
 @dataclass

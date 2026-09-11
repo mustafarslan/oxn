@@ -43,8 +43,7 @@ from oxn.context.bm25 import BM25, Document
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Iterable, Sequence
 
-    from oxn.config import Config
-    from oxn.graph.contracts import Contract
+    from oxn.config import Config, Contract
     from oxn.rules.adr import Decision
 
 #: Said in the bundle itself, because an agent that infers "seven constraints" means "seven

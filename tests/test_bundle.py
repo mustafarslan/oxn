@@ -9,9 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from oxn.config import Config
+from oxn.config import Config, Contract, Layer
 from oxn.context.bundle import Project, build_bundle
-from oxn.graph.contracts import Contract, Layer
 from oxn.rules.adr import Decision
 
 PATHS = ("src/api/one.py", "src/api/two.py", "src/core/three.py", "docs/note.md")

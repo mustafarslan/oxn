@@ -13,8 +13,9 @@ from pathlib import Path
 
 import pytest
 
+from oxn.config import Contract, Layer
 from oxn.graph.architecture import LakosMetrics, analyse, detect_smells
-from oxn.graph.contracts import Contract, Layer, assign_layers, check_contracts
+from oxn.graph.contracts import assign_layers, check_contracts
 
 # ---- Martin metrics ---------------------------------------------------------------------
 
@@ -486,3 +487,76 @@ def test_fan_in_and_fan_out_are_reflexive_and_agree_with_propagation_cost() -> N
 
     assert report.propagation_cost == pytest.approx(reachable / (total * total))
     assert all(seen.fan_out >= 1 for seen in report.visibility.values()), "reflexive"
+
+
+# ---- OXN's own contract governs all of OXN ------------------------------------------------
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _governed_layers() -> list[Layer]:
+    """The layers OXN's own contract actually orders.
+
+    A layer declared in `oxn.yaml` and left out of every contract's `order` governs nothing --
+    `tests` is exactly that, deliberately -- so membership in the contract is the question, not
+    membership in the file.
+    """
+    from oxn.config import Config
+
+    settings = Config.load(ROOT)
+    governed = {name for contract in settings.contracts for name in contract.order}
+    return [layer for layer in settings.layers if layer.name in governed]
+
+
+def test_every_source_file_is_claimed_by_a_layer() -> None:
+    """**The gap that has opened twice, closed at the only place that can see it.**
+
+    `check_contracts` skips an edge whose source belongs to no layer -- which is the right
+    behaviour for a repository that has declared a contract over part of itself, and a silent
+    hole for one that meant to declare it over all of itself. `rules/*` sat outside every
+    layer until 2026-09-04 and `review.py`, `writers.py`, `calls.py`, `doctor.py`,
+    `calibration.py` and `__main__.py` until 2026-09-10. Neither was found by the gate: a
+    module in no layer produces no violation, so the check passing is exactly what it looks
+    like when the check is not running.
+
+    Both were found by a person going looking. This asserts it instead, and it is the reason
+    `foundation` exists rather than the six modules being left unassigned a third time.
+    """
+    layers = _governed_layers()
+    assert layers, "OXN's own oxn.yaml declares a layered contract"
+
+    sources = sorted(str(path.relative_to(ROOT)) for path in (ROOT / "src" / "oxn").rglob("*.py"))
+    unclaimed = [path for path in sources if not any(layer.matches(path) for layer in layers)]
+
+    assert unclaimed == [], (
+        f"{len(unclaimed)} source files are in no layer, so every import they make is skipped "
+        f"by the contract check: {unclaimed}"
+    )
+
+
+def test_the_innermost_layer_may_not_reach_outward() -> None:
+    """`foundation` is vocabulary, and vocabulary that imports the gate is not vocabulary.
+
+    Asserted against OXN's declared order rather than a fixture, because the thing worth
+    protecting is *this* configuration: `config.py -> graph/contracts.py` is the edge that
+    kept `foundation` undeclarable until the two dataclasses moved to where `oxn.yaml`
+    declares them.
+    """
+    from oxn.config import Config
+
+    settings = Config.load(ROOT)
+    layered = [c for c in settings.contracts if c.kind == "layered"]
+    assert layered, "the layered contract is what this asserts about"
+
+    order = layered[0].order
+    assert order[-1] == "foundation", order
+    report = check_contracts(
+        {"src/oxn/languages.py": {"src/oxn/check.py"}, "src/oxn/check.py": set()},
+        settings.layers,
+        layered,
+    )
+    assert not report.passed, "a foundation module importing a surface must be a violation"
+    # A layered violation names the two *layers*; the chain is what names the edge to delete.
+    violation = report.divergent[0]
+    assert (violation.source, violation.target) == ("foundation", "surfaces"), violation
+    assert violation.chain == ("src/oxn/languages.py", "src/oxn/check.py"), violation

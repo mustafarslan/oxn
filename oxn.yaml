@@ -39,11 +39,14 @@ layers:
   # all. Naming them cost zero violations -- they were already well-behaved, merely
   # ungoverned, which is exactly why nobody noticed.
   #
-  # Still deliberately unassigned: `config.py`, `render.py`, `thresholds.py`, `languages.py`,
-  # `llm.py` and `profiles/*`. Those are foundation -- every layer reads them and they read
-  # almost nothing back -- and a `foundation` layer at the inner end would immediately flag
-  # `config.py -> graph/contracts.py`. That edge deserves a decision (move `Contract`, or
-  # accept it) and not a layer assignment chosen to avoid making one.
+  # `foundation` was added on 2026-09-11, and the edge that had been blocking it was the
+  # decision, not the obstacle. `config.py -> graph/contracts.py` existed because `Layer` and
+  # `Contract` were written beside the code that checks them, back when `oxn.yaml` was still a
+  # later phase -- and once it arrived, that left the vocabulary the configuration file
+  # declares living inside the graph layer. Moving the two dataclasses to `oxn.config` removed
+  # the edge and put them where they are declared; `graph/contracts.py` now reads them, which
+  # is a consumer reaching inward and legal. Nothing else in these six modules imports out of
+  # foundation at all, at module level or inside a function.
   # `server.py` is a surface, not orchestration: it decodes a request, calls the same
   # functions `_app.py` calls, and encodes the answer. It holds no analysis of its own.
   surfaces: ["src/oxn/cli.py", "src/oxn/_app.py", "src/oxn/__main__.py", "src/oxn/report.py", "src/oxn/calls.py", "src/oxn/check.py", "src/oxn/review.py", "src/oxn/writers.py", "src/oxn/init.py", "src/oxn/server.py", "src/oxn/health.py", "src/oxn/doctor.py", "src/oxn/calibration.py"]
@@ -61,6 +64,11 @@ layers:
   # gate itself depends on sit under the contract instead of beside it.
   analysis: ["src/oxn/metrics/*", "src/oxn/resolve/*", "src/oxn/volume/*", "src/oxn/vcs/*", "src/oxn/scip/*", "src/oxn/rules/*", "src/oxn/context/*", "src/oxn/retry.py"]
   graph: ["src/oxn/graph/*"]
+  # Innermost: vocabulary every other layer speaks and that speaks to none of them. The test
+  # is not "is it shared" but "does it import outward" -- `render.py`, `thresholds.py`,
+  # `languages.py`, `llm.py` and `profiles/*` import no part of OXN whatsoever, and
+  # `config.py` imports only `thresholds`.
+  foundation: ["src/oxn/config.py", "src/oxn/render.py", "src/oxn/thresholds.py", "src/oxn/languages.py", "src/oxn/llm.py", "src/oxn/profiles/*", "src/oxn/__init__.py"]
   # Not part of the layered contract below -- tests may reach anywhere, that is their job --
   # but named so they can carry their own ceilings.
   tests: ["tests/*"]
@@ -68,7 +76,7 @@ layers:
 contracts:
   - name: surfaces-analysis-graph
     kind: layered
-    order: [surfaces, orchestration, analysis, graph]
+    order: [surfaces, orchestration, analysis, graph, foundation]
 
 # Fixtures are source files on purpose -- a hand-built shred is supposed to look bad.
 advisory:
