@@ -419,7 +419,7 @@ requires_scip_typescript = pytest.mark.skipif(
 def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     """The fifth language, and the corpus whose exclusion count was hiding a real defect.
 
-    On `typescript-nest`: L2 coverage **99.9% of declarations and 83.6% of call sites**,
+    On `typescript-nest`: L2 coverage **99.9% of declarations and 76.2% of call sites**,
     index built in 3 s. L0/L1 scores **100% precision when certain** at 56.7% confident
     recall, 69.4% overall at 100% recall, over 2,470 graded sites -- 190 of them gradeable
     only once a callable bound to a name stopped being anonymous to the SCIP join, and 108
@@ -431,13 +431,19 @@ def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     know why, and deliberately: the last causal story told from these corpora was an artifact
     of a grader bug, and two rows on each side is a pattern, not a cause.
 
-    **The 83.6% call coverage misses P5's >=85% criterion**, on the only corpus that does,
-    and the 16.4% is two causes -- counted, because this docstring first asserted it was all
-    the indexer's and that was wrong. **10.5% have no SCIP occurrence** at the callee, which
-    is `scip-typescript`'s coverage; **5.9% have one and no enclosing entity**, because a
-    module-level call (`bootstrap()` in a `main.ts`) has no caller to hang an edge on. The
-    second is the criterion's denominator disagreeing with the join by design, and ADR-0002
-    carries the split for every language that has one.
+    **The 76.2% call coverage misses P5's >=85% criterion**, and the two causes below are
+    counted -- because this docstring first asserted the gap was all the indexer's and that
+    was wrong. **10.5% have no SCIP occurrence** at the callee, which is `scip-typescript`'s
+    coverage; **5.9% have one and no enclosing entity**, because a module-level call
+    (`bootstrap()` in a `main.ts`) has no caller to hang an edge on. The second is the
+    criterion's denominator disagreeing with the join by design, and ADR-0002 carries the
+    split for every language that has one.
+
+    **Those two shares were measured at 83.6% coverage and have not been recounted**, so they
+    do not add up to today's 23.8% gap. The receiver fallback removed below took the headline
+    down without moving the causes it was double-counting into either bucket; recounting them
+    means re-running this corpus, and a stale breakdown labelled stale is better than one
+    rescaled to fit a number it was not measured against.
 
     **This row cost 529 fabricated L2 edges to publish, which is what it was worth.** The
     first measurement excluded 441 sites (16.9%); printing them rather than attributing them
@@ -518,7 +524,7 @@ def test_javascript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     """The sixth language, and the one whose oracle was mostly being thrown away.
 
     On `javascript-eslint` (1,451 JavaScript files; the 36 TypeScript ones are graded under
-    TypeScript's row, not this one): L2 coverage **89.0% of declarations and 69.3% of call
+    TypeScript's row, not this one): L2 coverage **89.0% of declarations and 47.0% of call
     sites** over the whole corpus, from a 52 MB index built in 20 s. L0/L1 scores **99.8%
     precision when certain** at 65.3% confident recall, 74.5% overall at 100% recall, over
     **13,221 graded call sites** -- the largest graded population of the six.
@@ -528,12 +534,13 @@ def test_javascript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     the oracle's name match the source's. `is_document_local` records the fix and the
     measurement that it does not cost the position join anything.
 
-    **69.3% call coverage misses P5's >=85% by more than TypeScript's 83.6% did**, and the
-    30.7% is the same two causes, counted rather than attributed over the 43,777 call sites
-    in JavaScript files: **15.5% have no SCIP occurrence** at the callee, and **14.7% have
-    one and no enclosing entity** (69.7% joined, on that subset). The second is
-    much larger here than in TypeScript's 5.9%, and it is what a JavaScript repository looks
-    like -- `Makefile.js`, config files and scripts call at module level, where there is no
+    **47.0% call coverage is the largest miss of the six**, by a distance, and it is the same
+    two causes. They were counted over the 43,777 call sites in JavaScript files **at 69.3%
+    coverage and have not been recounted since the receiver fallback went** -- so they
+    describe the shape of the gap and no longer its size: **15.5% had no SCIP occurrence** at
+    the callee, and **14.7% had one and no enclosing entity** (69.7% joined, on that subset).
+    The second is much larger here than in TypeScript's 5.9%, and it is what a JavaScript
+    repository looks like -- `Makefile.js`, config files and scripts call at module level, where there is no
     caller to hang an edge on. That is the criterion's denominator disagreeing with the join
     by design, not an indexer gap; it is reported as a miss anyway, because dividing a
     criterion by a friendlier denominator after the fact is how a number stops meaning
