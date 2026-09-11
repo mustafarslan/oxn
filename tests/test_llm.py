@@ -1,7 +1,7 @@
 """Tests that need a language model, run through Ollama.
 
 Configured by `OXN_OLLAMA_HOST` and `OXN_OLLAMA_MODEL`, defaulting to a local Ollama and
-`glm-5.3:cloud`. Marked `llm` and skipped when the host is unreachable, so the default lane
+`kimi-k3:cloud`. Marked `llm` and skipped when the host is unreachable, so the default lane
 never depends on a model being up.
 
 **Why so few tests live here.** OXN's metrics are deterministic by design -- `idea.md` §1.1

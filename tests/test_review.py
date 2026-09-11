@@ -401,6 +401,31 @@ def test_a_refusal_is_always_shown_even_though_the_body_is_not(repo: Path, capsy
     assert "posted instead" in printed, "silence would read as nothing having been said"
 
 
+def test_a_writer_that_cannot_be_reached_does_not_take_the_review_with_it(
+    repo: Path, monkeypatch
+) -> None:
+    """**Found by running it.** `oxn review --write ollama` raised `OllamaError` out of the
+    command, so a host that was down, slow or rate-limiting produced a traceback and no
+    measurement -- the numbers were already computed and were thrown away because a model was
+    busy. Same rule as the honesty check, different failure: a writer's circumstances are not
+    the author's fault.
+    """
+    import oxn.writers as writers
+    from oxn.llm import OllamaError
+    from oxn.report import run_review_report
+
+    def refuse(model: str = "") -> object:
+        raise OllamaError("Ollama at http://localhost:11434 refused the request: HTTP 429")
+
+    monkeypatch.setattr(writers, "ollama_writer", refuse)
+    comment = run_review_report("main", "HEAD", write="ollama")["comment"]
+
+    assert comment["status"] == "REFUSED"
+    assert "429" in comment["note"]
+    assert "**OXN**" in comment["body"], "the measurement survives an unavailable model"
+    assert comment["invented"] == [] and comment["attempts"] == 0
+
+
 # ---- the trigger ---------------------------------------------------------------------------
 
 

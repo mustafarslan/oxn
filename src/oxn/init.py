@@ -26,6 +26,15 @@ shell a hook or an MCP client is started with, which is *not* true for a project
 only into a virtualenv -- and a hook that cannot start is a gate that silently is not there.
 `init` cannot fix that without pinning a path it must not pin, so it detects the case and
 says so in its report. Silently absent was the failure; visibly absent is not.
+
+**The remedy that note offers was wrong until 2026-09-11, and it broke this repository's own
+wiring.** It recommended `"${CLAUDE_PROJECT_DIR:-.}/.venv/bin/oxn"`, asserting that the client
+expands variables in `.mcp.json`. `CLAUDE_PROJECT_DIR` is not set in the shell here, and a
+client that expands plain `${VAR}` but not the shell's `:-` default form resolves that whole
+token to nothing -- leaving `/.venv/bin/oxn`, which does not exist. The `oxn` server failed to
+connect for exactly as long as the advice stood. It now recommends `.venv/bin/oxn`: a relative
+path the spawner resolves against the project directory, with no expansion to be right or wrong
+about. Advice about how to configure a tool is part of the tool, and this note was a bug in it.
 """
 
 from __future__ import annotations
@@ -459,9 +468,9 @@ def _note_how_oxn_resolves(base: Path, report: InitReport) -> None:
         f"`oxn` is not on this shell's PATH independently of a virtualenv{where}, so a "
         "PostToolUse hook or an MCP client started by an editor will not find it. Install "
         "it with pipx or `pip install --user`, or point the hook command and the `oxn` "
-        "entry in .mcp.json at a path that resolves. Claude Code expands variables in "
-        '.mcp.json, so `"command": "${CLAUDE_PROJECT_DIR:-.}/.venv/bin/oxn"` names the venv '
-        "without naming your machine -- and a hand-edited entry is left alone on re-run."
+        'entry in .mcp.json at a path that resolves -- `"command": ".venv/bin/oxn"` names '
+        "the venv without naming your machine, and needs no variable expansion to do it. "
+        "A hand-edited entry is left alone on re-run."
     )
 
 

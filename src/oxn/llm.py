@@ -34,8 +34,20 @@ if TYPE_CHECKING:  # pragma: no cover
 #: The **actor** writes code and the **judge** assesses it, and they are deliberately
 #: different models: a model grading its own output is not an independent check, and the
 #: agreement rate between judge and deterministic gauntlet is itself a result worth having.
+#:
+#: **The actor default was `glm-5.3:cloud` until 2026-09-11, and it was measured unusable.**
+#: Asked for "one complete function definition and nothing else: no prose", it filled whatever
+#: output budget it was given -- 123,471 characters against 32,768 tokens, 254,715 against
+#: 65,536, 125,072 on a target less than half the size -- cut off mid-answer every time,
+#: deterministically. `kimi-k3:cloud` is the measured replacement: as `oxn review`'s writer it
+#: produced a usable comment 8 times out of 8 on the first attempt across three payload shapes,
+#: and declined 5 times out of 5 to compute a number nobody had measured on a payload built to
+#: tempt it into doing so. Both of those measurements are about *writing prose from JSON*; it
+#: has not been measured as a repair actor, where the model it replaces is proven bad. A
+#: default is a starting point and not a fixture -- `OXN_OLLAMA_MODEL` and `--model` override
+#: it, and nothing here hardcodes a model.
 DEFAULT_HOST = "http://localhost:11434"
-DEFAULT_MODEL = "glm-5.3:cloud"
+DEFAULT_MODEL = "kimi-k3:cloud"
 DEFAULT_JUDGE_MODEL = "deepseek-v4-pro:cloud"
 
 
@@ -221,6 +233,15 @@ class OllamaClient:
             raise OllamaError(
                 f"{self.model} sent nothing for {self.timeout}s -- it may still be "
                 f"generating; raise OXN_OLLAMA_TIMEOUT if so ({error})"
+            ) from error
+        except urllib.error.HTTPError as error:
+            # An HTTP status means the host answered, so "unreachable" is the wrong sentence
+            # and sends the reader to check whether Ollama is running. 429 in particular is a
+            # cloud model refusing *this* request while serving others; it was reported as
+            # unreachable until 2026-09-11, found when a review hit the rate limit.
+            raise OllamaError(
+                f"Ollama at {self.host} refused the request: HTTP {error.code} "
+                f"{error.reason}" + (" -- rate limited, retry later" if error.code == 429 else "")
             ) from error
         except (urllib.error.URLError, OSError) as error:
             reason = getattr(error, "reason", error)

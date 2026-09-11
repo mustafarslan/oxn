@@ -72,7 +72,7 @@ Lanes, in increasing cost:
 
 GitHub Actions is manual-only by design -- `scripts/check.py` is this project's CI.
 
-The `llm` lane uses Ollama with `glm-5.3:cloud`, overridable through `OXN_OLLAMA_MODEL` and
+The `llm` lane uses Ollama with `kimi-k3:cloud`, overridable through `OXN_OLLAMA_MODEL` and
 `OXN_OLLAMA_HOST`. It skips when the host is unreachable, and no other lane depends on a
 model being up.
 
@@ -300,8 +300,11 @@ that reason — two invocations, two different functions, one plausible-looking 
 temperature 0 and not deterministic, so a rate over one sample per target cannot be told
 apart from noise and should not be read as though it can.
 
-Two models, deliberately different: **glm-5.3** writes the repair, **deepseek-v4-pro**
-assesses it. A model grading its own output is not an independent check. `--backend
+Two models, deliberately different: **kimi-k3** writes the repair, **deepseek-v4-pro**
+assesses it. A model grading its own output is not an independent check. The actor default was
+`glm-5.3` until it was measured filling every output budget it was given and cutting off
+mid-answer, deterministically; `kimi-k3` is measured as a *writer* and not yet as a repair
+actor, which is a starting point rather than a claim. `--backend
 claude-code` drives `claude -p` instead, which is the arm that decides what a result means:
 Claude Code under OXN's own hooks is the agent the tool exists to govern.
 

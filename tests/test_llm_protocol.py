@@ -403,3 +403,36 @@ def test_a_cut_off_reply_carries_what_it_did_write(patched: Any) -> None:
         _client().generate("prompt")
 
     assert raised.value.written == len("def f():\n    if x:")  # type: ignore[attr-defined]
+
+
+def test_a_status_code_is_not_unreachable() -> None:
+    """A host that answers 429 is up and throttling, and saying "unreachable" sends the reader
+    to check whether Ollama is running.
+
+    Found when a real `oxn review --write ollama` hit the cloud rate limit and reported the
+    host as unreachable while it was serving other requests fine.
+    """
+    import urllib.error
+
+    from oxn.llm import OllamaClient, OllamaError
+
+    client = OllamaClient(host="http://localhost:11434", model="m")
+
+    def throttled(*_args, **_kwargs):
+        raise urllib.error.HTTPError(
+            "http://localhost:11434/api/generate", 429, "Too Many Requests", {}, None
+        )
+
+    import urllib.request
+
+    original = urllib.request.urlopen
+    urllib.request.urlopen = throttled
+    try:
+        with pytest.raises(OllamaError) as caught:
+            client.generate("hello")
+    finally:
+        urllib.request.urlopen = original
+
+    message = str(caught.value)
+    assert "unreachable" not in message, message
+    assert "HTTP 429" in message and "rate limited" in message, message

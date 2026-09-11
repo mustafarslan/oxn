@@ -536,7 +536,24 @@ def _comment(mechanical: str, payload: dict[str, Any], *, write: str, model: str
             "note": note,
         }
 
+    from oxn.llm import OllamaError
     from oxn.writers import ollama_writer, write_review
 
-    written = write_review(payload, ollama_writer(model)).as_dict()
+    # **A writer that cannot answer must not take the review with it.** Until 2026-09-11 an
+    # `OllamaError` propagated out of `oxn review --write ollama` as a traceback, so a host
+    # that was down, slow or rate-limiting produced no measurement at all -- found when a real
+    # run hit HTTP 429. That is the same rule as the honesty check one line down, for a
+    # different failure: the numbers were already measured, and losing them because a model
+    # was unavailable punishes the author for the writer's circumstances.
+    try:
+        written = write_review(payload, ollama_writer(model)).as_dict()
+    except OllamaError as error:
+        return {
+            "status": "REFUSED",
+            "body": mechanical,
+            "model": "oxn",
+            "invented": [],
+            "attempts": 0,
+            "note": f"the writer could not be reached, so OXN wrote the comment: {error}",
+        }
     return written if written["status"] == "OK" else {**written, "body": mechanical}
