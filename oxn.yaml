@@ -49,6 +49,16 @@ layers:
   # foundation at all, at module level or inside a function.
   # `server.py` is a surface, not orchestration: it decodes a request, calls the same
   # functions `_app.py` calls, and encodes the answer. It holds no analysis of its own.
+  # Outermost, and declared on 2026-09-11 because `oxn check --deep` began reporting them:
+  # 19 files the gate measures and no contract could see. Being outermost it is permitted to
+  # reach everything, so the half that could bite is `src -> scripts`, and a probe showed that
+  # half does not fire today -- `scripts/` has no `__init__.py`, so `from scripts.actors
+  # import ...` does not resolve to a file and never enters the dependency graph. What the
+  # declaration buys is the stated direction and an edge that is *checked* rather than skipped;
+  # what it does not buy is enforcement that has been observed working. Said plainly because a
+  # layer added to silence a diagnostic, rather than to answer it, is the failure this whole
+  # section exists to catch.
+  scripts: ["scripts/*"]
   surfaces: ["src/oxn/cli.py", "src/oxn/_app.py", "src/oxn/__main__.py", "src/oxn/report.py", "src/oxn/calls.py", "src/oxn/check.py", "src/oxn/review.py", "src/oxn/writers.py", "src/oxn/init.py", "src/oxn/server.py", "src/oxn/health.py", "src/oxn/doctor.py", "src/oxn/calibration.py"]
   orchestration: ["src/oxn/graph/indexer.py"]
   # `sources.py` is graph, not orchestration: finding source files is not orchestrating
@@ -76,7 +86,7 @@ layers:
 contracts:
   - name: surfaces-analysis-graph
     kind: layered
-    order: [surfaces, orchestration, analysis, graph, foundation]
+    order: [scripts, surfaces, orchestration, analysis, graph, foundation]
 
 # Fixtures are source files on purpose -- a hand-built shred is supposed to look bad.
 advisory:

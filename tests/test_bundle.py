@@ -240,3 +240,45 @@ def test_the_chain_ignores_ceilings_for_other_rules() -> None:
     chain = declarations_of(project, "function_sloc", "src/api/one.py")
 
     assert [constraint.limit for constraint in chain] == [60.0]
+
+
+def test_the_bundle_says_which_of_its_targets_no_contract_governs() -> None:
+    """**The only channel that can tell an agent this.**
+
+    A file in no governed layer produces no finding, so the hook exits 0 -- and exit 0 shows an
+    agent nothing. An agent creating a module outside every layer gets exactly the silence it
+    gets when everything is fine. `CLAUDE.md` already tells it to call this before writing.
+
+    Scoped to `targets` rather than the repository: a tree-wide count is a fact about the
+    project and belongs in `oxn check --deep`.
+    """
+    from oxn.config import Config, Contract, Layer
+    from oxn.context.bundle import build_bundle
+    from oxn.context.project import Project
+
+    project = Project(
+        config=Config(
+            root=Path("."),
+            layers=(Layer("app", ("app/*",)), Layer("tooling", ("tooling/*",))),
+            contracts=(Contract(name="c", kind="layered", order=("app",)),),
+        ),
+        paths=("app/a.py", "tooling/t.py", "stray.py"),
+    )
+
+    bundle = build_bundle(
+        project, task="add a function", targets=["app/a.py", "tooling/t.py", "stray.py"]
+    )
+
+    assert bundle.ungoverned == ("tooling/t.py", "stray.py"), bundle.ungoverned
+    assert "app/a.py" not in bundle.ungoverned
+
+
+def test_nothing_is_ungoverned_where_nothing_governs() -> None:
+    """A project with no contracts has no layer rules to be outside of, and saying "3 files are
+    ungoverned" there is a warning about a feature the project has not adopted."""
+    from oxn.config import Config
+    from oxn.context.bundle import build_bundle
+    from oxn.context.project import Project
+
+    project = Project(config=Config(root=Path(".")), paths=("a.py",))
+    assert build_bundle(project, task="t", targets=["a.py"]).ungoverned == ()

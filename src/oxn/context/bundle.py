@@ -90,6 +90,16 @@ class Bundle(BaseModel):
     constraints: tuple[Constraint, ...] = ()
     #: How many constraints existed but were not shown. Never hidden.
     omitted: int = 0
+    #: Of `targets`, the files no contract's layer rules can see.
+    #:
+    #: **Not a violation, and the agent has to be told so.** It means the opposite: nothing
+    #: here constrains this file's imports, so the layer rules in `constraints` do not apply
+    #: to it. The reason it is worth saying is that the gate cannot. A file in no governed
+    #: layer produces no finding, the hook exits 0, and exit 0 shows an agent nothing -- so an
+    #: agent creating a module outside every layer gets silence, which is the same thing it
+    #: gets when everything is fine. This is the only channel that can distinguish them, and
+    #: `CLAUDE.md` already says to call it before writing.
+    ungoverned: tuple[str, ...] = ()
     note: str = NOTE
 
 
@@ -121,7 +131,25 @@ def build_bundle(
         targets=tuple(targets),
         constraints=tuple(chosen),
         omitted=max(0, len(candidates) - len(chosen)),
+        ungoverned=_ungoverned_targets(project, targets),
     )
+
+
+def _ungoverned_targets(project: Project, targets: Sequence[str]) -> tuple[str, ...]:
+    """Which of `targets` no contract's layer rules reach.
+
+    Scoped to what the caller asked about rather than to the repository: a count over the whole
+    tree is a fact about the project and belongs in `oxn check --deep`, while an agent about to
+    edit one file needs to know about that file. Empty when the project declares no contracts,
+    because "ungoverned" is not a meaningful thing to say where nothing governs anything.
+    """
+    from oxn.graph.contracts import assign_layers, governed_layers
+
+    if not targets or not project.config.contracts:
+        return ()
+    governed = governed_layers(project.config.contracts)
+    assignment = assign_layers(list(targets), project.config.layers)
+    return tuple(path for path in targets if (assignment.get(path) or "__none__") not in governed)
 
 
 def declarations_of(project: Project, rule: str, path: str) -> list[Constraint]:

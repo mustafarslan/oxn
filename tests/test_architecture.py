@@ -15,7 +15,7 @@ import pytest
 
 from oxn.config import Contract, Layer
 from oxn.graph.architecture import LakosMetrics, analyse, detect_smells
-from oxn.graph.contracts import assign_layers, check_contracts
+from oxn.graph.contracts import assign_layers, check_contracts, governed_layers
 
 # ---- Martin metrics ---------------------------------------------------------------------
 
@@ -283,7 +283,7 @@ def test_absent_edges_surface_stale_rules() -> None:
 
 def test_files_outside_every_layer_are_reported() -> None:
     graph = {"scripts/tool.py": set()}
-    assert check_contracts(graph, LAYERS, [LAYERED]).unassigned == ["scripts/tool.py"]
+    assert check_contracts(graph, LAYERS, [LAYERED]).ungoverned == ["scripts/tool.py"]
 
 
 # ---- reports must be diffable ---------------------------------------------------------
@@ -494,7 +494,7 @@ def test_fan_in_and_fan_out_are_reflexive_and_agree_with_propagation_cost() -> N
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _governed_layers() -> list[Layer]:
+def _oxn_layers_under_contract() -> list[Layer]:
     """The layers OXN's own contract actually orders.
 
     A layer declared in `oxn.yaml` and left out of every contract's `order` governs nothing --
@@ -522,7 +522,7 @@ def test_every_source_file_is_claimed_by_a_layer() -> None:
     Both were found by a person going looking. This asserts it instead, and it is the reason
     `foundation` exists rather than the six modules being left unassigned a third time.
     """
-    layers = _governed_layers()
+    layers = _oxn_layers_under_contract()
     assert layers, "OXN's own oxn.yaml declares a layered contract"
 
     sources = sorted(str(path.relative_to(ROOT)) for path in (ROOT / "src" / "oxn").rglob("*.py"))
@@ -560,3 +560,50 @@ def test_the_innermost_layer_may_not_reach_outward() -> None:
     violation = report.divergent[0]
     assert (violation.source, violation.target) == ("foundation", "surfaces"), violation
     assert violation.chain == ("src/oxn/languages.py", "src/oxn/check.py"), violation
+
+
+def test_a_layer_no_contract_orders_governs_nothing() -> None:
+    """**Matching a declared layer is not the same as being governed by one.**
+
+    `_check_layered` skips an edge whose layer is absent from the contract's `order`, so a
+    layer declared in `oxn.yaml` and left out of every contract is checked by nothing. A report
+    counting only files that matched *no* layer would call that coverage -- and OXN's own
+    `tests` layer is exactly this shape, deliberately, which is what makes the distinction
+    worth drawing rather than theoretical.
+    """
+    layers = [
+        Layer("app", ("app/*",)),
+        Layer("core", ("core/*",)),
+        Layer("tooling", ("tooling/*",)),
+    ]
+    contract = Contract(name="c", kind="layered", order=("app", "core"))
+    graph = {"app/a.py": {"core/c.py"}, "core/c.py": set(), "tooling/t.py": {"app/a.py"}}
+
+    report = check_contracts(graph, layers, [contract])
+
+    assert report.passed, "tooling reaching app is not a violation of a contract it is not in"
+    assert report.ungoverned == ["tooling/t.py"], report.ungoverned
+
+
+def test_a_file_matching_no_layer_is_ungoverned_too() -> None:
+    """The other half, and the one that bit twice here."""
+    layers = [Layer("app", ("app/*",))]
+    contract = Contract(name="c", kind="layered", order=("app",))
+    graph = {"app/a.py": set(), "stray.py": {"app/a.py"}}
+
+    assert check_contracts(graph, layers, [contract]).ungoverned == ["stray.py"]
+
+
+def test_governed_layers_reads_every_contract_kind() -> None:
+    """A layer named by a `forbidden` or `independence` contract is governed by it.
+
+    Reading only `order` would report every layer in a repository that declares no layered
+    contract as ungoverned, which is the false positive that would get this diagnostic turned
+    off. `acyclic` is deliberately not counted: it works over directory components rather than
+    layers and sees every file whatever its layer.
+    """
+    assert governed_layers([Contract("c", "layered", order=("a", "b"))]) == {"a", "b"}
+    assert governed_layers([Contract("c", "forbidden", source="a", forbidden=("b",))]) == {"a", "b"}
+    assert governed_layers([Contract("c", "independence", modules=("a", "b"))]) == {"a", "b"}
+    assert governed_layers([Contract("c", "deep_import", package="a")]) == {"a"}
+    assert governed_layers([Contract("c", "acyclic")]) == set()

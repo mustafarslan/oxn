@@ -61,7 +61,9 @@ class ConformanceReport:
     convergent: int = 0
     divergent: list[Violation] = field(default_factory=list)
     absent: list[tuple[str, str]] = field(default_factory=list)
-    unassigned: list[str] = field(default_factory=list)
+    #: Files no contract's layer rules can see -- matched by no declared layer, or matched by
+    #: one that appears in no contract. See `governed_layers` for why the second half matters.
+    ungoverned: list[str] = field(default_factory=list)
 
     @property
     def passed(self) -> bool:
@@ -82,7 +84,7 @@ class ConformanceReport:
                 for violation in self.divergent
             ],
             "absent": [{"source": s, "target": t} for s, t in self.absent],
-            "unassigned_files": self.unassigned,
+            "ungoverned_files": self.ungoverned,
         }
 
 
@@ -115,9 +117,7 @@ def check_contracts(
     """
     paths = sorted(file_graph)
     assignment = assign_layers(paths, layers)
-    report = ConformanceReport(
-        unassigned=[path for path, layer in assignment.items() if layer is None]
-    )
+    report = ConformanceReport(ungoverned=_ungoverned(assignment, contracts))
     layer_edges = _layer_edges(file_graph, paths, assignment)
 
     for contract in contracts:
@@ -132,6 +132,36 @@ def check_contracts(
     if declared:
         report.absent = sorted(edge for edge in declared if edge not in layer_edges)
     return report
+
+
+def _ungoverned(assignment: Mapping[str, str | None], contracts: Sequence[Contract]) -> list[str]:
+    """Files no contract's layer rules can see, sorted."""
+    governed = governed_layers(contracts)
+    return sorted(
+        path for path, layer in assignment.items() if layer is None or layer not in governed
+    )
+
+
+def governed_layers(contracts: Sequence[Contract]) -> set[str]:
+    """Every layer name any contract actually mentions.
+
+    **Matching a declared layer is not the same as being governed by one**, and the difference
+    is silent in both directions that matter. `_check_layered` skips an edge whose layer is
+    absent from the contract's `order`; `_check_independence` and `_check_forbidden` only look
+    at layers they name. So a layer declared in `oxn.yaml` and left out of every contract is
+    checked by nothing -- and a report that counted only files matching *no* layer would call
+    that coverage. OXN's own `tests` layer is exactly this shape, deliberately.
+
+    `acyclic` is the exception and is not counted here: it works over directory components
+    rather than layers and therefore sees every file whatever its layer. A repository whose
+    only contract is `acyclic` will show every file as ungoverned by this measure, which is
+    true of its *layer* rules and is what the number is about.
+    """
+    named: set[str] = set()
+    for contract in contracts:
+        named |= set(contract.order) | set(contract.forbidden) | set(contract.modules)
+        named |= {name for name in (contract.source, contract.package) if name}
+    return named
 
 
 def _layer_edges(

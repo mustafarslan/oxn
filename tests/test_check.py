@@ -388,3 +388,58 @@ def test_an_explicit_root_is_taken_literally(tmp_path) -> None:
     nested = tmp_path / "src"
     nested.mkdir()
     assert Config.load(nested).ceilings["cognitive_complexity"] != 3.0
+
+
+def test_check_says_how_many_files_no_contract_can_see(tmp_path, monkeypatch) -> None:
+    """**A passing gate and a gate that is not running look identical, and that is the bug.**
+
+    `check_contracts` skips an edge whose source no contract covers, so it produces no
+    violation -- which is right for a repository governing part of itself and silent for one
+    that meant to govern all of itself. It has cost this project two layer gaps.
+
+    Two numbers, because they are two different mistakes: matching *no declared layer* is an
+    omission, while sitting in a layer no contract *orders* is a declaration someone made.
+    A count and never a list -- a legacy repo can have hundreds, and a screen of paths between
+    the reader and the violations is the false positive that ends adoption.
+    """
+    from oxn.check import run_check
+
+    (tmp_path / "app").mkdir()
+    (tmp_path / "tooling").mkdir()
+    (tmp_path / "app" / "a.py").write_text("def f():\n    return 1\n")
+    (tmp_path / "tooling" / "t.py").write_text("def g():\n    return 2\n")
+    (tmp_path / "stray.py").write_text("def h():\n    return 3\n")
+    (tmp_path / "oxn.yaml").write_text(
+        "layers:\n"
+        "  app: ['app/*']\n"
+        "  tooling: ['tooling/*']\n"
+        "contracts:\n"
+        "  - name: c\n"
+        "    kind: layered\n"
+        "    order: [app]\n"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    report = run_check(["."], deep=True)
+
+    assert sorted(report.ungoverned) == ["stray.py", "tooling/t.py"], report.ungoverned
+    note = "\n".join(report.diagnostics)
+    assert "1 file(s) match no declared layer" in note, note
+    assert "1 are in layers no contract orders" in note, note
+    assert "stray.py" not in note, "a count, never a list"
+    assert report.passed, "partial coverage is not a violation"
+
+
+def test_a_project_with_no_contracts_is_not_warned_about_coverage(tmp_path, monkeypatch) -> None:
+    """ "Ungoverned" is not a meaningful thing to say where nothing governs anything, and a
+    warning about a feature the project has not adopted is how a diagnostic gets turned off."""
+    from oxn.check import run_check
+
+    (tmp_path / "a.py").write_text("def f():\n    return 1\n")
+    (tmp_path / "oxn.yaml").write_text("ceilings:\n  parameter_count: 5\n")
+    monkeypatch.chdir(tmp_path)
+
+    report = run_check(["."], deep=True)
+
+    assert report.ungoverned == []
+    assert not any("governed layer" in note for note in report.diagnostics), report.diagnostics

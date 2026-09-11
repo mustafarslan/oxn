@@ -36,6 +36,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover
+    from collections.abc import Mapping
+
     from oxn.config import Config
     from oxn.retry import Attempt
 
@@ -113,6 +115,8 @@ class CheckReport:
     #: Baselined findings that got *worse*. These fail: that is the ratchet.
     regressed: list[Finding] = field(default_factory=list)
     diagnostics: list[str] = field(default_factory=list)
+    #: Files no contract's layer rules can see. Repository-scoped, so only `--deep` fills it.
+    ungoverned: list[str] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)
     #: Retry accounting, populated only on the hook path — a CLI or CI run has no session
     #: to count attempts against, and must never halt asking for a fix.
@@ -171,6 +175,7 @@ class CheckReport:
             "advisory": [finding.as_dict() for finding in self.advisory],
             "baselined": len(self.baselined),
             "diagnostics": self.diagnostics,
+            "ungoverned_files": self.ungoverned,
             "errors": self.errors,
         }
         if self.retry_budget:
@@ -252,6 +257,7 @@ def _rule_findings(
         wanted = [indexer.relative(path) for path in sources]
         report.paths = wanted
         layer_of = assign_layers(wanted, settings.layers) if settings.layers else {}
+        _note_ungoverned(report, layer_of, settings)
         facts = file_facts(indexer.store, wanted, settings, layer_of)
         populated = _edge_facts(facts, indexer, sources, settings, report)
         rules = rules_for_scope(settings, populated=populated)
@@ -262,6 +268,46 @@ def _rule_findings(
             rules.append(unscoped_rule())
 
     return [_as_finding(found) for found in evaluate(rules, facts)]
+
+
+def _note_ungoverned(
+    report: CheckReport, layer_of: Mapping[str, str | None], settings: Config
+) -> None:
+    """Say how many of the measured files no contract's layer rules can see.
+
+    **A count, and never the list.** Both times a layer gap survived in this repository it
+    survived because a passing gate looks exactly like a gate that is not running: an edge
+    whose source no contract covers produces no violation, so silence is the same shape as
+    coverage. A legacy repo adopting a contract over one package can have hundreds of these,
+    and a screen of paths standing between the reader and the violations is the false positive
+    that ends adoption -- so the list goes to `--json` and the console gets a number.
+
+    **Two numbers, because they are two different mistakes.** A file matching *no declared
+    layer* is an omission, and it is the one that bit twice here -- `rules/*` and six surface
+    modules, both invisible until a person went looking. A file in a layer that no contract
+    *orders* is a declaration someone made: OXN's own `tests` layer is exactly that, named so
+    it can carry its own ceilings and deliberately outside the layered contract. Reporting 102
+    where 19 are actionable would be the same defect one level up.
+
+    **Neither is a finding.** Partial coverage is a legitimate way to adopt a contract. A
+    diagnostic says "this is what was not checked"; a violation would say "this is wrong".
+    """
+    from oxn.graph.contracts import governed_layers
+
+    if not settings.contracts:
+        return
+    governed = governed_layers(settings.contracts)
+    unlayered = sorted(path for path, layer in layer_of.items() if layer is None)
+    unordered = sorted(
+        path for path, layer in layer_of.items() if layer is not None and layer not in governed
+    )
+    report.ungoverned = sorted(unlayered + unordered)
+    if report.ungoverned:
+        report.diagnostics.append(
+            f"{len(unlayered)} file(s) match no declared layer and {len(unordered)} are in "
+            "layers no contract orders, so their imports are checked by no contract "
+            "(`--json` lists `ungoverned_files`)"
+        )
 
 
 def _edge_facts(
@@ -338,6 +384,7 @@ def _measure(targets: list[Path], settings: Config, report: CheckReport) -> list
         wanted = [indexer.relative(path) for path in indexer.sources(targets)]
         report.paths = wanted
         layer_of = assign_layers(wanted, settings.layers) if settings.layers else {}
+        _note_ungoverned(report, layer_of, settings)
 
         for path in wanted:
             if settings.is_advisory(path):

@@ -194,7 +194,10 @@ TOOLS: tuple[Tool, ...] = (
             "The constraints that govern a task -- ceilings, architectural contracts and "
             "recorded decisions -- ranked against what you are doing and capped to a budget. "
             "Call this BEFORE writing code, not after being rejected. It can never pass or "
-            "fail anything: the gate enforces every constraint, shown here or not."
+            "fail anything: the gate enforces every constraint, shown here or not. "
+            "`ungoverned` names the files you asked about that no contract's layer rules "
+            "reach -- not a violation, the opposite: nothing constrains their imports, and "
+            "the gate cannot tell you so because having no rule produces no finding."
         ),
         request=ContextRequest,
         run=_architectural_context,
