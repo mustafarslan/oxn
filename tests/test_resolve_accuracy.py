@@ -109,8 +109,16 @@ def test_step_two_answers_from_the_file_the_name_came_from() -> None:
     specifier bound the name and `specifier_targets` records where that specifier was placed.
 
     On `javascript-eslint` this fires for 1,950 of 1,965 step-2 answers, so it is the common
-    path rather than a corner, and it moves no published number -- which is what a change that
-    replaces a coincidence with the same answer for the right reason looks like.
+    path rather than a corner.
+
+    **Measured on all six languages, and Go is why it is worth having.** Python, Rust,
+    TypeScript, JavaScript and Java are identical with it and without -- same graded count,
+    same confident count, same precision. Go is not: confident precision **99.116% -> 99.411%**
+    with the confident count unchanged at 1,018, so it converts wrong answers into right ones
+    rather than adding answers. That is package-qualified dispatch, `metrics.NewCounter()`,
+    where "any file this one imports" and "the file `metrics` was imported from" are different
+    files and only the second is evidence. An earlier claim here said it moved no published
+    number; that was measured on eslint alone, before Go's indexer was installed.
     """
     from oxn.graph.model import Entity, EntityKind
     from oxn.resolve.symbols import ProjectSymbols

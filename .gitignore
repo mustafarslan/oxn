@@ -24,6 +24,10 @@ htmlcov/
 
 # Benchmark corpora are fetched, never vendored (see benchmarks/manifest.yaml).
 benchmarks/corpora/
+# Built SCIP indexes and their caches. Minutes of work, deterministic for a pinned
+# corpus, and rebuilt on demand by scripts/measure_resolution.py -- kept between runs
+# because rebuilding every time is the reason nobody re-measures.
+benchmarks/.scip-cache/
 
 # Oracle runners install their tools locally; never vendored.
 tests/oracles/node_modules/

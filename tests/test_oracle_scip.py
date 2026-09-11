@@ -67,9 +67,11 @@ def test_wire_reader_round_trips_a_real_index(tmp_path) -> None:
 def test_scip_ingest_covers_a_real_corpus(tmp_path) -> None:
     """Phase exit criterion, stated as coverage rather than an undefined 'precision'.
 
-    Measured on httpx: index built in ~4s, 99% of declarations matched a symbol, 96% of
-    call sites resolved to a target. Thresholds sit below the observed values because CI
-    runners and indexer versions vary.
+    Re-measured 2026-09-11 by `scripts/measure_resolution.py`: index in 5 s, **99.0% of
+    declarations** matched a symbol and **97.2% of call sites** (4,073 of 4,189). Of the rest,
+    116 (2.8%) had no SCIP occurrence at the callee and **0** had one without an enclosing
+    entity. Thresholds sit below the observed values because CI runners and indexer versions
+    vary.
     """
     from oxn.graph.indexer import Indexer
     from oxn.scip.ingest import ingest_index
@@ -99,9 +101,11 @@ def test_scip_ingest_covers_a_real_corpus(tmp_path) -> None:
 def test_l0_l1_accuracy_against_scip_ground_truth(tmp_path) -> None:
     """The published L0/L1 accuracy table, re-measured.
 
-    Measured on httpx: 99.8% precision at 65.6% recall when L1 is *certain*, 70.3% precision
-    at 100% recall when it also guesses. That split is the gating policy in ADR-0002 -- only
-    certain answers may block.
+    Re-measured 2026-09-11: **100.0% precision at 65.5% recall when L1 is *certain***, 70.3% at
+    100% recall when it also guesses, over 1,453 graded sites. The precision figure was
+    published as 99.8% and had improved without anything failing, which is the direction this
+    staleness usually runs and no less stale for it. That split is the gating policy in ADR-0002
+    -- only certain answers may block.
 
     30.5% of call sites are excluded because scip-python 0.6.6 contradicts the source it
     indexed, naming an alphabetically adjacent symbol for names re-exported through a
@@ -144,8 +148,11 @@ requires_scip_go = pytest.mark.skipif(
 def test_go_l2_covers_the_corpus(tmp_path) -> None:
     """P5's coverage criterion, for the second language to have an L2 at all.
 
-    Measured on go-kit (243 documents): 100% of declarations matched a symbol and 88.3% of
-    call sites resolved, ingest in 0.4 s.
+    Re-measured 2026-09-11 with `scip-go` 0.2.7: **100% of declarations** matched a symbol and
+    **87.8% of call sites** (5,758 of 6,558). Of the rest, 800 (12.2%) had no SCIP occurrence
+    at the callee and **0** had one without an enclosing entity. The published figure was
+    88.3%; it was measured with whatever `scip-go` was installed then, and this run installed
+    `@latest`, so the half-point is not attributable to OXN either way.
 
     **Indexing is one second; the prerequisite is not.** `scip-go` runs `go/packages`, so
     the module must already be buildable -- on go-kit, whose closure includes the AWS SDK
@@ -176,9 +183,17 @@ def test_go_l2_covers_the_corpus(tmp_path) -> None:
 def test_go_l0_l1_accuracy_is_published_and_is_worse_than_python(tmp_path) -> None:
     """The per-language half of P5's exit criterion, and the reason it is worth publishing.
 
-    Go on go-kit: **99.7% precision when L1 is certain** at 64.1% confident recall, 71.4%
-    overall at 100% recall, against Python's 100% on httpx. Nothing is excluded -- scip-go
-    does not contradict its own source anywhere, where scip-python does at 30.5% of sites.
+    Go on go-kit, re-measured 2026-09-11: **99.4% precision when L1 is certain** at 56.7%
+    confident recall, 69.7% overall at 100% recall, over 1,794 graded sites. Nothing is
+    excluded -- scip-go does not contradict its own source anywhere, where scip-python does at
+    30.5% of sites.
+
+    **This row was 99.7% / 64.1% / 71.4% and drifted seven points of confident recall with
+    nothing failing**, because the tests assert floors and the figures live in prose. Two
+    things changed underneath it and neither is separable from here: the receiver fallback was
+    removed from `scip.join` on 2026-09-10, and `scip-go` was reinstalled at `@latest` (0.2.7)
+    on 2026-09-11, which moves the ground truth itself. `scripts/measure_resolution.py` exists
+    so the next re-measurement is a command rather than a reconstruction.
 
     **Confident recall was 55.5% and overall precision 59.3% until Go imports resolved.**
     `resolve_call`'s second step -- "a declaration in a file this one imports" -- had never
@@ -244,9 +259,11 @@ requires_rust_analyzer = pytest.mark.skipif(
 def test_rust_l2_and_l0_l1_accuracy(tmp_path) -> None:
     """The third language in the table, and the one that showed the *grader* was wrong.
 
-    On ripgrep: L2 coverage 99.2% of declarations and 99.2% of call sites, index built in
-    40 s against the 60 s budget. L0/L1 scores **99.2% precision when certain** at 42.3%
-    confident recall; 53.0% overall at 100% recall, over 6,642 graded call sites.
+    On ripgrep, re-measured 2026-09-11: L2 coverage 99.2% of declarations and **99.0% of call
+    sites** (13,367 of 13,505), index built in 40 s against the 60 s budget. Of the rest, 138
+    (1.0%) had no SCIP occurrence and **0** had one without an enclosing entity. L0/L1 scores
+    **99.1% precision when certain** at 42.1% confident recall; 52.8% overall at 100% recall,
+    over 6,665 graded call sites.
 
     **Those numbers replace the ones this test asserted when it was written, and the
     difference is a defect in `symbol_tail`, not a change to the resolver.** It published
