@@ -28,6 +28,7 @@ Measured 2026-09-10:
     max_nesting_depth                 25       0
     shredding                          3       1
 """
+
 import sqlite3
 from pathlib import Path
 
