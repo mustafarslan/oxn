@@ -431,19 +431,16 @@ def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     know why, and deliberately: the last causal story told from these corpora was an artifact
     of a grader bug, and two rows on each side is a pattern, not a cause.
 
-    **The 76.2% call coverage misses P5's >=85% criterion**, and the two causes below are
-    counted -- because this docstring first asserted the gap was all the indexer's and that
-    was wrong. **10.5% have no SCIP occurrence** at the callee, which is `scip-typescript`'s
-    coverage; **5.9% have one and no enclosing entity**, because a module-level call
-    (`bootstrap()` in a `main.ts`) has no caller to hang an edge on. The second is the
-    criterion's denominator disagreeing with the join by design, and ADR-0002 carries the
-    split for every language that has one.
+    **The 76.2% call coverage misses P5's >=85% criterion, and the cause is one thing.**
+    Recounted 2026-09-11 by `IngestReport`, which reports the split now rather than leaving it
+    to a script: of 8,184 call sites, 6,233 joined and **1,951 (23.8%) had no SCIP occurrence
+    at the callee**. Sites with an occurrence and no enclosing entity: **0**.
 
-    **Those two shares were measured at 83.6% coverage and have not been recounted**, so they
-    do not add up to today's 23.8% gap. The receiver fallback removed below took the headline
-    down without moving the causes it was double-counting into either bucket; recounting them
-    means re-running this corpus, and a stale breakdown labelled stale is better than one
-    rescaled to fit a number it was not measured against.
+    That last number is the correction. This docstring said 10.5% and 5.9%, and the second
+    figure -- "a module-level call has no caller to hang an edge on" -- stopped being true when
+    `join._map_calls` began attributing such a call to the file's own entity. The explanation
+    outlived the defect it explained, in both this row and JavaScript's, and got repeated into
+    the ROADMAP. The gap is `scip-typescript`'s occurrence coverage and nothing else.
 
     **This row cost 529 fabricated L2 edges to publish, which is what it was worth.** The
     first measurement excluded 441 sites (16.9%); printing them rather than attributing them
@@ -534,16 +531,22 @@ def test_javascript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     the oracle's name match the source's. `is_document_local` records the fix and the
     measurement that it does not cost the position join anything.
 
-    **47.0% call coverage is the largest miss of the six**, by a distance, and it is the same
-    two causes. They were counted over the 43,777 call sites in JavaScript files **at 69.3%
-    coverage and have not been recounted since the receiver fallback went** -- so they describe
-    the shape of the gap and no longer its size: **15.5% had no SCIP occurrence** at the callee,
-    and **14.7% had one and no enclosing entity** (69.7% joined, on that subset). The second is
-    much larger here than in TypeScript's 5.9%, and it is what a JavaScript repository looks
-    like -- `Makefile.js`, config files and scripts call at module level, where there is no
-    caller to hang an edge on. That is the criterion's denominator disagreeing with the join by
-    design, not an indexer gap; it is reported as a miss anyway, because dividing a criterion by
-    a friendlier denominator after the fact is how a number stops meaning anything.
+    **47.0% call coverage is the largest miss of the six**, by a distance, and it is one
+    cause rather than two. Recounted 2026-09-11 from `IngestReport`: of 44,141 call sites,
+    20,754 joined and **23,387 (53.0%) had no SCIP occurrence at the callee**. Sites with an
+    occurrence and no enclosing entity: **0**.
+
+    This row previously read 15.5% and 14.7%, and attributed the larger half to module-level
+    calls in `Makefile.js`, config files and scripts -- "the criterion's denominator
+    disagreeing with the join by design, not an indexer gap". That is now exactly backwards.
+    Such a call is attributed to the file's own entity since `join._map_calls` gained that
+    fallback, so the denominator agrees; what remains is the indexer having no occurrence to
+    join to, which *is* an indexer gap, and the honest reading is that JavaScript is the corpus
+    with the least type information for one to place a property name with.
+
+    The split is reported by the tool now (`calls_without_occurrence`, `calls_without_caller`)
+    rather than recomputed by a script and pasted here, which is what let the old explanation
+    outlive the defect it explained.
 
     The precision figures are the lowest of the six, and are not explained here for the same
     reason TypeScript's high ones are not: one corpus is not a cause.

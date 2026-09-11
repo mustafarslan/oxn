@@ -121,6 +121,12 @@ class JoinResult:
     module: Entity | None = None
     call_sites: int = 0
     joined_call_sites: int = 0
+    #: Call sites the index had no occurrence for at the callee. The indexer's coverage.
+    calls_without_occurrence: int = 0
+    #: Call sites with an occurrence and no enclosing entity to hang the edge on -- a call at
+    #: module scope in a file that produced no module entity. The criterion's denominator
+    #: disagreeing with the join, not an indexer gap.
+    calls_without_caller: int = 0
     definition_sites: int = 0
     joined_definition_sites: int = 0
 
@@ -215,6 +221,7 @@ def _map_calls(join: _Join) -> None:
 
         position, occurrence = _occurrence_at(callee, by_position)
         if occurrence is None:
+            result.calls_without_occurrence += 1
             continue
 
         # A call written at module scope has no enclosing definition, and dropping it lost
@@ -223,6 +230,7 @@ def _map_calls(join: _Join) -> None:
         # entity is the caller, which is what executes it.
         caller = _enclosing_entity(node, profile, by_def_range) or result.module
         if caller is None:
+            result.calls_without_caller += 1
             continue
 
         # Recorded so `_map_references` can tell a call from a mention of the same name.

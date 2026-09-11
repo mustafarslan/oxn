@@ -55,6 +55,20 @@ class OllamaError(RuntimeError):
     """Raised when Ollama is unreachable or returns something unusable."""
 
 
+class OllamaUnavailable(OllamaError):
+    """The host or model could not serve this request, for reasons outside OXN.
+
+    Unreachable, timed out, or answering an HTTP status -- **429 included**, which is a cloud
+    endpoint throttling rather than a host being down.
+
+    A subclass rather than a sibling, because every existing `except OllamaError` should still
+    catch it: `report.run_review_report` falls back to OXN's own comment on any of these, and
+    narrowing that would undo the fix that put it there. What the distinction buys is the other
+    direction -- a test lane can skip on "no model available to ask" without also skipping on
+    "the model answered something this client cannot parse", which is a defect and must fail.
+    """
+
+
 class ReplyCutOff(OllamaError):
     """The model stopped at its token budget with an answer half written.
 
@@ -230,7 +244,7 @@ class OllamaClient:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 reply = self._consume(response)
         except TimeoutError as error:
-            raise OllamaError(
+            raise OllamaUnavailable(
                 f"{self.model} sent nothing for {self.timeout}s -- it may still be "
                 f"generating; raise OXN_OLLAMA_TIMEOUT if so ({error})"
             ) from error
@@ -239,17 +253,17 @@ class OllamaClient:
             # and sends the reader to check whether Ollama is running. 429 in particular is a
             # cloud model refusing *this* request while serving others; it was reported as
             # unreachable until 2026-09-11, found when a review hit the rate limit.
-            raise OllamaError(
+            raise OllamaUnavailable(
                 f"Ollama at {self.host} refused the request: HTTP {error.code} "
                 f"{error.reason}" + (" -- rate limited, retry later" if error.code == 429 else "")
             ) from error
         except (urllib.error.URLError, OSError) as error:
             reason = getattr(error, "reason", error)
             if isinstance(reason, TimeoutError):
-                raise OllamaError(
+                raise OllamaUnavailable(
                     f"Ollama at {self.host} did not answer within {self.timeout}s"
                 ) from error
-            raise OllamaError(f"Ollama at {self.host} is unreachable: {error}") from error
+            raise OllamaUnavailable(f"Ollama at {self.host} is unreachable: {error}") from error
         except json.JSONDecodeError as error:
             raise OllamaError(f"Ollama returned invalid JSON: {error}") from error
         return reply

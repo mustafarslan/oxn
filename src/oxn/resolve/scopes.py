@@ -392,38 +392,38 @@ def _bind_assignment(node: Node, scope: Scope, tree: ScopeTree, spec: ScopeSpec)
             )
 
 
-#: **A CommonJS `require` is deliberately *not* bound as an import, and this is the
-#: measurement rather than an oversight.**
-#:
-#: `const fs = require("fs")` is an import written as an assignment; the grammar has no
-#: `import_statement` to match, so it is declared `local` and `scip.aliases` refuses it as
-#: "not an import binding". Binding it properly was written, measured on `javascript-eslint`,
-#: and removed. What it bought: 883 refusals fell to 456 and 77 call edges gained a target,
-#: 63.8% -> 64.2%. What it cost, against SCIP as ground truth: **ten call sites became
-#: confidently answered and all ten were wrong**, with the correct count flat at 8,617 -- the
-#: exact signature `ProjectSymbols._from_imports` records for Rust's step 2, and the same
-#: diagnosis, a rule reaching past the evidence it has.
-#:
-#: The three configurations, measured separately, because the interaction is the whole story:
-#:
-#: ==========================  =========  =======  ==========
-#: configuration               confident  correct  precision
-#: ==========================  =========  =======  ==========
-#: neither                     8633       8617     99.815%
-#: destructuring only          8633       8617     99.815%
-#: `require` only              8633       8617     99.815%
-#: both                        8643       8617     **99.699%**
-#: ==========================  =========  =======  ==========
-#:
-#: `require` alone is a small *gain* -- it makes `require("fs")` correctly external, dropping
-#: five lucky answers of which three were wrong. The ten wrong answers need both: a
-#: shorthand-destructured require, `const { helper } = require("./m")`. They are answered from
-#: `./m` itself (`_from_the_named_file` fires for 1,950 of 1,965 step-2 hits), and `./m` does
-#: declare a `helper` -- the oracle disagrees because CommonJS re-exports through
-#: `module.exports = require("./other")`, which nothing here follows.
-#:
-#: So the gap is real and closing it needs re-export chains, not a binding rule. Shipping the
-#: binding without them would add 77 edges of unmeasured accuracy and ten of measured-wrong.
+# **A CommonJS `require` is deliberately *not* bound as an import, and this is the
+# measurement rather than an oversight.**
+#
+# `const fs = require("fs")` is an import written as an assignment; the grammar has no
+# `import_statement` to match, so it is declared `local` and `scip.aliases` refuses it as
+# "not an import binding". Binding it properly was written, measured on `javascript-eslint`,
+# and removed. What it bought: 883 refusals fell to 456 and 77 call edges gained a target,
+# 63.8% -> 64.2%. What it cost, against SCIP as ground truth: **ten call sites became
+# confidently answered and all ten were wrong**, with the correct count flat at 8,617 -- the
+# exact signature `ProjectSymbols._from_imports` records for Rust's step 2, and the same
+# diagnosis, a rule reaching past the evidence it has.
+#
+# The three configurations, measured separately, because the interaction is the whole story:
+#
+# ==========================  =========  =======  ==========
+# configuration               confident  correct  precision
+# ==========================  =========  =======  ==========
+# neither                     8633       8617     99.815%
+# destructuring only          8633       8617     99.815%
+# `require` only              8633       8617     99.815%
+# both                        8643       8617     **99.699%**
+# ==========================  =========  =======  ==========
+#
+# `require` alone is a small *gain* -- it makes `require("fs")` correctly external, dropping
+# five lucky answers of which three were wrong. The ten wrong answers need both: a
+# shorthand-destructured require, `const { helper } = require("./m")`. They are answered from
+# `./m` itself (`_from_the_named_file` fires for 1,950 of 1,965 step-2 hits), and `./m` does
+# declare a `helper` -- the oracle disagrees because CommonJS re-exports through
+# `module.exports = require("./other")`, which nothing here follows.
+#
+# So the gap is real and closing it needs re-export chains, not a binding rule. Shipping the
+# binding without them would add 77 edges of unmeasured accuracy and ten of measured-wrong.
 
 
 def _bind_alias(node: Node, scope: Scope) -> None:

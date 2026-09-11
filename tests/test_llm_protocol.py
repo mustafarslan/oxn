@@ -436,3 +436,10 @@ def test_a_status_code_is_not_unreachable() -> None:
     message = str(caught.value)
     assert "unreachable" not in message, message
     assert "HTTP 429" in message and "rate limited" in message, message
+
+    from oxn.llm import OllamaUnavailable
+
+    assert isinstance(caught.value, OllamaUnavailable), (
+        "a throttled host is unavailable, not a protocol defect -- the `llm` lane skips on the "
+        "first and must fail on the second"
+    )

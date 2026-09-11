@@ -32,6 +32,15 @@ class IngestReport:
     resolved_edges: int = 0
     call_sites: int = 0
     joined_call_sites: int = 0
+    #: Why the rest were not joined, counted rather than recomputed by a script.
+    #:
+    #: The per-cause split behind every call-coverage figure OXN publishes used to be produced
+    #: by an ad-hoc script and pasted into a docstring -- so when the receiver fallback went on
+    #: 2026-09-10 and coverage fell, the headline was corrected and the causes beneath it were
+    #: not, and could not be without re-running the corpora. A number the tool reports cannot
+    #: go stale that way.
+    calls_without_occurrence: int = 0
+    calls_without_caller: int = 0
     definition_sites: int = 0
     joined_definition_sites: int = 0
     seconds: float = 0.0
@@ -71,6 +80,8 @@ class IngestReport:
             "resolved_edges": self.resolved_edges,
             "edge_resolution": round(self.edge_resolution, 4),
             "call_coverage": round(self.call_coverage, 4),
+            "calls_without_occurrence": self.calls_without_occurrence,
+            "calls_without_caller": self.calls_without_caller,
             "definition_coverage": round(self.definition_coverage, 4),
             "seconds": round(self.seconds, 2),
             "skipped": self.skipped[:20],
@@ -140,6 +151,8 @@ def ingest_index(indexer: Indexer, index_path: Path | str) -> IngestReport:
         report.edges += len(result.edges)
         report.call_sites += result.call_sites
         report.joined_call_sites += result.joined_call_sites
+        report.calls_without_occurrence += result.calls_without_occurrence
+        report.calls_without_caller += result.calls_without_caller
         report.definition_sites += result.definition_sites
         report.joined_definition_sites += result.joined_definition_sites
 

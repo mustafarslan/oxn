@@ -38,15 +38,20 @@ def model() -> OllamaClient:
 
     So the probe is a real completion. It costs one request per module and it is the only thing
     that answers "will this model reply to me right now".
+
+    It catches `OllamaUnavailable` and not `OllamaError`, which is the difference between "no
+    model available to ask" and "the model answered something this client cannot parse". The
+    second is a defect and this lane is the only place a live server would show it, so it must
+    fail here rather than skip.
     """
-    from oxn.llm import OllamaError
+    from oxn.llm import OllamaUnavailable
 
     client = OllamaClient.from_env()
     if not client.available():
         pytest.skip(f"Ollama not reachable at {client.host}")
     try:
         client.generate("Reply with the single word: ok")
-    except OllamaError as error:
+    except OllamaUnavailable as error:
         pytest.skip(f"{client.model} will not answer: {error}")
     return client
 
