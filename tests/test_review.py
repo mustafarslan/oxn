@@ -10,6 +10,7 @@ comment -- and unlike most applications of it, this one is mechanical and can be
 from __future__ import annotations
 
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -211,7 +212,20 @@ def test_the_writer_is_never_shown_the_diff() -> None:
 
 @pytest.mark.parametrize(
     ("value", "expected"),
-    [(16.0, "16"), (16, "16"), ("1,939", "1939"), (0.14, "0.14"), (True, "")],
+    [
+        (16.0, "16"),
+        (16, "16"),
+        ("1,939", "1939"),
+        (0.14, "0.14"),
+        (True, ""),
+        # A string is normalised the same way a float is. `16.0` written in prose is the
+        # measured `16.0`, quoted exactly, and refusing it taught the model to stop quoting.
+        ("16.0", "16"),
+        ("98.750", "98.75"),
+        # Not numbers, so compared as written. A version and a date must still be refused.
+        ("1.7.0", "1.7.0"),
+        ("2026-09-14", "2026-09-14"),
+    ],
 )
 def test_a_number_is_compared_in_the_spelling_a_sentence_would_use(value, expected) -> None:
     """`16.0` and `16` are one number and two strings, and a model writes the second."""
@@ -424,6 +438,63 @@ def test_a_writer_that_cannot_be_reached_does_not_take_the_review_with_it(
     assert "429" in comment["note"]
     assert "**OXN**" in comment["body"], "the measurement survives an unavailable model"
     assert comment["invented"] == [] and comment["attempts"] == 0
+
+
+def test_quoting_the_measurement_verbatim_is_not_inventing_a_number() -> None:
+    """**The honesty rule was firing on honesty.**
+
+    `value: 16.0` puts `16` in the quotable set, because that is what a sentence says. A model
+    that instead copies the JSON writes `16.0` -- the measured number, exactly -- and that was
+    refused as invented, because `numeral` normalised floats and merely comma-stripped strings.
+
+    Measured on `kimi-k3:cloud` against a payload carrying `value`/`ceiling` and no `message`:
+    it wrote `16.0 over ceiling 12.0` on 3 of 3 first attempts, was told those were not in the
+    measurement, and complied by rewriting them as `16` and `12`. So the check looked like it
+    was working -- one rejection, one clean retry -- while what it had actually caught was a
+    model quoting its source, and what the retry taught was to stop.
+    """
+    allowed = quotable_numbers({"findings": [{"value": 16.0, "ceiling": 12.0, "line": 44}]})
+
+    assert unquotable("`a.py:44` — cognitive_complexity 16.0 over ceiling 12.0", allowed) == []
+    assert unquotable("`a.py:44` — cognitive_complexity 16 over ceiling 12", allowed) == []
+    assert unquotable("that is 4 over", allowed) == ["4"], "a computed number is still refused"
+
+
+def test_a_reply_that_never_arrived_is_retried_not_abandoned() -> None:
+    """**`ReplyCutOff` used to abandon both attempts.**
+
+    A model that hits the token limit has produced a bad reply, which is the case the retry
+    exists for -- measured on `glm-5.3:cloud` writing review prose, it happens on roughly one
+    review in five. Raising meant the second attempt, the one that usually succeeds, never ran.
+
+    `OllamaUnavailable` is not caught: an unreachable or throttled host will still be
+    unreachable a second later, and `run_review_report` posts OXN's own comment instead.
+    """
+    from oxn.llm import OllamaUnavailable, ReplyCutOff
+
+    @dataclass
+    class CutOffOnce:
+        model: str = "fake"
+        calls: int = 0
+
+        def generate(self, prompt: str, *, temperature: float = 0.0, system: str = "") -> str:
+            self.calls += 1
+            if self.calls == 1:
+                raise ReplyCutOff("stopped at the token limit")
+            return "`added.py:1` — parameter_count 6, above the ceiling of 5."
+
+    comment = write_review(PAYLOAD, CutOffOnce())
+    assert not comment.refused, comment
+    assert comment.attempts == 2
+
+    class Unreachable:
+        model = "fake"
+
+        def generate(self, prompt: str, *, temperature: float = 0.0, system: str = "") -> str:
+            raise OllamaUnavailable("host is down")
+
+    with pytest.raises(OllamaUnavailable):
+        write_review(PAYLOAD, Unreachable())
 
 
 # ---- the trigger ---------------------------------------------------------------------------

@@ -73,10 +73,23 @@ def numeral(value: float | int | str) -> str:
     Thousands separators are stripped for the same reason: the measurement says `1939` and
     the prose says `1,939`.
     """
-    if isinstance(value, str):
-        return value.replace(",", "")
     if isinstance(value, bool):  # `bool` is an `int`, and `True` is not a number here
         return ""
+    if isinstance(value, str):
+        # **Normalised the same way a float is, and that is the whole point of one spelling.**
+        # A measurement holding `value: 16.0` puts `16` in the quotable set, because that is
+        # what a sentence says. A model that instead copies the JSON verbatim writes `16.0` --
+        # the *measured* number, quoted exactly -- and until 2026-09-14 that was refused as
+        # invented, because the string branch only stripped commas. Measured on `kimi-k3:cloud`
+        # against a payload whose findings carry `value`/`ceiling` and no `message`: it did
+        # this on 3 of 3 first attempts, was told `16.0` was not in the measurement, and
+        # complied by writing `16`. The honesty rule was firing on honesty and the retry was
+        # teaching a model to stop quoting its source.
+        stripped = value.replace(",", "")
+        try:
+            return numeral(float(stripped))
+        except ValueError:
+            return stripped  # `1.7.0`, `2026-09-14`: not a number, compared as written
     if float(value).is_integer():
         return str(int(value))
     return f"{float(value):g}"

@@ -136,12 +136,35 @@ def write_review(payload: dict[str, Any], writer: Writer, *, attempts: int = 2) 
     prompt = _prompt(measurement)
     invented: Sequence[str] = ()
     for attempt in range(1, attempts + 1):
-        body = writer.generate(prompt, system=SYSTEM).strip()
+        body = _attempt(writer, prompt)
         invented = unquotable(body, allowed)
         if body and not invented:
             return ReviewComment(body=body, model=writer.model, attempts=attempt)
         prompt = _retry(measurement, body, invented)
     return ReviewComment(invented=tuple(invented), model=writer.model, attempts=attempts)
+
+
+def _attempt(writer: Writer, prompt: str) -> str:
+    """One generation. A reply that failed to *arrive* is an empty reply, not an exception.
+
+    **`ReplyCutOff` used to abandon both attempts.** A model that hits the token limit has
+    produced a bad reply, which is exactly the case the retry exists for -- and measured on
+    `glm-5.3:cloud` writing review prose, it happens on roughly one review in five. Raising
+    meant the second attempt, the one that usually succeeds, never ran.
+
+    `OllamaUnavailable` is deliberately *not* caught here: an unreachable or throttled host
+    will still be unreachable a second later, so retrying spends the timeout twice to reach the
+    same answer. `report.run_review_report` catches it one level up and posts OXN's own
+    comment instead.
+    """
+    from oxn.llm import OllamaError, OllamaUnavailable
+
+    try:
+        return writer.generate(prompt, system=SYSTEM).strip()
+    except OllamaUnavailable:
+        raise
+    except OllamaError:
+        return ""
 
 
 def _prompt(payload: dict[str, Any]) -> str:
