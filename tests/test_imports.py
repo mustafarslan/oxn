@@ -525,3 +525,47 @@ def test_a_deferred_import_still_counts_as_coupling(tmp_path) -> None:
     graph = build_dependency_graph(tmp_path, files)
     assert graph.components.get("alpha") == {"beta"}, "the layer gate must still see it"
     assert not graph.hard_components.get("alpha"), "and a cycle check must not"
+
+
+def test_a_re_export_is_marked_and_a_plain_export_is_not() -> None:
+    """`export { x } from "./m"` both imports and republishes; `export const x = 1` does
+    neither. The grammar separates them by the `source` field and `RawImport.reexport` carries
+    the distinction to the resolver, which is what lets a barrel be walked through."""
+    from oxn.graph.imports import extract_imports
+    from oxn.languages import get_parser
+    from oxn.profiles import get_profile
+
+    profile = get_profile("typescript")
+    source = (
+        b'export * from "./all";\n'
+        b'export { helper } from "./named";\n'
+        b'import { used } from "./plain";\n'
+        b"export const local = 1;\n"
+    )
+    root = get_parser("typescript").parse(source).root_node
+    found = {imported.specifier: imported.reexport for imported in extract_imports(root, profile)}
+
+    assert found == {"./all": True, "./named": True, "./plain": False}, found
+
+
+def test_the_dependency_graph_records_where_a_barrel_republishes_from() -> None:
+    """One table, read by `resolve.symbols`. A re-export is still an ordinary edge in `files`
+    -- the module does depend on what it republishes -- so this is additional, not instead."""
+    import tempfile
+    from pathlib import Path
+
+    from oxn.graph.depgraph import build_dependency_graph
+
+    with tempfile.TemporaryDirectory() as raw:
+        # `.resolve()`, because macOS puts the temp directory under a `/var -> /private/var`
+        # symlink and an unresolved root makes every `relative_to` fall back to the absolute
+        # path -- which looks exactly like a resolution failure.
+        root = Path(raw).resolve()
+        (root / "deep.ts").write_text("export function helper() { return 1; }\n")
+        (root / "index.ts").write_text('export * from "./deep";\n')
+        (root / "app.ts").write_text('import { helper } from "./index";\nhelper();\n')
+        graph = build_dependency_graph(root, [root / "index.ts", root / "deep.ts", root / "app.ts"])
+
+    assert graph.reexports == {"index.ts": ("deep.ts",)}, graph.reexports
+    assert "deep.ts" in graph.files["index.ts"], "a re-export is a dependency as well"
+    assert "app.ts" not in graph.reexports, "importing is not republishing"

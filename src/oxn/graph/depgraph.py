@@ -68,6 +68,12 @@ class DependencyGraph:
     #: never resolved at all. The difference is the whole value of this table: only the
     #: first proves a call through that name cannot land in this tree.
     specifier_targets: dict[str, dict[str, tuple[str, ...]]] = field(default_factory=dict)
+    #: file -> the files it *republishes* names from, in the order written.
+    #:
+    #: A barrel (`index.ts` that is nothing but `export * from "./x"`) declares none of the
+    #: names it publishes, so "the file this name was imported from" is the barrel and the
+    #: answer is two files further on. `ProjectSymbols._from_the_named_file` walks this.
+    reexports: dict[str, tuple[str, ...]] = field(default_factory=dict)
     #: Every import seen, including external ones, for reporting.
     import_count: int = 0
     external_count: int = 0
@@ -153,12 +159,31 @@ class _Scan:
     kinds: frozenset[str]
 
 
+def _record_reexport(
+    graph: DependencyGraph, path: str, raw: RawImport, targets: tuple[str, ...]
+) -> None:
+    """Note that `path` republishes names from `targets`, if this import does that.
+
+    Kept apart from the edge bookkeeping because it answers a different question. `files` says
+    what a module *depends on*; this says where a name a module *publishes* actually lives, and
+    a barrel file -- an `index.ts` that is nothing but `export * from "./x"` -- publishes every
+    name it declares none of.
+    """
+    if not raw.reexport:
+        return
+    graph.reexports[path] = (
+        *graph.reexports.get(path, ()),
+        *(target for target in targets if target != path),
+    )
+
+
 def _add_imports(graph: DependencyGraph, scan: _Scan) -> None:
     """Resolve every import in one file into edges, counting what does not resolve."""
     for raw in extract_imports(scan.tree_root, scan.profile):
         graph.import_count += 1
         resolved = resolve_import(scan.relative, raw, scan.context, scan.profile.name)
         graph.specifier_targets.setdefault(scan.relative, {})[raw.specifier] = resolved.targets
+        _record_reexport(graph, scan.relative, raw, resolved.targets)
         if not resolved.resolved:
             _record_external(graph, scan.relative, raw, scan)
             continue

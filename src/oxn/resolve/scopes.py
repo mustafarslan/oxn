@@ -424,6 +424,13 @@ def _bind_assignment(node: Node, scope: Scope, tree: ScopeTree, spec: ScopeSpec)
 #
 # So the gap is real and closing it needs re-export chains, not a binding rule. Shipping the
 # binding without them would add 77 edges of unmeasured accuracy and ten of measured-wrong.
+#
+# **Half of that chain now exists and the CommonJS half does not.** `_declared_in_any` follows
+# ECMAScript `export ... from "./m"` since 2026-09-14, which is what a TypeScript barrel is
+# made of and is worth +8 confident answers on nest, all eight correct. CommonJS republishes by
+# assignment -- `module.exports = require("./other")` -- which is a different shape to detect
+# and is not detected, so the binding stays held. The condition for revisiting it is that
+# shape being recorded in `DependencyGraph.reexports`, not another attempt at the binding.
 
 
 def _bind_alias(node: Node, scope: Scope) -> None:

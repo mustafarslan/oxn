@@ -41,6 +41,11 @@ class RawImport:
     level: int = 0
     #: Names imported *from* the module, where the language distinguishes them.
     names: tuple[str, ...] = ()
+    #: ``export { x } from "./m"`` / ``export * from "./m"``: the module does not *use* the
+    #: name, it republishes it. An `index.ts` barrel is nothing but these, and a name imported
+    #: from one is declared two files away -- so a resolver that stops at the file the import
+    #: named finds nothing there and falls back to guessing project-wide.
+    reexport: bool = False
     #: Written inside a function or class body **in a language where that defers the load**.
     #: Python and CommonJS execute such an import when the body runs, not when the module is
     #: initialised, which is precisely how both languages *break* an import cycle. Go and
@@ -377,7 +382,10 @@ def _ecmascript_statement(node: Node, spec: ImportSpec) -> list[RawImport]:
         for child in node.named_children
     )
     kind = "value" if has_clause or node.type == "export_statement" else "side_effect"
-    return [RawImport(specifier, kind, line)]
+    # An `export ... from "./m"` is the only ECMAScript statement that both imports and
+    # republishes, and the grammar already separates it: a plain `export const x = 1` has no
+    # `source` field and returned above.
+    return [RawImport(specifier, kind, line, reexport=node.type == "export_statement")]
 
 
 # ---- dynamic imports -------------------------------------------------------------------

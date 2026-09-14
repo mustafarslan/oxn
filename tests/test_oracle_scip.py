@@ -442,6 +442,13 @@ def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     only once a callable bound to a name stopped being anonymous to the SCIP join, and 108
     more once a nameless `local N` symbol stopped being asked to agree about a name.
 
+    **Following a barrel is worth eight of those confident answers**, added 2026-09-14: nest has
+    96 files that are nothing but `export * from "./x"` and 451 such edges nested two deep, and
+    a lookup that stopped at the file the import named found nothing in them. Confident answers
+    1,402 -> 1,410 and correct 1,402 -> 1,410, so every one is right and precision stays at
+    100%. No other corpus moves, which is what a change aimed at one language's idiom should
+    look like.
+
     **That is Python's number, on a corpus larger than Python's.** The second high row, and
     the one that makes "only Python is high" no longer the shape of the table:
     Python and TypeScript sit near 100%, Go and Rust near 90%. This test does not claim to

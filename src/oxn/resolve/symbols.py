@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING
 from oxn.graph.model import Resolution
 
 if TYPE_CHECKING:  # pragma: no cover
+    from collections.abc import Sequence
+
     from oxn.graph.depgraph import DependencyGraph
     from oxn.graph.model import Entity
     from oxn.resolve.scopes import ScopeTree
@@ -63,6 +65,8 @@ class ProjectSymbols:
     aliases: dict[str, dict[str, str]] = field(default_factory=dict)
     #: file -> imported files
     imports: dict[str, set[str]] = field(default_factory=dict)
+    #: file -> the files it republishes names from. See `_from_the_named_file`.
+    reexports: dict[str, tuple[str, ...]] = field(default_factory=dict)
     #: file -> import specifier -> the files that specifier was placed at.
     #:
     #: The difference from `imports` is which file a *name* came from rather than which files
@@ -185,13 +189,8 @@ class ProjectSymbols:
         specifier = self.aliases.get(path, {}).get(governing)
         if specifier is None:
             return None
-        for target in self.specifier_targets.get(path, {}).get(specifier, ()):
-            found = _answer(
-                name, self.by_file.get(target, {}).get(name) or [], target, Resolution.L1
-            )
-            if found is not None:
-                return found
-        return None
+        placed = self.specifier_targets.get(path, {}).get(specifier, ())
+        return _declared_in_any(name, placed, self)
 
     def _from_project(self, name: str) -> ResolvedName | None:
         """Steps 3 and 4: a declaration anywhere, unique or reported as `1/n`.
@@ -222,7 +221,42 @@ def build_project_symbols(
         symbols.specifier_targets = {
             path: dict(placed) for path, placed in graph.specifier_targets.items()
         }
+        symbols.reexports = dict(graph.reexports)
     return symbols
+
+
+# Module level rather than a method: `ProjectSymbols` sits at its `weighted_methods_per_class`
+# ceiling, and a breadth-first walk over two of its tables is not a method's worth of
+# belonging. Same reasoning as `profiles.base.dispatched_by_name`.
+def _declared_in_any(
+    name: str, targets: Sequence[str], symbols: ProjectSymbols
+) -> ResolvedName | None:
+    """Search `targets`, then whatever they republish, breadth first.
+
+    **A barrel declares nothing.** `import { Injectable } from "@nestjs/common"` places the
+    specifier at `packages/common/index.ts`, which is `export * from "./decorators"` and
+    forty lines like it -- so stopping at the file the import named finds no `Injectable`
+    and the lookup falls through to "a unique declaration anywhere", which is a guess.
+    CommonJS has the same shape spelled `module.exports = require("./other")`.
+
+    Breadth first, so a name declared in the barrel itself still wins over one two hops
+    away; `seen` because barrels re-export each other, and a `while` over a growing list is
+    the cheapest cycle-safe order here.
+    """
+    seen: set[str] = set()
+    frontier = list(targets)
+    while frontier:
+        target = frontier.pop(0)
+        if target in seen:
+            continue
+        seen.add(target)
+        found = _answer(
+            name, symbols.by_file.get(target, {}).get(name) or [], target, Resolution.L1
+        )
+        if found is not None:
+            return found
+        frontier.extend(symbols.reexports.get(target, ()))
+    return None
 
 
 def _answer(

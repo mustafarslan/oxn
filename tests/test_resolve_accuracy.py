@@ -150,3 +150,96 @@ def test_step_two_answers_from_the_file_the_name_came_from() -> None:
     assert found is not None
     assert found.file_path == "b/second.js", "the file the name was imported from, not the first"
     assert found.confidence == 1.0
+
+
+def test_a_name_published_by_a_barrel_resolves_to_where_it_is_declared() -> None:
+    """**A barrel declares nothing, and stopping at it turns an answer into a guess.**
+
+    `import { Injectable } from "@nestjs/common"` places the specifier at
+    `packages/common/index.ts`, which is `export * from "./decorators"` and forty lines like
+    it. Step 2 searched that file, found no `Injectable`, and fell through to "a unique
+    declaration anywhere in the project" -- which is the rung with no locality argument behind
+    it. `typescript-nest` has 96 such files and 451 re-export edges, nested two deep.
+
+    Measured on nest: confident answers **1,402 -> 1,410 and correct 1,402 -> 1,410**, so all
+    eight are right and precision stays at 100%. The other five corpora do not move, which is
+    what a change aimed at one language's idiom should look like.
+    """
+    from oxn.graph.model import Entity, EntityKind
+    from oxn.resolve.symbols import ProjectSymbols
+
+    def declared(name: str, path: str) -> Entity:
+        return Entity(
+            id=f"{path}::{name}",
+            kind=EntityKind.FUNCTION,
+            name=name,
+            qualified_name=f"{path}.{name}",
+            file_path=path,
+            start_byte=0,
+            end_byte=1,
+            start_line=1,
+            end_line=1,
+        )
+
+    symbols = ProjectSymbols()
+    symbols.by_file = {
+        "pkg/decorators/injectable.ts": {
+            "Injectable": [declared("Injectable", "pkg/decorators/injectable.ts")]
+        }
+    }
+    symbols.imports = {"app.ts": {"pkg/index.ts"}}
+    symbols.aliases = {"app.ts": {"Injectable": "./pkg"}}
+    symbols.specifier_targets = {"app.ts": {"./pkg": ("pkg/index.ts",)}}
+    symbols.reexports = {
+        "pkg/index.ts": ("pkg/decorators/index.ts",),
+        "pkg/decorators/index.ts": ("pkg/decorators/injectable.ts",),
+    }
+
+    found = symbols.resolve_call("app.ts", "Injectable")
+
+    assert found is not None, "two hops through barrels is the common case, not a corner"
+    assert found.file_path == "pkg/decorators/injectable.ts"
+    assert found.confidence == 1.0
+
+
+def test_a_barrel_that_declares_the_name_itself_wins_over_one_it_republishes() -> None:
+    """Breadth first, so the nearer declaration answers. A barrel that both declares and
+    re-publishes is rare and the language's own answer is the local one."""
+    from oxn.graph.model import Entity, EntityKind
+    from oxn.resolve.symbols import ProjectSymbols
+
+    def declared(name: str, path: str) -> Entity:
+        return Entity(
+            id=f"{path}::{name}",
+            kind=EntityKind.FUNCTION,
+            name=name,
+            qualified_name=f"{path}.{name}",
+            file_path=path,
+            start_byte=0,
+            end_byte=1,
+            start_line=1,
+            end_line=1,
+        )
+
+    symbols = ProjectSymbols()
+    symbols.by_file = {
+        "pkg/index.ts": {"helper": [declared("helper", "pkg/index.ts")]},
+        "pkg/deep.ts": {"helper": [declared("helper", "pkg/deep.ts")]},
+    }
+    symbols.aliases = {"app.ts": {"helper": "./pkg"}}
+    symbols.specifier_targets = {"app.ts": {"./pkg": ("pkg/index.ts",)}}
+    symbols.reexports = {"pkg/index.ts": ("pkg/deep.ts",)}
+
+    assert symbols.resolve_call("app.ts", "helper").file_path == "pkg/index.ts"
+
+
+def test_barrels_that_re_export_each_other_do_not_loop() -> None:
+    """`seen`, because a package's `index.ts` files routinely point at one another."""
+    from oxn.resolve.symbols import ProjectSymbols
+
+    symbols = ProjectSymbols()
+    symbols.aliases = {"app.ts": {"missing": "./a"}}
+    symbols.specifier_targets = {"app.ts": {"./a": ("a.ts",)}}
+    symbols.reexports = {"a.ts": ("b.ts",), "b.ts": ("a.ts",)}
+
+    assert symbols.resolve_call("app.ts", "missing") is None
