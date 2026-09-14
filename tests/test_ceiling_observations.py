@@ -265,3 +265,73 @@ def test_the_frozen_measurement_covers_every_threshold_corpus_or_names_the_gap()
         f"add it to UNMEASURED or measure it: {sorted((declared - frozen) - set(UNMEASURED))}"
     )
     assert len(frozen) == 6, "the figures in metrics.md and measure_ceilings.py say six"
+
+
+def _weighted_by_rule() -> dict[str, list[float | None]]:
+    """Each gated rule's LOC-weighted percentile, one per corpus, preferring the `named`
+    population exactly as the prose does."""
+    observed = json.loads(OBSERVATIONS.read_text())["observed"]
+    found: dict[str, list[float | None]] = {}
+    for rule, entry in observed.items():
+        for populations in entry["corpora"].values():
+            inner = populations.get("named") or populations["all_callables"]
+            found.setdefault(rule, []).append(inner.get("ceiling_at_weighted_percentile"))
+    return found
+
+
+def test_every_population_carries_a_weighted_percentile() -> None:
+    """**The figure `metrics.md` quotes has to come from the file, not from a `git log`.**
+
+    Alves, Ypma & Visser weight each entity by its own lines, and that view is what the prose
+    cites -- while `measure_ceilings.py` emitted only the unweighted `ceiling_at_percentile`
+    until 2026-09-14. A number nobody can regenerate is how a five-corpus range survived the
+    set growing to six.
+    """
+    for rule, values in _weighted_by_rule().items():
+        assert values, rule
+        for value in values:
+            assert value is None or 0.0 <= value <= 100.0, (rule, value)
+
+
+def test_the_cognitive_ceiling_leaves_the_band_on_javascript() -> None:
+    """The correction the sixth corpus forced.
+
+    "OXN's existing ceilings already sit on [Alves's p80/p90] boundaries" was true of the five
+    corpora it was written against. Over all six the weighted range for cognitive 12 runs
+    **P48.5 to P97.6**: eslint sits thirty points below the old floor, with more than half its
+    lines in callables above the ceiling -- consistent with its 10.57% exceedance, the highest
+    of the six by a factor of three.
+    """
+    cognitive = [value for value in _weighted_by_rule()["cognitive_complexity"] if value]
+
+    assert min(cognitive) < 50, (
+        "docs/metrics.md says the range starts at P48 on eslint; a floor above 50 means the "
+        "corpus set or the weighting changed and that paragraph is stale"
+    )
+    assert max(cognitive) > 95, cognitive
+
+
+def test_a_cache_that_lost_its_metrics_is_not_a_measurement(tmp_path: Path) -> None:
+    """**The third form of the same failure, and the file count could not see it.**
+
+    A cache can hold every file of today's tree and still have lost the metric rows for most of
+    them -- `GraphStore.put_file` is a replace and takes them with it. Found on 2026-09-14 with
+    `python-httpx` at 557 of 1,302 entities measured and 60 of 60 files cached: the guard passed,
+    and a fresh measurement put cognitive complexity's population at 447 callables where the
+    frozen record says 1,135. Freezing that would have republished a distribution over a third
+    of the corpus as one over all of it.
+    """
+    import sqlite3
+
+    from scripts.measure_ceilings import _measured
+
+    db = tmp_path / "graph.db"
+    with sqlite3.connect(db) as connection:
+        connection.execute("CREATE TABLE entities (id TEXT)")
+        connection.execute("CREATE TABLE metrics (entity_id TEXT, metric_key TEXT)")
+        connection.executemany("INSERT INTO entities VALUES (?)", [(str(n),) for n in range(10)])
+        connection.executemany(
+            "INSERT INTO metrics VALUES (?, 'sloc')", [(str(n),) for n in range(4)]
+        )
+
+    assert _measured(db) == (4, 10), "measured entities, then entities -- the guard compares them"

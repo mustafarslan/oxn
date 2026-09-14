@@ -11,10 +11,12 @@ is 2 in TypeScript and 9 in Go, and would reject most ordinary functions in eith
 
 **LOC-weighted, the method is fine and it agrees with the ceilings we have.** Alves, Ypma &
 Visser (ICSM 2010), which `docs/metrics.md` section 10.3 cites for this, weight each entity by
-its own length so a 500-line function counts 500 times a one-line one. Weighted, cognitive 12
-sits at P79 (go) to P98 (java) -- inside that paper's p80/p90 high-risk band. This script does
-not emit the weighted view; `git log` for this file has the query, and ROADMAP's P10 amendment
-has the numbers. It is a corroboration, not the thing being frozen.
+its own length so a 500-line function counts 500 times a one-line one. This script emits it as
+`ceiling_at_weighted_percentile` as of 2026-09-14; it did not before, and the numbers lived in a
+`git log` query for this file, which is how they came to be quoted for a five-corpus set after a
+sixth was added. Weighted, cognitive 12 sits at P78 (go) to P98 (java) -- inside that paper's
+p80/p90 high-risk band -- **except on `javascript-eslint`, where it is P48**: more than half of
+that corpus's lines are in callables above the ceiling.
 
 **They are still not fitted to it, for a reason that is not statistical.** The weighted p90
 ranges 7 to 23 across these six repositories, so a fitted ceiling is a function of the corpus
@@ -159,6 +161,50 @@ def _values(
     )
 
 
+def _weighted(
+    db: Path, metric_key: str, kinds: tuple[str, ...], bed: Bed, *, named: bool
+) -> list[tuple[float, float]]:
+    """Every measured value paired with the length of the entity that carries it.
+
+    **Alves, Ypma & Visser (ICSM 2010) weight each entity by its own lines**, so a 500-line
+    function counts five hundred times a one-line one. Without that these distributions have
+    median 0 -- 69.4% of nest's callables are anonymous arrows and 92.7% of those score 0 -- and
+    an unweighted p95 for cognitive complexity is 2 in TypeScript against 9 in Go.
+
+    The weight is the entity's own `sloc`, joined from the same table. `file_sloc` has none
+    recorded for a file entity and needs none: there the value *is* the length, so it weights
+    itself, and the paper's construction is the same either way.
+    """
+    placeholders = ",".join("?" * len(kinds))
+    clause = " AND e.name IS NOT NULL" if named else ""
+    with sqlite3.connect(db) as conn:
+        rows = conn.execute(
+            "SELECT m.value, e.file_path, COALESCE(w.value, m.value)"
+            " FROM metrics m JOIN entities e ON e.id = m.entity_id"
+            " LEFT JOIN metrics w ON w.entity_id = m.entity_id AND w.metric_key = 'sloc'"
+            f" WHERE m.metric_key = ? AND e.kind IN ({placeholders}){clause}",
+            (metric_key, *kinds),
+        ).fetchall()
+    return sorted(
+        (value, weight)
+        for value, path, weight in rows
+        if _language_of(path) == bed.language and not path.startswith(bed.excluded)
+    )
+
+
+def _weighted_percentile(pairs: list[tuple[float, float]], ceiling: float) -> float | None:
+    """The share of *lines* living in entities at or below the ceiling.
+
+    ``None`` when nothing carries any weight, which is not the same as zero: a corpus whose
+    entities all measure 0 lines has no weighted view rather than a weighted view of nothing.
+    """
+    total = sum(weight for _, weight in pairs)
+    if total <= 0:
+        return None
+    under = sum(weight for value, weight in pairs if value <= ceiling)
+    return round(100.0 * under / total, 2)
+
+
 def _language_of(path: str) -> str:
     """What OXN calls this file, or `""` for one it does not analyse."""
     from oxn.profiles import profile_for_path
@@ -167,7 +213,9 @@ def _language_of(path: str) -> str:
     return profile.name if profile is not None else ""
 
 
-def _distribution(values: list[float], ceiling: float) -> dict[str, object]:
+def _distribution(
+    values: list[float], ceiling: float, weighted: list[tuple[float, float]] | None = None
+) -> dict[str, object]:
     """One corpus, one metric: the shape, and what the ceiling does to it.
 
     `exceedance` leads because it is the only field here that means the same thing in every
@@ -181,6 +229,13 @@ def _distribution(values: list[float], ceiling: float) -> dict[str, object]:
         "over_ceiling": over,
         "ceiling_at_percentile": round(
             100.0 * bisect.bisect_right(values, ceiling) / len(values), 2
+        ),
+        # Frozen alongside the unweighted figure rather than instead of it. `docs/metrics.md`
+        # quoted the weighted view for two years' worth of prose while the script emitted only
+        # the unweighted one, so a reader who ran the named script found different numbers and
+        # no explanation. Both are here now and each says which it is.
+        "ceiling_at_weighted_percentile": (
+            _weighted_percentile(weighted, ceiling) if weighted else None
         ),
         "quantiles": {
             f"p{point}": values[min(len(values) - 1, int(point / 100 * len(values)))]
@@ -253,6 +308,10 @@ def _require_fresh_caches() -> None:
         cached, walked = _coverage(CORPORA / name, db)
         if cached != walked:
             stale.append(f"{name}: {cached} of {walked} files cached")
+            continue
+        measured, entities = _measured(db)
+        if measured != entities:
+            stale.append(f"{name}: {measured} of {entities} entities measured")
     if stale:
         raise SystemExit(
             "refusing to measure stale caches:\n  "
@@ -261,6 +320,29 @@ def _require_fresh_caches() -> None:
             " (see this file's docstring); a schema bump makes every cache stale, and so does"
             " anything that indexed part of the tree."
         )
+
+
+def _measured(db: Path) -> tuple[int, int]:
+    """(entities carrying any metric, entities in the cache) for one corpus.
+
+    **The third form of the same failure, and the one the file count could not see.** A cache
+    can hold every file of today's tree and still have lost the *metrics* for most of them:
+    `GraphStore.put_file` is a replace and takes that file's metric rows with it, so anything
+    that re-indexes without measuring leaves the entities behind and the numbers gone. Found on
+    2026-09-14 with `python-httpx` at **557 of 1,302 entities measured** and 60 of 60 files
+    cached -- the guard above passed it, and a fresh measurement put cognitive complexity's
+    population at 447 callables where the frozen record says 1,135. Freezing that would have
+    republished a distribution over a third of the corpus as one over all of it.
+
+    Neither count alone is the measurement's precondition. "Every file of the tree is here" and
+    "every entity here was measured" are different claims, and this script needs both.
+    """
+    with sqlite3.connect(db) as connection:
+        entities = int(connection.execute("SELECT count(*) FROM entities").fetchone()[0])
+        measured = int(
+            connection.execute("SELECT count(DISTINCT entity_id) FROM metrics").fetchone()[0]
+        )
+    return measured, entities
 
 
 def _coverage(root: Path, db: Path) -> tuple[int, int]:
@@ -294,10 +376,20 @@ def _populations(
     identical there; that is the honest answer rather than a special case.
     """
     measured = {
-        "all_callables": _values(db, metric_key, kinds, bed, named=False),
-        "named": _values(db, metric_key, kinds, bed, named=True),
+        "all_callables": (
+            _values(db, metric_key, kinds, bed, named=False),
+            _weighted(db, metric_key, kinds, bed, named=False),
+        ),
+        "named": (
+            _values(db, metric_key, kinds, bed, named=True),
+            _weighted(db, metric_key, kinds, bed, named=True),
+        ),
     }
-    return {name: _distribution(values, ceiling) for name, values in measured.items() if values}
+    return {
+        name: _distribution(values, ceiling, weighted)
+        for name, (values, weighted) in measured.items()
+        if values
+    }
 
 
 def audit_class_ceilings(ceilings: dict[str, float]) -> dict[str, object]:

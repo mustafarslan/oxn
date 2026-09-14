@@ -1344,12 +1344,24 @@ rating via calibrated boundaries. Report the profile alongside the rating so the
   69.4% of nest's callables are anonymous arrow functions and 92.7% of those score 0 — so an
   unweighted p95 for cognitive complexity is 2 in TypeScript against 9 in Go. Weighted as Alves
   et al. specify, the boundaries are sane and OXN's existing ceilings already sit on them:
-  cognitive 12 at P79 (go-kit) to P98 (petclinic), cyclomatic 10 at P86–P99, nesting 4 at
-  P96–P100. **Those weighted figures are not in the frozen file and `measure_ceilings.py` does
-  not emit them** — it says so itself, and `git log` for that script holds the query. They are a
-  corroboration rather than the evidence, and a reader who runs the named script will find the
-  *unweighted* `ceiling_at_percentile` instead: cognitive 12 sits at P96.97 on go-kit and P99.47
-  on petclinic there. The ceilings were **not** refitted — the weighted p90 for cognitive
+  cognitive 12 at P78 (go-kit) to P98 (petclinic) — **and at P48 on `javascript-eslint`, which
+  is the correction.** The weighted view was quoted here from a `git log` query while the script
+  emitted only the unweighted `ceiling_at_percentile`; it emits
+  `ceiling_at_weighted_percentile` as of 2026-09-14, and the frozen file carries both. What the
+  sixth corpus shows is that the band claim holds for five languages and not for JavaScript:
+
+  | ceiling | LOC-weighted percentile, low → high | outside Alves's p80/p90 band |
+  |---|---|---|
+  | cognitive 12 | **P48.5** (eslint) → P97.6 (petclinic) | eslint, far below |
+  | cyclomatic 10 | P82.1 (eslint) → P97.6 (petclinic) | none |
+  | nesting 4 | P97.9 (eslint) → P100 (go-kit, petclinic) | none |
+
+  So "OXN's existing ceilings already sit on the boundaries" was true of the five corpora it was
+  written against and is not true of eslint, where **more than half the lines live in callables
+  scoring above the cognitive ceiling** — consistent with its 10.57% exceedance, the highest of
+  the six by a factor of three. That is a fact about JavaScript in this corpus rather than an
+  argument for moving the ceiling, and it is the reason the range is now given end to end
+  instead of as its two friendliest points. The ceilings were **not** refitted — the weighted p90 for cognitive
   complexity ranges 7 to 23 across the six, so a fitted gate tracks whichever repositories were
   benchmarked. What
   the corpora contribute instead is each ceiling's *exceedance*, recorded in `oxn.calibration` and
