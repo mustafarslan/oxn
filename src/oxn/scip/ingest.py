@@ -19,6 +19,7 @@ from oxn.scip.join import join_document
 
 if TYPE_CHECKING:  # pragma: no cover
     from oxn.graph.indexer import Indexer
+    from oxn.scip.index import ScipIndex
 
 
 @dataclass
@@ -41,6 +42,17 @@ class IngestReport:
     #: go stale that way.
     calls_without_occurrence: int = 0
     calls_without_caller: int = 0
+    #: Project files OXN parses that the SCIP index has no document for.
+    #:
+    #: **The scope of `call_coverage`'s denominator, which is otherwise invisible.** This loop
+    #: walks the index's documents, so a file the indexer never covered contributes no call
+    #: sites -- neither joined nor missed -- and the coverage figure is silently "of call sites
+    #: in files the indexer saw". On `typescript-nest` that is 1,020 files of 1,913 and 8,184
+    #: call sites of 44,548: the published 76.2% describes 18% of the tree. Nothing is wrong
+    #: with the measurement -- you cannot join what was not indexed -- but a reader takes "76%
+    #: of call sites" to mean the project's, and until this counter existed nothing said
+    #: otherwise.
+    unindexed_files: int = 0
     definition_sites: int = 0
     joined_definition_sites: int = 0
     seconds: float = 0.0
@@ -82,6 +94,7 @@ class IngestReport:
             "call_coverage": round(self.call_coverage, 4),
             "calls_without_occurrence": self.calls_without_occurrence,
             "calls_without_caller": self.calls_without_caller,
+            "unindexed_files": self.unindexed_files,
             "definition_coverage": round(self.definition_coverage, 4),
             "seconds": round(self.seconds, 2),
             "skipped": self.skipped[:20],
@@ -162,5 +175,18 @@ def ingest_index(indexer: Indexer, index_path: Path | str) -> IngestReport:
     report.aliases = resolve_import_aliases(indexer)
     report.resolved_edges += report.aliases.resolved
     report.dropped_references = drop_unresolved_references(indexer.store)
+    report.unindexed_files = _unindexed(indexer, index)
     report.seconds = time.perf_counter() - started
     return report
+
+
+def _unindexed(indexer: Indexer, index: ScipIndex) -> int:
+    """How many of the project's own files the index has no document for.
+
+    A walk of the tree, which ADR-0004 measured at 21 ms over nest's 1,913 files -- affordable
+    once per ingest, and the only way to say what `call_coverage`'s denominator leaves out.
+    """
+    covered = {document.relative_path for document in index.documents}
+    return sum(
+        1 for path in indexer.sources([indexer.root]) if indexer.relative(path) not in covered
+    )

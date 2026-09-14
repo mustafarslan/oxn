@@ -459,6 +459,20 @@ def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     outlived the defect it explained, in both this row and JavaScript's, and got repeated into
     the ROADMAP. The gap is `scip-typescript`'s occurrence coverage and nothing else.
 
+    **And 76.2% is of the files the indexer covered, which here is 1,020 of 1,913.** Ingest
+    walks the *index's* documents, so a file with no document contributes no call sites --
+    neither joined nor missed. nest's uncovered 893 hold **36,364 further call sites**, so the
+    figure describes 8,184 of 44,548, or 18% of the tree; joined against everything OXN parses
+    it is 14.0%. The measurement is right -- you cannot join what was not indexed -- and the
+    denominator was invisible, which is a different fault and the one worth fixing.
+    `IngestReport.unindexed_files` reports it now.
+
+    The 893 are not arbitrary: **every one of the 277 under `packages/` is a `*.spec.ts`**,
+    because `scip-typescript` indexes the source `tsconfig` and not the test one. The rest are
+    448 `sample/` applications with their own configs, 147 `integration/` files and 21 of
+    tooling. So this is the shape of a TypeScript monorepo rather than a defect in either tool
+    -- and a criterion stated as "call sites resolved" still has to say which call sites.
+
     **This row cost 529 fabricated L2 edges to publish, which is what it was worth.** The
     first measurement excluded 441 sites (16.9%); printing them rather than attributing them
     found that every one was a document-scoped `local N` symbol keyed globally
@@ -564,6 +578,11 @@ def test_javascript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     The split is reported by the tool now (`calls_without_occurrence`, `calls_without_caller`)
     rather than recomputed by a script and pasted here, which is what let the old explanation
     outlive the defect it explained.
+
+    **JavaScript's denominator, unlike TypeScript's, is nearly the whole tree**: 1,463 of 1,470
+    documents matched and only 18 project files are unindexed, holding 126 call sites between
+    them. So 47.0% really is 47% of eslint, and the contrast with nest -- where the same figure
+    covers 18% of the tree -- is why `IngestReport.unindexed_files` exists.
 
     The precision figures are the lowest of the six, and are not explained here for the same
     reason TypeScript's high ones are not: one corpus is not a cause.
