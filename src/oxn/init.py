@@ -242,7 +242,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          jq '{body: .comment.body, event: "COMMENT", comments: .comments}' review.json > review-request.json
+          jq '{body: .comment.body, event: "COMMENT", comments: .comments}' \
+            review.json > review-request.json
           gh api "repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}/reviews" \
             --input review-request.json
 """

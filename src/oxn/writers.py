@@ -260,7 +260,7 @@ def _bullet(row: dict[str, Any]) -> str:
     calling that the author's work is how a review stops being read. Where the base could not be
     measured `introduced` is `null` and this says nothing about cause rather than guessing.
     """
-    said = f"`{row['path']}:{row['line']}` — {row['message']}"
+    said = f"`{row['path']}:{row['line']}` — {row.get('sentence') or row['message']}"
     if row.get("introduced") is False:
         was = row.get("was")
         # `was` comes from the measurement, so a comment may quote it: `quotable_numbers` walks

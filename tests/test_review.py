@@ -277,12 +277,19 @@ def test_a_finding_on_an_untouched_line_has_nowhere_to_hang(repo: Path) -> None:
             "origin": "new",
             "introduced": True,
             "rule": "cognitive_complexity",
-            "message": "m",
+            "message": "a.py:44 parse has cognitive_complexity 16, above the ceiling of 12",
+            "sentence": "parse has cognitive_complexity 16, above the ceiling of 12",
         },
     ]
 
     assert _line_comments(tagged, {"a.py": {1, 2, 3}}) == []
-    assert len(_line_comments(tagged, {"a.py": {43, 44, 45}})) == 1
+    placed = _line_comments(tagged, {"a.py": {43, 44, 45}})
+    assert len(placed) == 1
+    assert "a.py:44" not in placed[0]["body"], (
+        "a comment anchored to the line does not also name it -- `message` leads with "
+        "`path:line`, and the live pull request that verified this read "
+        "`tangled.py:10 - tangled.py:10 ...` until `Finding.sentence` existed"
+    )
 
 
 def test_no_base_measurement_means_no_line_comments(repo: Path, monkeypatch) -> None:

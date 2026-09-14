@@ -369,7 +369,7 @@ def _line_comments(
                 "path": row["path"],
                 "line": row["line"],
                 "side": "RIGHT",
-                "body": f"**{row['rule']}** — {row['message']}{footer}",
+                "body": f"**{row['rule']}** — {row.get('sentence') or row['message']}{footer}",
             }
         )
     return comments

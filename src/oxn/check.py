@@ -77,6 +77,16 @@ class Finding:
         """Stable identity across edits: no line number, because lines move and rules do not."""
         return f"{self.rule}|{self.path}|{self.entity}"
 
+    @property
+    def sentence(self) -> str:
+        """What is wrong, without saying where. `str(self)` leads with `path:line`, which a
+        reader needs in a list and not in a comment already anchored to that line -- posting
+        the full message as a GitHub line comment reads "tangled.py:10 — tangled.py:10 ...".
+        """
+        location = f"{self.path}:{self.line} "
+        spelled = str(self)
+        return spelled[len(location) :] if spelled.startswith(location) else spelled
+
     def as_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "rule": self.rule,
@@ -87,6 +97,7 @@ class Finding:
             "ceiling": self.ceiling,
             "blocking": self.blocking,
             "message": str(self),
+            "sentence": self.sentence,
         }
         if self.explanation:
             payload["explanation"] = list(self.explanation)
