@@ -270,3 +270,111 @@ def _internal_edges(graph: Graph[Node]) -> Iterator[tuple[Node, Node]]:
         for successor in successors:
             if successor in graph:
                 yield node, successor
+
+
+#: Components in one ring above which the exact cut is not attempted.
+#:
+#: The exact algorithm is exponential in the ring's *node* count, so this is a wall-clock
+#: budget expressed in the only parameter that matters. Measured on this machine against
+#: `typescript-nest`'s largest ring, induced down to each size: 13 nodes 0.005 s, 16 nodes
+#: 0.049 s, 18 nodes 0.224 s, **20 nodes 0.99 s**, 21 nodes 2.0 s, 22 nodes 4.3 s. Twenty is
+#: the last size under a second, and this is a report-path call, never the hook's.
+#:
+#: Over seven projects (`scripts/measure_cycles.py`) that covers 19 of 21 rings. The two it
+#: does not are both in `typescript-nest`, at 24 and 25 components.
+EXACT_CUT_LIMIT = 20
+
+
+def minimum_feedback_arcs(
+    graph: Graph[Node], *, limit: int = EXACT_CUT_LIMIT
+) -> tuple[tuple[Node, Node], ...] | None:
+    """The smallest set of edges whose removal leaves ``graph`` acyclic.
+
+    The minimum feedback arc set, exactly -- not a greedy approximation. Removing a cycle is
+    the one architectural repair a tool can state as a concrete edit, and an answer that is
+    merely *a* set of edges is worth much less than the smallest one: it is the difference
+    between "delete these two imports" and "delete some of these twelve".
+
+    Exact because the problem is small here, not because it is easy: minimum feedback arc set
+    is NP-hard (Karp 1972), but a ring of ``n`` components admits a Held-Karp dynamic program
+    over subsets -- ``dp[S | {v}] = min(dp[S] + |{u in S : v -> u}|)`` -- which is
+    ``O(2^n * n)`` and decides ``n <= 20`` in under a second. Cutting the fewest edges is the
+    same problem as ordering the components so the fewest edges point backwards, because any
+    acyclic graph has a topological order and every edge against that order must go.
+
+    Returns ``None`` -- never a guess -- when the ring is larger than ``limit``. An empty
+    tuple means the graph was already acyclic; the two are not the same answer and a caller
+    that conflates them reports "nothing to cut" for the hardest case it has.
+
+    **A minimum set is not always the only one.** Two components joined by one edge each way
+    are broken by cutting either, and both answers are equally minimal. The *size* returned
+    here is proven; the particular edges are the lexicographically first such set, and a
+    caller showing them to a person should say so rather than implying the choice was forced.
+    """
+    nodes = sorted(graph, key=str)
+    if len(nodes) > limit:
+        return None
+    index = {node: position for position, node in enumerate(nodes)}
+    # `back[v]` is the set of `u` with an edge `v -> u`: placing `v` after `u` makes it
+    # backward. Bitmasks because the inner loop of the DP is "how many of these are already
+    # placed", which `int.bit_count()` answers in one operation over the whole set.
+    #
+    # **A self-loop is cut unconditionally and kept out of `back`.** No ordering can put a
+    # node after itself, so the dynamic program cannot see one, and an implementation that
+    # leaves them to it returns a cut that does not break the cycle -- silently, because the
+    # arithmetic is still self-consistent. `cycles` counts a self-loop as a ring, so this is
+    # a case the caller genuinely reaches.
+    cut: list[tuple[Node, Node]] = []
+    back = [0] * len(nodes)
+    for node in nodes:
+        for target in graph[node]:
+            if target == node:
+                cut.append((node, node))
+            elif target in index:
+                back[index[node]] |= 1 << index[target]
+
+    placed = 0
+    for position in _best_order(back, len(nodes)):
+        backward = back[position] & placed
+        while backward:
+            lowest = backward & -backward
+            cut.append((nodes[position], nodes[lowest.bit_length() - 1]))
+            backward ^= lowest
+        placed |= 1 << position
+    return tuple(cut)
+
+
+def _best_order(back: Sequence[int], count: int) -> list[int]:
+    """Held-Karp over subsets: the placement order with the fewest backward edges.
+
+    ``dp[S]`` is the fewest backward edges achievable with exactly the nodes in ``S`` placed,
+    in any order; the node added last is recorded so the winning order can be replayed. Ties
+    go to the lowest-numbered node, which is what makes the result reproducible.
+    """
+    size = 1 << count
+    unreachable = count * count + 1
+    dp = [unreachable] * size
+    dp[0] = 0
+    last = [0] * size
+    for subset in range(size):
+        base = dp[subset]
+        if base >= unreachable:
+            continue
+        remaining = (size - 1) & ~subset
+        while remaining:
+            lowest = remaining & -remaining
+            node = lowest.bit_length() - 1
+            cost = base + (back[node] & subset).bit_count()
+            if cost < dp[subset | lowest]:
+                dp[subset | lowest] = cost
+                last[subset | lowest] = node
+            remaining ^= lowest
+
+    order = []
+    subset = size - 1
+    while subset:
+        node = last[subset]
+        order.append(node)
+        subset ^= 1 << node
+    order.reverse()
+    return order

@@ -263,6 +263,26 @@ def _arch_cycles(payload: dict[str, Any], console: Console) -> None:
     console.print(f"\n[bold red]Cycles[/bold red] ({len(payload['cycles'])})")
     for cycle in payload["cycles"][:5]:
         console.print(f"  {cycle['size']} components: {', '.join(cycle['members'][:6])}")
+        _arch_cut(cycle, console)
+
+
+def _arch_cut(cycle: dict[str, Any], console: Console) -> None:
+    """The smallest set of imports that would break this ring, or why there is no answer.
+
+    Silence here would read as "nothing to do" on exactly the rings that are hardest, so the
+    declined case says so in the same place the answer would have appeared.
+    """
+    if cycle["cut"] is None:
+        console.print(
+            f"    [dim]above the exact-cut limit at {cycle['size']} components; "
+            "no minimal cut computed[/dim]"
+        )
+        return
+    plural = "" if cycle["cut_size"] == 1 else "s"
+    console.print(f"    [dim]smallest break: {cycle['cut_size']} import{plural}[/dim]")
+    for edge in cycle["cut"][:3]:
+        for source, target in edge["imports"][:2]:
+            console.print(f"      [dim]{source} -> {target}[/dim]")
 
 
 #: What each role means, in the order a reader should meet them.

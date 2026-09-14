@@ -257,12 +257,39 @@ def _arch_payload(graph: Any, report: Any, *, show_unresolved: bool) -> dict[str
         **report.as_dict(),
         "martin": _martin_rows(report),
     }
+    _name_the_imports(payload["cycles"], graph)
     if show_unresolved:
         payload["unresolved_imports"] = [
             {"source": item.source, "specifier": item.specifier, "line": item.line}
             for item in graph.unresolved
         ]
     return payload
+
+
+def _name_the_imports(rings: list[dict[str, Any]], graph: Any) -> None:
+    """Replace each cut edge with the file imports that actually make it.
+
+    **A component edge is not an edit anyone can perform.** "Remove `src/oxn/vcs` ->
+    `src/oxn`" names a fact about the graph; the repair is deleting particular import
+    statements in particular files, and a suggestion that stops one level short leaves the
+    reader to rediscover them. `hard_files` already holds the answer, aggregated away by the
+    time the cycle was found.
+
+    Mutates in place: the payload is assembled once and handed straight to a renderer, and
+    copying it to add a key that every consumer wants would only make two shapes to know.
+    """
+    behind: dict[tuple[str, str], list[list[str]]] = {}
+    for path, imported in graph.hard_files.items():
+        source = graph.component_of(path)
+        for target in imported:
+            behind.setdefault((source, graph.component_of(target)), []).append([path, target])
+    for ring in rings:
+        if ring["cut"] is None:
+            continue
+        ring["cut"] = [
+            {"from": source, "to": target, "imports": sorted(behind.get((source, target), []))}
+            for source, target in ring["cut"]
+        ]
 
 
 def run_arch(

@@ -22,7 +22,7 @@ from typing import Any, NoReturn
 # Modules that must never be reachable from the hook fast path. Kept here so the guard
 # test and the humans reading this file see the same list.
 FORBIDDEN_ON_FAST_PATH = frozenset(
-    {"typer", "click", "rich", "pydantic", "networkx", "numpy", "torch", "pandas"}
+    {"typer", "click", "rich", "pydantic", "networkx", "numpy", "torch", "pandas", "clingo"}
 )
 
 

@@ -48,6 +48,11 @@ oracle = [
     "mcp>=2.0",         # MCP protocol oracle: the real client drives our hand-written server
 ]
 
+# The minimum feedback arc set for dependency rings too large for the exact dynamic
+# program in `graph.algos` -- two of the 21 rings measured across seven projects. Report
+# path only, imported inside the function that needs it, and never on the hook's budget.
+asp = ["clingo>=5.7"]
+
 [project.scripts]
 oxn = "oxn.cli:main"
 

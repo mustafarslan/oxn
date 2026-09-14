@@ -12,7 +12,8 @@ from dataclasses import dataclass, field
 from statistics import median
 from typing import TYPE_CHECKING
 
-from oxn.graph.algos import condensation, cycles, levels, topological_order, transitive_closure
+from oxn.graph.algos import condensation, levels, topological_order, transitive_closure
+from oxn.graph.rings import rings_and_cuts
 from oxn.thresholds import GOD_COMPONENT_MIN_LOC
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -133,6 +134,15 @@ class ArchitectureReport:
     propagation_cost: float = 0.0
     modularity: float = 0.0
     cycles: list[list[str]] = field(default_factory=list)
+    #: Per ring in `cycles`, positionally: the fewest edges whose removal breaks it, or
+    #: ``None`` where the ring was too large to decide exactly (`EXACT_CUT_LIMIT`).
+    #:
+    #: **A cycle report that does not say what to remove leaves the reader the hard half.**
+    #: Naming twenty-five mutually dependent directories states the problem precisely and
+    #: offers nothing to do about it; the minimum feedback arc set is the smallest concrete
+    #: edit that resolves it. It is a suggestion, not a verdict -- the edges are minimal in
+    #: number and say nothing about which are easiest or wisest to break.
+    cuts: list[tuple[tuple[str, str], ...] | None] = field(default_factory=list)
     smells: list[Smell] = field(default_factory=list)
     levels: dict[str, int] = field(default_factory=dict)
     #: Empty below `_MIN_COMPONENTS_FOR_PERCENTILE`: the roles are defined against this
@@ -142,7 +152,17 @@ class ArchitectureReport:
     def as_dict(self) -> dict[str, object]:
         return {
             "components": len(self.components),
-            "cycles": [{"size": len(cycle), "members": cycle} for cycle in self.cycles],
+            "cycles": [
+                {
+                    "size": len(cycle),
+                    "members": cycle,
+                    # `None` where the ring was above the exact limit, and never an
+                    # approximation dressed as the answer.
+                    "cut": None if cut is None else [list(edge) for edge in cut],
+                    "cut_size": None if cut is None else len(cut),
+                }
+                for cycle, cut in zip(self.cycles, self.cuts, strict=True)
+            ],
             "propagation_cost": round(self.propagation_cost, 4),
             "modularity": round(self.modularity, 4),
             "visibility": {
@@ -194,7 +214,7 @@ def analyse(
     if not components:
         return report
 
-    report.cycles = [sorted(cycle) for cycle in cycles(initialisation or graph)]
+    report.cycles, report.cuts = rings_and_cuts(initialisation or graph)
     report.martin = _martin(graph, types or {})
 
     membership, dag, groups = condensation(graph)

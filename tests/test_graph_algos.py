@@ -7,6 +7,7 @@ fails the build if it ever reaches runtime.
 
 from __future__ import annotations
 
+import itertools
 import random
 
 import pytest
@@ -14,6 +15,7 @@ import pytest
 from oxn.graph.algos import (
     condensation,
     cycles,
+    minimum_feedback_arcs,
     levels,
     modularity,
     shortest_path,
@@ -233,3 +235,85 @@ def test_the_gap_is_reported_and_not_interpreted() -> None:
     text = discovered_modules.__doc__ or ""
     assert "does not discriminate" in text
     assert "not" in text and "gap = erosion" in text
+
+
+# ---- the minimum feedback arc set ------------------------------------------------------
+
+
+def _acyclic(graph: dict[int, list[int]], removed: set[tuple[int, int]]) -> bool:
+    left = {
+        node: [t for t in targets if (node, t) not in removed] for node, targets in graph.items()
+    }
+    return not cycles(left)
+
+
+def _brute_force_minimum(graph: dict[int, list[int]]) -> int:
+    """The smallest number of edges whose removal makes ``graph`` acyclic, by exhaustion.
+
+    Exponential in the edge count and correct by construction, which is exactly what an
+    oracle for an optimisation routine has to be: a greedy or an approximate implementation
+    passes "the graph came out acyclic" and fails this.
+    """
+    edges = [(node, target) for node, targets in graph.items() for target in targets]
+    for size in range(len(edges) + 1):
+        for candidate in itertools.combinations(edges, size):
+            if _acyclic(graph, set(candidate)):
+                return size
+    raise AssertionError("removing every edge did not make the graph acyclic")
+
+
+@pytest.mark.parametrize("seed", range(12))
+def test_feedback_arcs_are_minimum_not_merely_sufficient(seed: int) -> None:
+    """Against exhaustive search. This is the test a greedy implementation fails."""
+    graph = random_graph(6, 12, seed)
+    cut = minimum_feedback_arcs(graph)
+    assert cut is not None
+    assert _acyclic(graph, set(cut))
+    assert len(cut) == _brute_force_minimum(graph)
+
+
+def test_one_cut_breaks_two_rings_that_share_an_edge() -> None:
+    """Hand-computed: both cycles run through ``a -> b``, so one edge suffices.
+
+    An implementation that breaks cycles one at a time cuts two edges here and is still
+    "correct" by the weaker standard of leaving an acyclic graph behind.
+    """
+    graph = {"a": ["b"], "b": ["c", "d"], "c": ["a"], "d": ["a"]}
+    assert minimum_feedback_arcs(graph) == (("a", "b"),)
+
+
+def test_a_self_loop_is_always_cut() -> None:
+    """No ordering places a node after itself, so the dynamic program cannot see this one.
+
+    Found by the exhaustive oracle above, not by inspection: the first implementation
+    returned a cut that left the self-loop in place and every other assertion still held.
+    """
+    assert minimum_feedback_arcs({"a": ["a", "b"], "b": []}) == (("a", "a"),)
+
+
+def test_an_acyclic_graph_needs_no_cut() -> None:
+    assert minimum_feedback_arcs({"a": ["b"], "b": ["c"], "c": []}) == ()
+
+
+def test_a_ring_above_the_limit_is_declined_rather_than_guessed() -> None:
+    """``None`` and ``()`` are different answers: no cut needed versus no cut computed.
+
+    Sized like the two rings this actually declines, which are `typescript-nest`'s at 24 and
+    25 components. The limit is a parameter so a report path can spend longer deliberately;
+    that it is honoured downwards is what the second assertion pins.
+    """
+    ring = {index: [(index + 1) % 25] for index in range(25)}
+    assert minimum_feedback_arcs(ring) is None
+    assert minimum_feedback_arcs({0: [1], 1: [0]}, limit=1) is None
+
+
+def test_the_chosen_cut_is_reproducible() -> None:
+    """Minimal sets are not unique -- two components each importing the other have two.
+
+    Which one is returned must not depend on dictionary order, or a repair suggestion would
+    change between runs on an unchanged repository.
+    """
+    forwards = {"src/oxn": ["src/oxn/vcs"], "src/oxn/vcs": ["src/oxn"]}
+    backwards = {"src/oxn/vcs": ["src/oxn"], "src/oxn": ["src/oxn/vcs"]}
+    assert minimum_feedback_arcs(forwards) == minimum_feedback_arcs(backwards)
+    assert len(minimum_feedback_arcs(forwards)) == 1
