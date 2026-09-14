@@ -1205,8 +1205,26 @@ oracle only** — the measured 146 ms import cost makes networkx unaffordable in
 |---|---|---|---|---|
 | **(a) Hand-rolled Python graph predicates** | 0 deps | Low — each rule is code; recursion hand-written per rule; rules not user-authorable | µs–ms | **MVP primary** |
 | **(b) In-house Datalog: semi-naive evaluation + stratified negation** (~500–800 LOC) | 0 deps | High for our domain — recursion free (`reaches(X,Y) :- depends(X,Z), reaches(Z,Y).`), negation for "no import except via ports"; least-fixpoint semantics, fully deterministic | ms on 10²–10³-node graphs | **Later-phase primary** |
-| **(c) clingo / ASP** | **MIT**, pip wheel ~20–40 MB | Highest — choice rules plus optimisation, giving *"the minimal set of edges to remove to break all cycles"*, a genuinely valuable repair suggestion | grounding fine at our scale | **Optional extra `oxn[asp]`, research track** |
+| **(c) clingo / ASP** | **MIT**, pip wheel ~20–40 MB | Highest — choice rules plus optimisation, giving *"the minimal set of edges to remove to break all cycles"*, a genuinely valuable repair suggestion | grounding fine at our scale | **Optional extra `oxn[asp]`** — shipped, and scoped by measurement: see below |
 | **(d) Z3** | **MIT**, `z3-solver` wheel | Wrong tool for graph rules; right tool for state-machine and invariant verification | — | **Optional extra `oxn[smt]`** — this is `idea.md` §8's `verify_state_invariants` |
+
+**What (c) actually turned out to be worth, measured 2026-09-14.** The repair suggestion is
+real and is now what `oxn arch` reports, but clingo earns almost none of the credit.
+`scripts/measure_cycles.py` counts every dependency ring in seven projects: **21 rings, 18 of
+them five components or fewer and 19 inside the exact algorithm's reach**. A Held-Karp dynamic
+program over node subsets — about forty
+lines in `graph/algos.py`, no dependency — decides a ring of 20 components in 0.99 s and so
+answers all nineteen. Only `typescript-nest`'s 24- and 25-component rings exceed it, and those
+are what `oxn[asp]` is for. The ordering is enforced in `graph/rings.py`: exact first, solver
+only above the limit, imported inside the function that needs it.
+
+Two results worth keeping. **The two methods agree on every ring both can decide** (ten, on
+nest), which is what licenses believing the solver on the two nothing else can check — and both
+were initially unable to cut a self-loop, each finding that fault in the other. And **clingo's
+default branch-and-bound is the wrong search here**: it fails to prove either large ring optimal
+in 20 seconds, reaching 25 where the answer is 19, while core-guided optimisation
+(`--opt-strategy=usc,oll`) proves both in under 0.4 s single-threaded. A single thread with
+pinned options is also what makes the suggestion reproducible, which a proposed edit has to be.
 
 **Recommendation.**
 - **MVP: (a).** Ten built-in rules, hand-written, zero dependency, microseconds. Uncontested.

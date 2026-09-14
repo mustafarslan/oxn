@@ -166,6 +166,39 @@ offers were fitted to systems this project has not measured. The `>=` is the oth
 that honesty: below L2 an unplaced base or callee makes a value a floor, so the distribution
 covers the exactly-measured classes and the rest are counted and named rather than averaged in.
 
+## Cycles, and the smallest edit that breaks one
+
+`oxn arch` reports the dependency graph, and a dependency cycle is the one architectural
+finding it can turn into a concrete edit. Naming the components in a ring states the problem
+and leaves the hard half to the reader, so it also names the fewest imports whose removal
+breaks it:
+
+```sh
+oxn arch
+```
+
+```
+Cycles (1)
+  2 components: src/oxn, src/oxn/vcs
+    smallest break: 1 import
+      src/oxn/vcs/analysis.py -> src/oxn/thresholds.py
+```
+
+That set is minimal, not merely sufficient: it is the minimum feedback arc set, computed
+exactly by a dynamic program over the ring's components. It is also not always the *only*
+minimal set — two packages importing each other are broken by cutting either — so read it as
+the size being proven and the particular edges being one answer of that size.
+
+Rings above 20 components are declined rather than guessed at, unless `oxn[asp]` is installed:
+
+```sh
+python -m pip install "oxn[asp]"     # clingo; report path only, never the hook
+```
+
+Across seven projects OXN measures 21 rings; 18 are five components or fewer and 19 are decided
+exactly, so the extra changes two answers out of twenty-one. `oxn check` — the hook path — never touches
+any of this.
+
 ## The MCP server
 
 `oxn init` writes `.mcp.json`, so an agent gets four read-only tools. They inform; the hook
