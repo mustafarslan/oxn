@@ -17,7 +17,7 @@ not emit the weighted view; `git log` for this file has the query, and ROADMAP's
 has the numbers. It is a corroboration, not the thing being frozen.
 
 **They are still not fitted to it, for a reason that is not statistical.** The weighted p90
-ranges 7 to 23 across these five repositories, so a fitted ceiling is a function of the corpus
+ranges 7 to 23 across these six repositories, so a fitted ceiling is a function of the corpus
 set and moves whenever a corpus is re-pinned or a sixth language is added. That is the
 retrieval re-pin (`freeze_retrieval_corpus.py`) with a gate behind it.
 

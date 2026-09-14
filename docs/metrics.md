@@ -1337,14 +1337,21 @@ rating via calibrated boundaries. Report the profile alongside the rating so the
   a research-track deliverable, and publishing OXN's per-language percentile tables would be a
   genuinely useful open artifact.
 
-  **Measured, 2026-09-09** (`scripts/measure_ceilings.py`, five `use: threshold` corpora). The LOC
+  **Measured, 2026-09-09** (`scripts/measure_ceilings.py`, six `use: threshold` corpora -- a
+  seventh, `python-airflow`, is declared in `benchmarks/manifest.yaml` and has never been
+  fetched, so every figure here is over six). The LOC
   weighting is load-bearing and not a detail: *un*weighted, these distributions have median 0 —
   69.4% of nest's callables are anonymous arrow functions and 92.7% of those score 0 — so an
   unweighted p95 for cognitive complexity is 2 in TypeScript against 9 in Go. Weighted as Alves
   et al. specify, the boundaries are sane and OXN's existing ceilings already sit on them:
   cognitive 12 at P79 (go-kit) to P98 (petclinic), cyclomatic 10 at P86–P99, nesting 4 at
-  P96–P100. The ceilings were **not** refitted — the weighted p90 for cognitive complexity ranges
-  7 to 23 across the five, so a fitted gate tracks whichever repositories were benchmarked. What
+  P96–P100. **Those weighted figures are not in the frozen file and `measure_ceilings.py` does
+  not emit them** — it says so itself, and `git log` for that script holds the query. They are a
+  corroboration rather than the evidence, and a reader who runs the named script will find the
+  *unweighted* `ceiling_at_percentile` instead: cognitive 12 sits at P96.97 on go-kit and P99.47
+  on petclinic there. The ceilings were **not** refitted — the weighted p90 for cognitive
+  complexity ranges 7 to 23 across the six, so a fitted gate tracks whichever repositories were
+  benchmarked. What
   the corpora contribute instead is each ceiling's *exceedance*, recorded in `oxn.calibration` and
   frozen in `benchmarks/ceiling-observations.json`. See ROADMAP P10.
 

@@ -229,3 +229,39 @@ def test_a_cache_holding_part_of_the_tree_is_not_a_measurement(tmp_path: Path) -
     with Indexer(root=tmp_path, cache_path=cache) as indexer:
         indexer.index()
     assert module._coverage(tmp_path, cache) == (4, 4)
+
+
+#: Declared `use: threshold` in the manifest and absent from the frozen measurement, with the
+#: reason. An entry here is a claim that the gap is known, not that it does not matter.
+UNMEASURED = {
+    "python-airflow": "declared in the manifest and never fetched by scripts/fetch_corpora.py"
+}
+
+
+def test_the_frozen_measurement_covers_every_threshold_corpus_or_names_the_gap() -> None:
+    """**The corpus count is a quoted number too, and it had drifted.**
+
+    `docs/metrics.md` and `scripts/measure_ceilings.py` both said "five `use: threshold`
+    corpora" while the frozen file held six and the manifest declared seven -- three numbers
+    for one set. `python-airflow` is declared and has never been fetched, so every figure in
+    this measurement is over six repositories and the seventh is a silent absence.
+
+    The manifest is the declaration and the frozen file is the evidence; when they disagree the
+    difference has to be named here, which is the only way a corpus can go missing loudly.
+    """
+    yaml = pytest.importorskip("yaml")
+
+    manifest = yaml.safe_load((OBSERVATIONS.parent / "manifest.yaml").read_text())
+    declared = {
+        corpus["name"] for corpus in manifest["corpora"] if corpus.get("use") == "threshold"
+    }
+    frozen = set(json.loads(OBSERVATIONS.read_text())["corpora"])
+
+    assert frozen <= declared, (
+        f"measured a corpus the manifest does not declare: {frozen - declared}"
+    )
+    assert declared - frozen == set(UNMEASURED), (
+        "a `use: threshold` corpus is missing from the frozen measurement without a reason; "
+        f"add it to UNMEASURED or measure it: {sorted((declared - frozen) - set(UNMEASURED))}"
+    )
+    assert len(frozen) == 6, "the figures in metrics.md and measure_ceilings.py say six"
