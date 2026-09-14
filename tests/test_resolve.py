@@ -360,7 +360,8 @@ def test_declarations_in_omits_the_ambiguous_names() -> None:
 # ---- destructuring, and the require binding that was measured and not taken ----------------
 
 
-REQUIRES = """const fs = require("fs");
+REQUIRES = """const mutated = require("./m").thing;
+const fs = require("fs");
 const { helper, other: renamed } = require("./m");
 const plain = compute();
 const { destructured } = compute();
@@ -396,19 +397,44 @@ def test_the_key_of_a_renaming_destructure_is_not_bound() -> None:
     assert resolve(tree, text, "other", "return ") is None
 
 
-def test_a_commonjs_require_is_not_an_import_binding_and_that_is_measured() -> None:
-    """**The null result, asserted so it cannot be undone by accident.**
+@pytest.mark.parametrize(("name", "source"), [("fs", "fs"), ("helper", "./m"), ("renamed", "./m")])
+def test_a_commonjs_require_binds_the_import_it_is(name: str, source: str) -> None:
+    """**`const fs = require("fs")` is an import written as an assignment.**
 
-    `const fs = require("fs")` *is* an import, and binding it as one recovers 427 of 883
-    refusals on `javascript-eslint` and 77 call edges. It also makes ten call sites
-    confidently answered, all ten wrong, with the correct count flat -- because a
-    shorthand-destructured require resolves into a CommonJS module that re-exports through
-    `module.exports = require("./other")`, which nothing here follows. `resolve.scopes` carries
-    the table. Closing the gap needs re-export chains, not a binding rule.
+    The grammar has no `import_statement` to match, so every CommonJS binding was declared
+    `local` -- and `scip.aliases` refuses a local as "not an import binding", correctly, given
+    what it was told.
+
+    This test asserted the *opposite* for two days. Binding it recovered 427 of eslint's 883
+    refusals and made ten call sites confidently wrong, so it was held back with a null result
+    pinned here. The ten turned out to be one call repeated, through a weakness in step 2 rather
+    than in the binding: see `symbols._member_of`. With that fixed the same measurement reads
+    +54 confident answers, 54 of them correct.
     """
     tree, text = scopes("javascript", REQUIRES)
-    binding = resolve(tree, text, "fs", "return ")
+    binding = resolve(tree, text, name, "return ")
+
+    assert binding is not None, f"{name} binds nothing"
+    assert binding[0].kind == "import"
+    assert tree.import_aliases[name] == source
+
+
+def test_an_ordinary_call_is_still_not_an_import() -> None:
+    """The gate. `const plain = compute()` is a value, and answering it from the import table
+    would reach whatever `plain` happens to name elsewhere in the project."""
+    tree, text = scopes("javascript", REQUIRES)
+    binding = resolve(tree, text, "plain", "return ")
 
     assert binding is not None and binding[0].kind == "local"
-    assert "fs" not in tree.import_aliases
-    assert resolve(tree, text, "plain", "return ")[0].kind == "local"
+    assert "plain" not in tree.import_aliases
+
+
+def test_a_require_binding_reassigned_later_is_flagged_as_assigned() -> None:
+    """`scip.aliases` refuses a name that is also assigned, because the call may reach the
+    assignment rather than the import. A CommonJS binding *is* an assignment, so counting its
+    own declaration there would refuse every one -- `_bind_required` stays out of `assigned`,
+    while a *second* assignment still lands there."""
+    tree, _ = scopes("javascript", REQUIRES + "mutated = wrap(mutated);\n")
+
+    assert "fs" not in tree.assigned, "the require declaration is not a rebinding of itself"
+    assert "helper" not in tree.assigned

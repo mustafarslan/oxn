@@ -406,10 +406,52 @@ def _from_dynamic_call(node: Node, spec: ImportSpec) -> RawImport | None:
     if arguments is None:
         return RawImport("", "dynamic", line)
 
+    republished = _republished(node, spec)
     for argument in arguments.named_children:
         if argument.type in spec.string_kinds:
-            return RawImport(_strip_quotes(_text(argument)), "dynamic", line)
-    return RawImport("", "dynamic", line)
+            return RawImport(_strip_quotes(_text(argument)), "dynamic", line, reexport=republished)
+    return RawImport("", "dynamic", line, reexport=republished)
+
+
+def _republished(node: Node, spec: ImportSpec) -> bool:
+    """Is this ``require()`` the right-hand side of an assignment to the module's exports?
+
+    ``module.exports = require("./other")`` and ``exports.helper = require("./h").helper`` both
+    republish -- the assigning file declares nothing and every name a caller imports from it
+    lives one hop further on. ECMAScript spells the same thing ``export * from "./other"``,
+    which the grammar marks with a `source` field; CommonJS spells it as an assignment, so it
+    has to be recognised by what is being assigned *to*.
+    """
+    if not spec.reexport_targets:
+        return False
+    assignment = _assigned_from(node)
+    if assignment is None:
+        return False
+    left = assignment.child_by_field_name("left")
+    target = _text(left) if left is not None else ""
+    return any(target == name or target.startswith(f"{name}.") for name in spec.reexport_targets)
+
+
+def _assigned_from(node: Node) -> Node | None:
+    """The assignment whose right-hand side is `node`, looking through member access.
+
+    The climb through `member_expression` is what admits the ``exports.helper =
+    require("./h").helper`` form: the `require` call is nested inside the member access that is
+    the actual right-hand side.
+
+    Compared by byte range and never by identity -- `child_by_field_name` builds a *new* `Node`
+    object on every call, so `right is current` is false for the same node in the same tree. The
+    first version of this said `is not` and silently recognised nothing.
+    """
+    current = node
+    while current.parent is not None and current.parent.type == "member_expression":
+        current = current.parent
+    assignment = current.parent
+    if assignment is None or assignment.type != "assignment_expression":
+        return None
+    right = assignment.child_by_field_name("right")
+    span = (current.start_byte, current.end_byte)
+    return assignment if right is not None and (right.start_byte, right.end_byte) == span else None
 
 
 # ---- helpers ---------------------------------------------------------------------------

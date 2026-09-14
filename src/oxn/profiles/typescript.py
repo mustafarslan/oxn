@@ -153,6 +153,7 @@ _TS_METRICS = MetricSpec(
         # DEPENDS_ON by default -- which is what Martin's metrics are about.
         type_only_token="type",
         dynamic_callees=frozenset({"require", "import"}),
+        reexport_targets=frozenset({"module.exports", "exports"}),
         call_kinds=frozenset({"call_expression"}),
     ),
     scopes=ScopeSpec(

@@ -569,3 +569,36 @@ def test_the_dependency_graph_records_where_a_barrel_republishes_from() -> None:
     assert graph.reexports == {"index.ts": ("deep.ts",)}, graph.reexports
     assert "deep.ts" in graph.files["index.ts"], "a re-export is a dependency as well"
     assert "app.ts" not in graph.reexports, "importing is not republishing"
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (b'module.exports = require("./other");\n', True),
+        (b'exports.helper = require("./h").helper;\n', True),
+        (b'const x = require("./plain");\n', False),
+        (b'const { a } = require("./plain");\n', False),
+        (b'cache.x = require("./c");\n', False),
+        (b'module.exports = { a: require("./a") };\n', False),
+    ],
+)
+def test_commonjs_republishes_by_assignment(source: bytes, expected: bool) -> None:
+    """**CommonJS spells a re-export as an assignment, so it is recognised by its target.**
+
+    ECMAScript marks `export * from "./m"` with the grammar's `source` field. CommonJS writes
+    `module.exports = require("./other")`, which is shaped exactly like any other `require` --
+    the only thing that distinguishes it is what is being assigned to, which is what
+    `ImportSpec.reexport_targets` names.
+
+    `module.exports = { a: require("./a") }` is deliberately false: that publishes the whole
+    module under the name `a` rather than republishing the names inside it.
+    """
+    from oxn.graph.imports import extract_imports
+    from oxn.languages import get_parser
+    from oxn.profiles import get_profile
+
+    profile = get_profile("javascript")
+    root = get_parser("javascript").parse(source).root_node
+    found = extract_imports(root, profile)
+
+    assert [imported.reexport for imported in found] == [expected], found

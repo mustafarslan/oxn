@@ -220,6 +220,11 @@ class ImportSpec:
     type_only_token: str | None = None
     #: Callee names that import dynamically, e.g. ``importlib.import_module``, ``require``.
     dynamic_callees: frozenset[str] = frozenset()
+    #: Names that, assigned to, publish a module's interface: CommonJS `module.exports` and
+    #: `exports`. A `require()` on the right of such an assignment is a **re-export** rather
+    #: than a use -- `module.exports = require("./other")` republishes every name `./other`
+    #: declares, and a resolver stopping at the assigning file finds none of them.
+    reexport_targets: frozenset[str] = frozenset()
     #: Call node kinds to inspect for dynamic imports.
     call_kinds: frozenset[str] = frozenset()
 

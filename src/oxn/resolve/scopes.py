@@ -368,7 +368,11 @@ def _bind_from(
     """
     kind = node.type
     if kind in spec.assignment_kinds:
-        _bind_assignment(node, scope, tree, spec)
+        source = _required_from(node, profile)
+        if source is None:
+            _bind_assignment(node, scope, tree, spec)
+        else:
+            _bind_required(node, scope, tree, spec, source)
     elif kind in spec.alias_kinds:
         _bind_alias(node, scope)
     elif kind in profile.metrics.imports.statement_kinds:
@@ -392,45 +396,83 @@ def _bind_assignment(node: Node, scope: Scope, tree: ScopeTree, spec: ScopeSpec)
             )
 
 
-# **A CommonJS `require` is deliberately *not* bound as an import, and this is the
-# measurement rather than an oversight.**
-#
-# `const fs = require("fs")` is an import written as an assignment; the grammar has no
-# `import_statement` to match, so it is declared `local` and `scip.aliases` refuses it as
-# "not an import binding". Binding it properly was written, measured on `javascript-eslint`,
-# and removed. What it bought: 883 refusals fell to 456 and 77 call edges gained a target,
-# 63.8% -> 64.2%. What it cost, against SCIP as ground truth: **ten call sites became
-# confidently answered and all ten were wrong**, with the correct count flat at 8,617 -- the
-# exact signature `ProjectSymbols._from_imports` records for Rust's step 2, and the same
-# diagnosis, a rule reaching past the evidence it has.
-#
-# The three configurations, measured separately, because the interaction is the whole story:
-#
-# ==========================  =========  =======  ==========
-# configuration               confident  correct  precision
-# ==========================  =========  =======  ==========
-# neither                     8633       8617     99.815%
-# destructuring only          8633       8617     99.815%
-# `require` only              8633       8617     99.815%
-# both                        8643       8617     **99.699%**
-# ==========================  =========  =======  ==========
-#
-# `require` alone is a small *gain* -- it makes `require("fs")` correctly external, dropping
-# five lucky answers of which three were wrong. The ten wrong answers need both: a
-# shorthand-destructured require, `const { helper } = require("./m")`. They are answered from
-# `./m` itself (`_from_the_named_file` fires for 1,950 of 1,965 step-2 hits), and `./m` does
-# declare a `helper` -- the oracle disagrees because CommonJS re-exports through
-# `module.exports = require("./other")`, which nothing here follows.
-#
-# So the gap is real and closing it needs re-export chains, not a binding rule. Shipping the
-# binding without them would add 77 edges of unmeasured accuracy and ten of measured-wrong.
-#
-# **Half of that chain now exists and the CommonJS half does not.** `_declared_in_any` follows
-# ECMAScript `export ... from "./m"` since 2026-09-14, which is what a TypeScript barrel is
-# made of and is worth +8 confident answers on nest, all eight correct. CommonJS republishes by
-# assignment -- `module.exports = require("./other")` -- which is a different shape to detect
-# and is not detected, so the binding stays held. The condition for revisiting it is that
-# shape being recorded in `DependencyGraph.reexports`, not another attempt at the binding.
+def _required_from(node: Node, profile: LanguageProfile) -> str | None:
+    """The module specifier an assignment imports from, or ``None`` if it imports nothing.
+
+    **`const fs = require("fs")` is an import written as an assignment.** The grammar has no
+    `import_statement` to match, so every CommonJS binding reached `_bind_assignment` and was
+    declared `local` -- which is what `scip.aliases` refuses as "not an import binding", and
+    correctly, given what it was told. `graph.imports` has recognised `require()` as a
+    dependency since P4; only the *scope* half was missing, so OXN knew `a.js` depends on
+    `b.js` and not that the `helper` being called was the one `b.js` exports.
+
+    **This was written, measured, reverted, and only then shipped.** On 2026-09-12 it recovered
+    427 of `javascript-eslint`'s 883 refusals and 77 call edges -- and made ten call sites
+    confidently answered, all ten wrong. It was held back, with the wrong reason recorded:
+    CommonJS re-export chains. Following those changed nothing. Printing the ten showed one
+    call repeated, `Config.getRuleOptionsSchema()`, where `lib/config/config.js` declares both a
+    free function and a static method of that name -- and `ProjectSymbols._from_imports` treats
+    any qualifier the file imported under as a *package*, so it answered the free function. The
+    binding was exposing a weakness in step 2, not creating one. With `symbols._member_of`
+    resolving a class-qualified call against the class, the same four configurations read:
+
+    ====================  =========  =======  ==========
+    configuration         confident  correct  precision
+    ====================  =========  =======  ==========
+    neither                    8633     8617    99.815%
+    `require` only             8674     8658    99.816%
+    destructuring only         8633     8617    99.815%
+    both                       8687     8671    99.816%
+    ====================  =========  =======  ==========
+
+    +54 confident answers, 54 of them correct. `ImportSpec.dynamic_callees` is the existing
+    declaration of which calls are imports, so no profile changes and Python's
+    `importlib.import_module` gets the same treatment for free. Both `require("m")` and
+    `require("m").thing` count: the second is the commoner spelling and the specifier is what
+    matters either way.
+    """
+    spec = profile.metrics.imports
+    if not spec.dynamic_callees:
+        return None
+    value = node.child_by_field_name("value")
+    if value is not None and value.type == profile.metrics.scopes.attribute_kind:
+        value = value.child_by_field_name(profile.metrics.scopes.attribute_object_field)
+    if value is None:
+        return None
+    callee = value.child_by_field_name("function") or value
+    if _text(callee) not in spec.dynamic_callees:
+        return None
+    arguments = value.child_by_field_name("arguments")
+    for argument in arguments.named_children if arguments is not None else ():
+        if argument.type in spec.string_kinds:
+            return _text(argument).strip("\"'`")
+    return None
+
+
+def _bind_required(node: Node, scope: Scope, tree: ScopeTree, spec: ScopeSpec, source: str) -> None:
+    """Bind the names a `require` brings in, as the import they are.
+
+    **Deliberately not added to `tree.assigned`.** That set answers "was this name also
+    assigned", which `scip.aliases` uses to refuse `from m import f; f = wrap(f)` -- a call that
+    may reach the wrapper rather than the import. A CommonJS binding *is* an assignment, so
+    counting it there would refuse every one of them and recover nothing. A second assignment to
+    the same name still lands in `assigned` through `_bind_assignment`, which is the case the
+    set exists for.
+    """
+    for name_node in _binding_targets(node, spec):
+        text = _text(name_node)
+        if not text:
+            continue
+        scope.declare(
+            Binding(
+                text,
+                "import",
+                name_node.start_point[0] + 1,
+                name_node.start_byte,
+                name_node.end_byte,
+            )
+        )
+        tree.import_aliases[text] = source
 
 
 def _bind_alias(node: Node, scope: Scope) -> None:

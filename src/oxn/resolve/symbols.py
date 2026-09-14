@@ -190,6 +190,10 @@ class ProjectSymbols:
         if specifier is None:
             return None
         placed = self.specifier_targets.get(path, {}).get(specifier, ())
+        if qualifier is not None:
+            member = _member_of(name, qualifier, placed, self)
+            if member is not None:
+                return member
         return _declared_in_any(name, placed, self)
 
     def _from_project(self, name: str) -> ResolvedName | None:
@@ -223,6 +227,38 @@ def build_project_symbols(
         }
         symbols.reexports = dict(graph.reexports)
     return symbols
+
+
+def _member_of(
+    name: str, qualifier: str, targets: Sequence[str], symbols: ProjectSymbols
+) -> ResolvedName | None:
+    """A declaration written as ``qualifier.name`` in one of `targets`.
+
+    **A named import is usually a class, and step 2 treated every one as a namespace.** The
+    gate in `_from_imports` asks whether the file imported anything under that qualifier and,
+    if so, resolves `name` against the imported file's *top-level* declarations -- which is
+    right for `metrics.NewCounter()`, where `metrics` is a package, and wrong for
+    `Config.getRuleOptionsSchema()`, where `Config` is a class.
+
+    Measured on `javascript-eslint`: `lib/config/config.js` declares both a module-level
+    `getRuleOptionsSchema` and a static `Config.getRuleOptionsSchema`, and every call written
+    through the class was answered with the free function -- confidently, ten times. The two
+    are different functions with one name in one file, which is exactly the case a bare-name
+    lookup cannot decide and a qualified one can.
+
+    `by_name` carries every entity rather than only file-level ones, so the member is findable;
+    the qualified name is what says whose it is.
+    """
+    suffix = f".{qualifier}.{name}"
+    wanted = set(targets)
+    candidates = [
+        entity
+        for entity in symbols.by_name.get(name, [])
+        if entity.file_path in wanted and entity.qualified_name.endswith(suffix)
+    ]
+    if not candidates:
+        return None
+    return _answer(name, candidates, candidates[0].file_path, Resolution.L1)
 
 
 # Module level rather than a method: `ProjectSymbols` sits at its `weighted_methods_per_class`

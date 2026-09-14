@@ -437,17 +437,19 @@ def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     """The fifth language, and the corpus whose exclusion count was hiding a real defect.
 
     On `typescript-nest`: L2 coverage **99.9% of declarations and 76.2% of call sites**,
-    index built in 3 s. L0/L1 scores **100% precision when certain** at 56.7% confident
-    recall, 69.4% overall at 100% recall, over 2,470 graded sites -- 190 of them gradeable
+    index built in 3 s. L0/L1 scores **100% precision when certain** at 57.9% confident
+    recall, 70.1% overall at 100% recall, over 2,470 graded sites -- 190 of them gradeable
     only once a callable bound to a name stopped being anonymous to the SCIP join, and 108
     more once a nameless `local N` symbol stopped being asked to agree about a name.
 
-    **Following a barrel is worth eight of those confident answers**, added 2026-09-14: nest has
-    96 files that are nothing but `export * from "./x"` and 451 such edges nested two deep, and
-    a lookup that stopped at the file the import named found nothing in them. Confident answers
-    1,402 -> 1,410 and correct 1,402 -> 1,410, so every one is right and precision stays at
-    100%. No other corpus moves, which is what a change aimed at one language's idiom should
-    look like.
+    **Confident recall was 56.7% until 2026-09-14, and two changes moved it, both aimed at
+    ECMAScript's idioms.** Following a barrel is worth eight: nest has 96 files that are nothing
+    but `export * from "./x"` and 451 such edges nested two deep, and a lookup that stopped at
+    the file an import named found nothing in them. Resolving a *class*-qualified call against
+    the class rather than the file's top-level declarations is worth nineteen more -- see
+    `symbols._member_of`. Confident answers 1,402 -> 1,429, every one of the twenty-seven
+    correct, precision unmoved at 100%. Python, Go, Rust and Java do not move at all, which is
+    what changes aimed at one language's idioms should look like.
 
     **That is Python's number, on a corpus larger than Python's.** The second high row, and
     the one that makes "only Python is high" no longer the shape of the table:
@@ -561,7 +563,7 @@ def test_javascript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     On `javascript-eslint` (1,451 JavaScript files; the 36 TypeScript ones are graded under
     TypeScript's row, not this one): L2 coverage **89.0% of declarations and 47.0% of call
     sites** over the whole corpus, from a 52 MB index built in 20 s. L0/L1 scores **99.8%
-    precision when certain** at 65.3% confident recall, 74.5% overall at 100% recall, over
+    precision when certain** at 65.7% confident recall, 74.9% overall at 100% recall, over
     **13,221 graded call sites** -- the largest graded population of the six.
 
     **It was 8,185 sites at 38.18% excluded until this run.** 5,036 of the 5,055 exclusions

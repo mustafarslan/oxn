@@ -243,3 +243,57 @@ def test_barrels_that_re_export_each_other_do_not_loop() -> None:
     symbols.reexports = {"a.ts": ("b.ts",), "b.ts": ("a.ts",)}
 
     assert symbols.resolve_call("app.ts", "missing") is None
+
+
+def test_a_class_qualified_call_resolves_against_the_class_not_the_file() -> None:
+    """**A named import is usually a class, and step 2 treated every one as a namespace.**
+
+    `_from_imports` asks whether the file imported anything under the qualifier and, if so,
+    resolves the name against the imported file's *top-level* declarations. That is right for
+    `metrics.NewCounter()`, where `metrics` is a package. It is wrong for
+    `Config.getRuleOptionsSchema()`, where `Config` is a class -- and `lib/config/config.js` in
+    eslint declares **both** a free `getRuleOptionsSchema` and a static
+    `Config.getRuleOptionsSchema`, so the bare-name lookup answered the wrong one confidently,
+    ten times.
+
+    Two functions with one name in one file is exactly the case a bare-name lookup cannot
+    decide and a qualified one can. Measured: this is what made the CommonJS `require` binding
+    safe to ship, turning +10 confident answers with 0 correct into +54 with 54 correct.
+    """
+    from oxn.graph.model import Entity, EntityKind
+    from oxn.resolve.symbols import ProjectSymbols
+
+    def declared(name: str, qualified: str, path: str, kind: EntityKind) -> Entity:
+        return Entity(
+            id=qualified,
+            kind=kind,
+            name=name,
+            qualified_name=qualified,
+            file_path=path,
+            start_byte=0,
+            end_byte=1,
+            start_line=1,
+            end_line=1,
+        )
+
+    free = declared("schema", "config.schema", "config.js", EntityKind.FUNCTION)
+    method = declared("schema", "config.Config.schema", "config.js", EntityKind.METHOD)
+
+    symbols = ProjectSymbols()
+    symbols.by_file = {"config.js": {"schema": [free]}}  # only file-level declarations
+    symbols.by_name["schema"] = [free, method]  # every entity, which is where the member is
+    symbols.aliases = {"app.js": {"Config": "./config"}}
+    symbols.specifier_targets = {"app.js": {"./config": ("config.js",)}}
+
+    through_class = symbols.resolve_call("app.js", "schema", "Config")
+    assert through_class is not None
+    assert through_class.entity_id == "config.Config.schema", "the class's, not the file's"
+    assert through_class.confidence == 1.0
+
+    # A package-qualified call has no such member and still gets the file-level declaration,
+    # which is what step 2 was built for.
+    symbols.aliases = {"app.js": {"config": "./config"}}
+    symbols.specifier_targets = {"app.js": {"./config": ("config.js",)}}
+    through_package = symbols.resolve_call("app.js", "schema", "config")
+    assert through_package is not None
+    assert through_package.entity_id == "config.schema"
