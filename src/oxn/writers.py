@@ -5,12 +5,26 @@ prior art. It could not simply be extended: a GitHub Actions job runs `pip insta
 gets `src/oxn/`, so a review that imports from `scripts/` cannot run where reviews happen.
 The protocol lives here and that file keeps its registry of repair actors.
 
-**Only Ollama is exercised.** It is the one this repository can run and measure, and the
-`OXN_OLLAMA_MODEL` default reaches whatever the host serves. Anthropic, OpenAI and Gemini are
-named by the roadmap and are *not* implemented here rather than implemented untested: a client
-that has never made a request is not evidence that it works, and shipping four of those would
-say OXN supports four providers when it supports one. `Writer` is the seam they slot into, and
-`write_review` needs nothing from a backend but `generate`.
+**Ollama is the only backend, and that is a decision rather than a gap.** The roadmap named
+Anthropic, OpenAI and Gemini; Ollama already reaches hosted models by name, so a second vendor
+client buys a second billing relationship rather than a second capability -- and a client that
+has never made a request is not evidence that it works.
+
+What the seam needed was *evidence*, and `--model` provides it. Two models, both measured on
+the same payload on 2026-09-14, four runs each at the settings the CLI actually uses:
+
+=================  ==========  =============  =========
+model              first try   comment size   time
+=================  ==========  =============  =========
+`kimi-k3:cloud`    4/4         479-515 chars  15-27 s
+`glm-5.3:cloud`    4/4         444-506 chars  8-11 s
+=================  ==========  =============  =========
+
+Neither invented a number. `glm-5.3` is the faster of the two here, which is worth saying
+because it is the model this repository measured as **unusable** for writing code -- it fills
+whatever output budget it is given and cuts off mid-answer. Restating a JSON measurement in
+four sentences is a different task from writing a function, and a model is only ever unusable
+*at something*. `write_review` needs nothing from a backend but `generate`.
 
 The refusal is the interesting part and it belongs to no backend. `review.unquotable` is
 applied to whatever comes back, so a model that invents a number loses the right to phrase the

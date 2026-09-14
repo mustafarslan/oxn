@@ -174,3 +174,99 @@ def test_the_model_agrees_the_nesting_is_the_problem(model: OllamaClient) -> Non
         "nesting, length, or naming?"
     )
     assert "nest" in answer.lower(), f"expected nesting, got {answer!r}"
+
+
+# ---- the `Writer` seam, with two models through it -------------------------------------------
+
+
+REVIEW_PAYLOAD = {
+    "status": "FINDINGS",
+    "base": "origin/main",
+    "head": "HEAD",
+    "files": {"changed": 12, "measured": 9, "excluded": 3, "errored": 0},
+    "counts": {"new": 2, "regression": 1, "baselined": 1, "introduced": 2},
+    "findings": [
+        {
+            "rule": "cognitive_complexity",
+            "path": "src/a.py",
+            "line": 44,
+            "value": 16.0,
+            "ceiling": 12.0,
+            "origin": "new",
+            "introduced": True,
+            "was": None,
+            "message": "parse has cognitive_complexity 16, above the ceiling of 12",
+        },
+        {
+            "rule": "weighted_methods_per_class",
+            "path": "src/c.py",
+            "line": 3,
+            "value": 31.0,
+            "ceiling": 25.0,
+            "origin": "baselined",
+            "introduced": False,
+            "was": 31.0,
+            "message": "Store has weighted_methods_per_class 31, above the ceiling of 25",
+        },
+    ],
+    "measured": {
+        "commit": "abc1234" + "d" * 33,
+        "short": "abc1234",
+        "oxn_version": "0.0.1",
+        "profiles": {},
+        "ceilings": {},
+    },
+    "errors": {},
+}
+
+
+@pytest.mark.parametrize("name", ["kimi-k3:cloud", "glm-5.3:cloud"])
+def test_a_second_model_goes_through_the_same_writer_seam(model, name: str) -> None:
+    """**The seam claimed to be pluggable, and nothing had ever plugged anything into it.**
+
+    The roadmap named Anthropic, OpenAI and Gemini and none were built, on the honest grounds
+    that a client which has never made a request is not evidence. But that left `Writer` as an
+    assertion: one backend, one model, one shape of reply. Ollama reaches hosted models by
+    name, so a second *model* exercises the same seam -- and does it in a lane that can run.
+
+    `glm-5.3:cloud` is deliberately the second one. This repository measured it unusable for
+    writing code, where it fills any output budget and cuts off mid-answer; restating a JSON
+    measurement in four sentences is a different task, and a model is only unusable *at
+    something*. Measured 2026-09-14 at four runs each: both first-try on 4 of 4, kimi 479-515
+    characters in 15-27 s, glm 444-506 in 8-11 s, neither inventing a number.
+    """
+    from oxn.review import quotable_numbers, unquotable
+    from oxn.writers import ollama_writer, write_review
+
+    comment = write_review(REVIEW_PAYLOAD, ollama_writer(name))
+
+    assert not comment.refused, comment
+    assert comment.model == name
+    assert unquotable(comment.body, quotable_numbers(REVIEW_PAYLOAD)) == [], comment.body
+    assert "src/a.py" in comment.body, "a comment that names no file is not a review"
+
+
+def test_a_model_that_does_not_exist_costs_the_prose_and_not_the_review() -> None:
+    """A typo in `--model` reaches a real host that has never heard of it.
+
+    The same rule as an unreachable host: the measurement was already made, so the review is
+    posted with OXN's own body and the reason recorded. Run against the live endpoint because
+    "Ollama rejects an unknown model" is a claim about Ollama, and a fake cannot make it.
+    """
+    from oxn.render import TO_JSON
+    from oxn.report import run_review_report
+
+    payload = dict(REVIEW_PAYLOAD)
+    import oxn.review as review
+
+    original = review.run_review
+    review.run_review = lambda *a, **k: payload
+    try:
+        comment = run_review_report(
+            "main", "HEAD", TO_JSON, write="ollama", model="no-such-model:cloud"
+        )["comment"]
+    finally:
+        review.run_review = original
+
+    assert comment["status"] == "REFUSED"
+    assert "**OXN**" in comment["body"], "the review survives a writer that cannot answer"

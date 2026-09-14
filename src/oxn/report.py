@@ -480,10 +480,10 @@ def run_classes(
 #: Named by the roadmap, not implemented: see the `writers` module docstring on why a client
 #: that has never made a request is not evidence of support.
 UNKNOWN_WRITER = (
-    "no writer backend named {name!r}. `ollama` is the one implemented, because it is the one "
-    "this repository can run and measure. Anthropic, OpenAI and Gemini slot into the same "
-    "`Writer` protocol in `oxn.writers`; shipping them untested would claim four providers "
-    "where there is evidence for one."
+    "no writer backend named {name!r}. `ollama` is the only one, and choosing a *model* is what "
+    "`--model` is for: `--write ollama --model glm-5.3:cloud`. Ollama reaches local and hosted "
+    "models alike, so a second vendor buys a second billing relationship rather than a second "
+    "capability -- see `oxn.writers` for the two measured here."
 )
 
 

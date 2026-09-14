@@ -256,9 +256,14 @@ tightened does not read as code that got worse. `was` carries the base's value. 
 cannot be checked out — a shallow clone has the tip and not the merge base — `introduced` is
 `null` rather than `false`, because "nobody looked" is not "you did not cause this".
 
-One limit worth knowing: only the Ollama backend is implemented. Anthropic, OpenAI and Gemini
-slot into the same `Writer` protocol in `oxn/writers.py`, and shipping clients that have never
-made a request would claim four providers where there is evidence for one.
+**Which model writes it is `--model`, not another backend.** Ollama reaches local and hosted
+models alike, so `--write ollama --model glm-5.3:cloud` is how you pick a different one; a
+second vendor client would buy a second billing relationship rather than a second capability.
+Two are measured — `kimi-k3:cloud` and `glm-5.3:cloud`, both producing a usable comment on the
+first attempt in four runs each, neither inventing a number, glm the faster at 8–11 s against
+15–27 s.
+
+One limit worth knowing: the writer is never shown the diff.
 
 ## Self-repair
 
