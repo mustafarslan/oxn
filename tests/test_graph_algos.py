@@ -172,3 +172,64 @@ def _to_nx(graph, networkx):
         for successor in successors:
             nx_graph.add_edge(node, successor)
     return nx_graph
+
+
+# ---- discovered modules against declared ones (P12) ------------------------------------------
+
+
+def test_louvain_is_pinned_so_two_runs_agree() -> None:
+    """An erosion signal that moves between runs is not one.
+
+    Louvain is randomised; `scripts/discovered_modules.py` pins the seed and the resolution for
+    that reason, and this is the assertion that the pin is load-bearing rather than decorative.
+    """
+    pytest.importorskip("networkx")
+    from scripts.discovered_modules import discovered_partition
+
+    # Two triangles joined by a single edge: the textbook case where the communities are not
+    # in dispute, so an unstable answer could only come from the search and not the graph.
+    graph = {
+        "a.py": {"b.py", "c.py"},
+        "b.py": {"a.py", "c.py"},
+        "c.py": {"a.py", "b.py", "z.py"},
+        "x.py": {"y.py", "z.py"},
+        "y.py": {"x.py", "z.py"},
+        "z.py": {"x.py", "y.py", "c.py"},
+    }
+
+    first = discovered_partition(graph)
+    assert first == discovered_partition(graph) == discovered_partition(graph)
+    assert first["a.py"] == first["b.py"] == first["c.py"]
+    assert first["x.py"] == first["y.py"] == first["z.py"]
+    assert first["a.py"] != first["x.py"], "two triangles joined by one edge are two communities"
+
+
+def test_a_declared_module_scattered_across_communities_is_the_signal() -> None:
+    """The reported disagreement is "how many discovered communities does this declared
+    component's code fall into" -- one means the directory and the dependency structure agree
+    about it, several means files sharing a directory do not share a neighbourhood."""
+    from scripts.discovered_modules import disagreements
+
+    declared = {"a.py": "pkg", "b.py": "pkg", "c.py": "other", "d.py": "other"}
+    discovered = {"a.py": "c0", "b.py": "c1", "c.py": "c2", "d.py": "c2"}
+
+    assert disagreements(declared, discovered) == [("pkg", 2), ("other", 1)]
+
+
+def test_the_gap_is_reported_and_not_interpreted() -> None:
+    """**The measured result is that the raw gap does not discriminate.**
+
+    Four projects: OXN +0.2003, go-kit +0.2933, nest +0.2767, httpx +0.1062. Every one is
+    large, OXN's is the smallest of the three bigger projects, and Q(declared) spans only
+    +0.0875 to +0.1289 across an order of magnitude of size and four languages. Louvain
+    maximises Q by construction and a directory tree is not trying to, so the gap is dominated
+    by that rather than by how any of them is organised.
+
+    This test exists to keep the script honest about it: the docstring must not start claiming
+    the gap means erosion without the null model or the over-time comparison that would earn it.
+    """
+    from scripts import discovered_modules
+
+    text = discovered_modules.__doc__ or ""
+    assert "does not discriminate" in text
+    assert "not" in text and "gap = erosion" in text
