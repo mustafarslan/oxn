@@ -246,12 +246,19 @@ The model is never shown the diff. A model given code reviews the code; this one
 measurements. It also means a workflow triggered from a fork never hands that fork's contents
 to a model.
 
-Two limits worth knowing. A finding's `origin: new` means *not in `.oxn/baseline.json`* — not
-*caused by this pull request*; a new violation can sit in an untouched function of a changed
-file, and telling those apart needs a second checkout. And only the Ollama backend is
-implemented: Anthropic, OpenAI and Gemini slot into the same `Writer` protocol in
-`oxn/writers.py`, and shipping clients that have never made a request would claim four
-providers where there is evidence for one.
+Each finding answers two questions, because they are different. `origin` says whether
+`.oxn/baseline.json` had seen it. **`introduced`** says whether the base commit had it — a long
+function already over the ceiling and never baselined is `origin: new` and
+`introduced: false`, and telling the author they wrote it is how a review stops being read.
+OXN checks the merge base out into a throwaway worktree (not a stash: your uncommitted work is
+left alone) and measures the same files under *your current* `oxn.yaml`, so a ceiling you
+tightened does not read as code that got worse. `was` carries the base's value. Where the base
+cannot be checked out — a shallow clone has the tip and not the merge base — `introduced` is
+`null` rather than `false`, because "nobody looked" is not "you did not cause this".
+
+One limit worth knowing: only the Ollama backend is implemented. Anthropic, OpenAI and Gemini
+slot into the same `Writer` protocol in `oxn/writers.py`, and shipping clients that have never
+made a request would claim four providers where there is evidence for one.
 
 ## Self-repair
 

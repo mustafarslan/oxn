@@ -36,6 +36,12 @@ def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
 
 
+def _git_out(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout
+
+
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
     """`main` with one commit, and a `feature` branch carrying the pull request."""
@@ -88,7 +94,14 @@ def test_a_finding_says_where_it_stands_with_the_baseline(repo: Path) -> None:
     )
     payload = run_review("main", "HEAD")
 
-    assert payload["counts"] == {"new": 0, "regression": 0, "baselined": 1}
+    assert payload["counts"] == {
+        "new": 0,
+        "regression": 0,
+        "baselined": 1,
+        # Nothing actionable, so nothing to attribute: `introduced` counts what this pull
+        # request caused among findings that are not already baselined debt.
+        "introduced": 0,
+    }
     assert payload["findings"][0]["origin"] == "baselined"
     assert payload["status"] == "OK", "pre-existing debt is not something to action"
 
@@ -115,6 +128,91 @@ def test_a_deleted_file_is_not_measured(repo: Path) -> None:
     _git(repo, "commit", "-qm", "delete")
 
     assert "kept.py" not in changed_files(repo, "main", "HEAD")
+
+
+# ---- what this pull request actually caused -------------------------------------------------
+
+
+def test_a_finding_the_pull_request_did_not_cause_is_not_attributed_to_it(repo: Path) -> None:
+    """**The case `origin` alone gets wrong, and the reason `introduced` exists.**
+
+    `wide` is over the parameter ceiling on the base branch already. The pull request edits a
+    *different* function in the same file -- so the file is measured, the finding is reported,
+    and the baseline has never seen it, which makes it `origin: new`. Telling the author they
+    introduced a violation that was there before they started is the false positive this whole
+    tier is built to avoid.
+    """
+    (repo / "kept.py").write_text(OVER_CEILING)  # `wide` exists on `main` from here
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "wide lands on the feature branch too")
+    _git(repo, "checkout", "-q", "main")
+    (repo / "kept.py").write_text(OVER_CEILING)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "and on main, before the branch")
+    _git(repo, "checkout", "-q", "feature")
+    _git(repo, "merge", "-q", "main", "-m", "merge")
+    (repo / "kept.py").write_text(OVER_CEILING + "\n\ndef touched():\n    return 2\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "edit a different function in the same file")
+
+    payload = run_review("main", "HEAD")
+    by_path = {row["path"]: row for row in payload["findings"] if row["path"] == "kept.py"}
+
+    assert by_path, payload["findings"]
+    row = by_path["kept.py"]
+    assert row["origin"] == "new", "the baseline has never seen it"
+    assert row["introduced"] is False, "and this pull request did not cause it"
+    assert row["was"] == 6.0, "the base's value, so a comment can say `was 6`"
+
+
+def test_a_finding_the_pull_request_did_cause_is_marked_as_introduced(repo: Path) -> None:
+    """The other half. `added.py` does not exist on the base at all."""
+    payload = run_review("main", "HEAD")
+    row = next(r for r in payload["findings"] if r["path"] == "added.py")
+
+    assert row["introduced"] is True
+    assert row["was"] is None
+    assert payload["counts"]["introduced"] == 1
+
+
+def test_a_base_that_cannot_be_checked_out_is_not_measured(repo: Path) -> None:
+    """A shallow clone holds the tip and not the merge base, so `worktree add` fails where
+    `diff` succeeded. `_at_base` returns `None` -- "nobody looked" -- rather than an empty
+    mapping, which would read as "the base was clean"."""
+    from oxn.config import Config
+    from oxn.review import _at_base
+
+    assert _at_base(repo, "no-such-ref", ["added.py"], Config.load(repo)) is None
+
+
+def test_an_unmeasurable_base_says_it_does_not_know(repo: Path, monkeypatch) -> None:
+    """**`null` is not `false`.** An unanswered question must not be reported as "you did not
+    cause this" -- nor as "you did"."""
+    import oxn.review as review
+
+    monkeypatch.setattr(review, "_at_base", lambda *a, **k: None)
+    payload = run_review("main", "HEAD")
+
+    assert payload["counts"]["introduced"] is None
+    assert all(row["introduced"] is None for row in payload["findings"]), payload["findings"]
+    assert all(row["was"] is None for row in payload["findings"])
+
+
+def test_the_base_is_measured_without_disturbing_the_working_tree(repo: Path) -> None:
+    """A worktree, not a checkout or a stash. This runs on machines with uncommitted work.
+
+    Asserted on the *dirty* state, because that is what a stash-based implementation would
+    silently eat.
+    """
+    (repo / "scratch.py").write_text("def uncommitted():\n    return 1\n")
+    (repo / "added.py").write_text(OVER_CEILING + "\n# edited, not committed\n")
+
+    run_review("main", "HEAD")
+
+    assert (repo / "scratch.py").exists(), "an untracked file survived"
+    assert "not committed" in (repo / "added.py").read_text(), "an uncommitted edit survived"
+    assert _git_out(repo, "rev-parse", "--abbrev-ref", "HEAD").strip() == "feature"
+    assert _git_out(repo, "worktree", "list").count("\n") == 1, "the worktree was removed"
 
 
 # ---- the honesty rule ----------------------------------------------------------------------

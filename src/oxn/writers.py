@@ -39,8 +39,11 @@ Rules, in order of importance:
    percentages or differences of your own. Do not write version numbers, dates, or counts
    that are not in the JSON. If you cannot say something without a number that is not there,
    say it without the number.
-2. Lead with findings whose "origin" is "new" or "regression". Mention "baselined" findings
-   only as pre-existing debt, and never as something this pull request introduced.
+2. Lead with findings whose "introduced" is true -- those are the ones this pull request
+   caused. "introduced": false means the finding was already present on the base commit, so say
+   so rather than attributing it to the author. "introduced": null means it could not be
+   determined, so say nothing about cause. Mention "baselined" findings only as pre-existing
+   debt, and never as something this pull request introduced.
 3. Quote each finding as `path:line` and name the rule.
 4. Be brief. No preamble, no restating these instructions, no offer to help further.
 5. If there are no findings, say so in one sentence."""
@@ -226,12 +229,31 @@ def review_body(payload: dict[str, Any]) -> str:
     if actionable:
         lines += [
             "",
-            *(f"- `{row['path']}:{row['line']}` — {row['message']}" for row in actionable),
+            *(f"- {_bullet(row)}" for row in actionable),
         ]
     if files.get("errored"):
         lines += ["", f"{files['errored']} changed files could not be measured."]
     lines += ["", _footer(payload["measured"])]
     return "\n".join(lines)
+
+
+def _bullet(row: dict[str, Any]) -> str:
+    """One finding, saying whether this pull request caused it.
+
+    **`new` and `introduced` are different claims and a reader conflates them.** `new` means the
+    baseline had not seen it; `introduced` means the base commit did not have it either. A long
+    function already over the ceiling and never baselined is `new` and not introduced, and
+    calling that the author's work is how a review stops being read. Where the base could not be
+    measured `introduced` is `null` and this says nothing about cause rather than guessing.
+    """
+    said = f"`{row['path']}:{row['line']}` — {row['message']}"
+    if row.get("introduced") is False:
+        was = row.get("was")
+        # `was` comes from the measurement, so a comment may quote it: `quotable_numbers` walks
+        # the payload and has already admitted it.
+        moved = f", was {was:g}" if isinstance(was, (int, float)) else ""
+        return f"{said} (already present on the base{moved})"
+    return said
 
 
 def _footer(stamp: dict[str, Any]) -> str:

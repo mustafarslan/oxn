@@ -13,11 +13,15 @@ that: it restates measurements about files a diff touched. Keeping the hunks out
 is the same honesty rule one level up, and it also means a fork's contents are never handed to
 a model by a workflow triggered from that fork.
 
-**It does not re-measure the base.** ``origin`` on a finding says whether `.oxn/baseline.json`
-already knew about it, which is the ratchet the whole project runs on -- so ``new`` means *not
-in the baseline*, and not *caused by this pull request*. A new violation can sit in an
-unchanged function of a changed file. Telling the two apart needs a second checkout and a
-second measurement; until that exists the word means what this paragraph says it means.
+**``origin`` and ``introduced`` answer two different questions, and both are reported.**
+``origin`` says whether `.oxn/baseline.json` already knew about the finding -- the ratchet the
+whole project runs on. ``introduced`` says whether the pull request *caused* it, which needs
+the base measured too: a violation that is ``new`` to the baseline can sit in an untouched
+function of a changed file, and telling a reviewer the author wrote it is the false positive
+that ends adoption. `_at_base` checks out the merge base into a throwaway worktree and measures
+the same paths **under the head's `oxn.yaml`**, so a ceiling that tightened does not read as
+code that worsened. Where that cannot be done -- no git, a shallow clone, a base that does not
+resolve -- ``introduced`` is ``null`` rather than guessed, and `oxn review` says so.
 """
 
 from __future__ import annotations
@@ -50,20 +54,9 @@ def changed_files(repo: Path | str, base: str, head: str) -> list[str]:
     asking the filesystem rather than by parsing a status column, because a rename reports the
     new name and the old one is simply gone either way.
     """
-    command = ["git", "diff", "--name-only", f"{base}...{head}"]
-    try:
-        result = subprocess.run(  # noqa: S603 - fixed argv, no shell
-            command, cwd=str(repo), capture_output=True, text=True, check=True
-        )
-    except FileNotFoundError as exc:  # pragma: no cover - git absent
-        raise GitLogError("git is not installed or not on PATH") from exc
-    except subprocess.CalledProcessError as exc:
-        raise GitLogError(
-            f"git diff {base}...{head} failed in {repo}: {exc.stderr.strip()}"
-        ) from exc
-
+    out = _git(repo, "diff", "--name-only", f"{base}...{head}")
     root = Path(repo)
-    return [line for line in result.stdout.splitlines() if line and (root / line).is_file()]
+    return [line for line in out.splitlines() if line and (root / line).is_file()]
 
 
 def numeral(value: float | int | str) -> str:
@@ -182,6 +175,7 @@ def run_review(
     measurable = _measurable(touched, settings)
 
     report = run_check([str(Path(repo) / path) for path in measurable], config=settings)
+    tagged = _findings(report, _at_base(repo, base, measurable, settings))
     payload: dict[str, Any] = {
         "status": "FINDINGS" if _actionable(report) else "OK",
         "base": base,
@@ -197,12 +191,8 @@ def run_review(
             # passing the check only when that count happened to appear somewhere else.
             "errored": len(report.errors),
         },
-        "findings": _findings(report),
-        "counts": {
-            "new": len(report.findings),
-            "regression": len(report.regressed),
-            "baselined": len(report.baselined),
-        },
+        "findings": tagged,
+        "counts": _counts(report, tagged),
         "errors": report.errors,
     }
     payload["quotable"] = sorted(quotable_numbers({k: v for k, v in payload.items()}))
@@ -214,7 +204,77 @@ def _actionable(report: CheckReport) -> bool:
     return bool(report.findings or report.regressed)
 
 
-def _findings(report: CheckReport) -> list[dict[str, Any]]:
+def _at_base(
+    repo: Path | str, base: str, paths: Sequence[str], settings: Config
+) -> dict[str, float] | None:
+    """Every finding the base commit already had, keyed the way `Finding.key` keys them.
+
+    **A throwaway worktree, not a stash or a checkout.** `git worktree add --detach` leaves the
+    working tree the caller is standing in completely alone, which matters because this runs
+    inside CI jobs and on developer machines with uncommitted work. It is removed in a `finally`
+    even when the measurement raises.
+
+    **The head's `oxn.yaml` is applied to the base's code**, by replacing only the root on the
+    settings already loaded. Measuring the base under its own configuration would report a
+    ceiling that tightened as code that got worse -- the author would be shown a finding they
+    did not cause, which is the whole thing this function exists to prevent.
+
+    Returns ``None`` rather than an empty mapping when the base cannot be measured: "the base
+    had no findings" and "nobody looked" are different claims, and only one of them licenses
+    telling an author they introduced something.
+    """
+    import dataclasses
+    import shutil
+    import tempfile
+
+    from oxn.check import run_check
+
+    worktree = Path(tempfile.mkdtemp(prefix="oxn-base-"))
+    try:
+        _git(repo, "worktree", "add", "--detach", str(worktree), base)
+    except GitLogError:
+        shutil.rmtree(worktree, ignore_errors=True)
+        return None
+    try:
+        existing = [str(worktree / path) for path in paths if (worktree / path).is_file()]
+        report = run_check(existing, config=dataclasses.replace(settings, root=worktree))
+        return {
+            _rebase_key(finding.key, worktree): finding.value
+            for finding in [*report.findings, *report.regressed, *report.baselined]
+        }
+    finally:
+        _git(repo, "worktree", "remove", "--force", str(worktree), check=False)
+        shutil.rmtree(worktree, ignore_errors=True)
+
+
+def _rebase_key(key: str, worktree: Path) -> str:
+    """A base finding's key, with the worktree prefix taken off its path.
+
+    `Finding.key` is `rule|path|entity` and the path is relative to the root it was measured
+    under, so a key from the worktree and one from the checkout never match until the two roots
+    are made to agree.
+    """
+    return key.replace(f"{worktree}/", "").replace(str(worktree), "")
+
+
+def _git(repo: Path | str, *args: str, check: bool = True) -> str:
+    """One git command in `repo`, raising `GitLogError` with git's own words."""
+    try:
+        result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            ["git", *args],  # noqa: S607
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            check=check,
+        )
+    except FileNotFoundError as exc:  # pragma: no cover - git absent
+        raise GitLogError("git is not installed or not on PATH") from exc
+    except subprocess.CalledProcessError as exc:
+        raise GitLogError(f"git {' '.join(args)} failed: {exc.stderr.strip()}") from exc
+    return result.stdout
+
+
+def _findings(report: CheckReport, at_base: dict[str, float] | None) -> list[dict[str, Any]]:
     """Every finding, each carrying where it stands with the baseline.
 
     **Per finding, not as three counts.** A pull request that touches one line of a long
@@ -222,6 +282,15 @@ def _findings(report: CheckReport) -> list[dict[str, Any]]:
     a review that opens with a violation the author did not cause is the false positive that
     ends adoption. `origin` is what lets the writer lead with what is new and mention the rest
     as pre-existing.
+
+    **`introduced` is the second question and the one an author actually asks.** `origin: new`
+    means the baseline had not seen it; `introduced: true` means the base commit did not have
+    it either, so this pull request caused it. They come apart exactly where it matters -- a
+    long function that was already over the ceiling and was never baselined is `new` and *not*
+    introduced, and reporting it as the author's is how a review stops being read. `was` carries
+    the base's value where there is one, so "19, was 16" is a sentence made of measured numbers.
+
+    Both are `null` when the base could not be measured, which is not the same as `false`.
     """
     tagged: list[dict[str, Any]] = []
     for origin, findings in (
@@ -229,8 +298,29 @@ def _findings(report: CheckReport) -> list[dict[str, Any]]:
         ("regression", report.regressed),
         ("baselined", report.baselined),
     ):
-        tagged.extend({**finding.as_dict(), "origin": origin} for finding in findings)
+        for finding in findings:
+            row: dict[str, Any] = {**finding.as_dict(), "origin": origin}
+            row["introduced"] = None if at_base is None else finding.key not in at_base
+            row["was"] = None if at_base is None else at_base.get(finding.key)
+            tagged.append(row)
     return tagged
+
+
+def _counts(report: CheckReport, tagged: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """The three baseline counts, and the one that says what this pull request caused.
+
+    `introduced` is `null` rather than 0 where the base could not be measured. "This pull
+    request introduced nothing" and "nobody checked" are different claims, and only the first
+    belongs in a comment.
+    """
+    actionable = [row for row in tagged if row["origin"] != "baselined"]
+    known = [row["introduced"] for row in actionable if row["introduced"] is not None]
+    return {
+        "new": len(report.findings),
+        "regression": len(report.regressed),
+        "baselined": len(report.baselined),
+        "introduced": sum(known) if len(known) == len(actionable) else None,
+    }
 
 
 def _measurable(paths: Sequence[str], settings: Config) -> list[str]:
