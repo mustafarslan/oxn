@@ -59,6 +59,41 @@ def changed_files(repo: Path | str, base: str, head: str) -> list[str]:
     return [line for line in out.splitlines() if line and (root / line).is_file()]
 
 
+def changed_lines(repo: Path | str, base: str, head: str) -> dict[str, set[int]]:
+    """Line numbers on the **head** side that the range touched, per file.
+
+    **A review comment can only be placed on a line the diff contains.** GitHub rejects one
+    anywhere else with a 422, and that rule is the whole of "position mapping": a finding on an
+    untouched line of a touched file -- which is most of them, since a ceiling is about a whole
+    function -- has no line to hang a comment on and belongs in the summary instead.
+
+    `--unified=0` so a hunk header names exactly the added lines and no surrounding context;
+    context lines are not part of the diff for this purpose and a comment on one is refused.
+    Deletions produce `+start,0` and contribute nothing, which is correct: a line that is gone
+    cannot carry a comment.
+    """
+    out = _git(repo, "diff", "--unified=0", f"{base}...{head}")
+    touched: dict[str, set[int]] = {}
+    path = ""
+    for line in out.splitlines():
+        if line.startswith("+++ b/"):
+            path = line[6:]
+        elif line.startswith("@@") and path:
+            touched.setdefault(path, set()).update(_hunk_lines(line))
+    return touched
+
+
+def _hunk_lines(header: str) -> range:
+    """The head-side lines one `@@ -a,b +c,d @@` header covers."""
+    after = header.split("+", 1)[-1].split("@@", 1)[0].strip()
+    start, _, count = after.partition(",")
+    try:
+        first, length = int(start), int(count) if count else 1
+    except ValueError:  # pragma: no cover - malformed header
+        return range(0)
+    return range(first, first + length)
+
+
 def numeral(value: float | int | str) -> str:
     """One number in the spelling a comment would use, so both sides compare as text.
 
@@ -192,6 +227,7 @@ def run_review(
             "errored": len(report.errors),
         },
         "findings": tagged,
+        "comments": _line_comments(tagged, changed_lines(repo, base, head)),
         "counts": _counts(report, tagged),
         "errors": report.errors,
     }
@@ -304,6 +340,39 @@ def _findings(report: CheckReport, at_base: dict[str, float] | None) -> list[dic
             row["was"] = None if at_base is None else at_base.get(finding.key)
             tagged.append(row)
     return tagged
+
+
+def _line_comments(
+    tagged: Sequence[dict[str, Any]], touched: dict[str, set[int]]
+) -> list[dict[str, Any]]:
+    """Findings that can be said *on the line*, in the shape GitHub's review API takes.
+
+    **Two filters, and both are about not being wrong in public.** A comment may only sit on a
+    line the diff contains, or the API refuses the whole review with a 422 -- so a ceiling
+    finding about a function whose signature line the author never touched has no anchor and
+    stays in the summary. And only findings this pull request `introduced` are placed: a line
+    comment is the most attributable thing a bot can write, and putting one on pre-existing debt
+    the author merely stood next to is the false positive that gets a reviewer muted.
+
+    `introduced` is `null` when the base could not be measured, and `null` is not `true`: no
+    base, no line comments, and the summary says everything it would have said anyway.
+    """
+    footer = "\n\n<sub>OXN. This does not gate.</sub>"
+    comments: list[dict[str, Any]] = []
+    for row in tagged:
+        if row.get("introduced") is not True or row["origin"] == "baselined":
+            continue
+        if row["line"] not in touched.get(row["path"], ()):
+            continue
+        comments.append(
+            {
+                "path": row["path"],
+                "line": row["line"],
+                "side": "RIGHT",
+                "body": f"**{row['rule']}** — {row['message']}{footer}",
+            }
+        )
+    return comments
 
 
 def _counts(report: CheckReport, tagged: Sequence[dict[str, Any]]) -> dict[str, Any]:

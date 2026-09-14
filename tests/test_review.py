@@ -215,6 +215,98 @@ def test_the_base_is_measured_without_disturbing_the_working_tree(repo: Path) ->
     assert _git_out(repo, "worktree", "list").count("\n") == 1, "the worktree was removed"
 
 
+# ---- line comments, and the two filters on them ----------------------------------------------
+
+
+def test_a_finding_on_a_changed_line_becomes_a_line_comment(repo: Path) -> None:
+    """`added.py` is new, so every line of it is in the diff and the finding sits on one."""
+    payload = run_review("main", "HEAD")
+
+    assert payload["comments"] == [
+        {
+            "path": "added.py",
+            "line": 1,
+            "side": "RIGHT",
+            "body": payload["comments"][0]["body"],
+        }
+    ], payload["comments"]
+    assert "parameter_count" in payload["comments"][0]["body"]
+    assert "does not gate" in payload["comments"][0]["body"]
+
+
+def test_a_finding_the_author_did_not_introduce_gets_no_line_comment(repo: Path) -> None:
+    """**The most attributable thing a bot can write, put on someone else's code.**
+
+    `wide` is over the ceiling on `main` already; the pull request edits a different function in
+    the same file. The finding is real, it is `origin: new`, and a line comment on it says "you
+    wrote this" in the margin of a line the author did touch. It stays in the summary.
+    """
+    (repo / "kept.py").write_text(OVER_CEILING)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "wide on the branch")
+    _git(repo, "checkout", "-q", "main")
+    (repo / "kept.py").write_text(OVER_CEILING)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "and on main first")
+    _git(repo, "checkout", "-q", "feature")
+    _git(repo, "merge", "-q", "main", "-m", "merge")
+    (repo / "kept.py").write_text(OVER_CEILING + "\n\ndef touched():\n    return 2\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "edit a different function")
+
+    payload = run_review("main", "HEAD")
+
+    on_kept = [row for row in payload["findings"] if row["path"] == "kept.py"]
+    assert on_kept and on_kept[0]["origin"] == "new"
+    assert all(c["path"] != "kept.py" for c in payload["comments"]), payload["comments"]
+
+
+def test_a_finding_on_an_untouched_line_has_nowhere_to_hang(repo: Path) -> None:
+    """**GitHub refuses the whole review with a 422 for a comment off the diff.**
+
+    A ceiling is about a whole function, so a finding routinely points at a signature line the
+    author never touched -- most of them do. `changed_lines` is the filter, and the summary is
+    where those findings live.
+    """
+    from oxn.review import _line_comments
+
+    tagged = [
+        {
+            "path": "a.py",
+            "line": 44,
+            "origin": "new",
+            "introduced": True,
+            "rule": "cognitive_complexity",
+            "message": "m",
+        },
+    ]
+
+    assert _line_comments(tagged, {"a.py": {1, 2, 3}}) == []
+    assert len(_line_comments(tagged, {"a.py": {43, 44, 45}})) == 1
+
+
+def test_no_base_measurement_means_no_line_comments(repo: Path, monkeypatch) -> None:
+    """`introduced` is `null` when the base could not be checked out, and `null` is not `true`.
+    Without it, nothing is attributable enough to say in the margin."""
+    import oxn.review as review
+
+    monkeypatch.setattr(review, "_at_base", lambda *a, **k: None)
+    payload = run_review("main", "HEAD")
+
+    assert payload["findings"], "there is still a finding to report"
+    assert payload["comments"] == []
+
+
+def test_a_hunk_header_names_the_head_side_lines() -> None:
+    """`--unified=0`, so a header covers exactly the added lines. A pure deletion is `+c,0`
+    and contributes nothing: a line that is gone cannot carry a comment."""
+    from oxn.review import _hunk_lines
+
+    assert list(_hunk_lines("@@ -12,0 +13,4 @@")) == [13, 14, 15, 16]
+    assert list(_hunk_lines("@@ -5,2 +5 @@")) == [5]
+    assert list(_hunk_lines("@@ -7,3 +6,0 @@")) == []
+
+
 # ---- the honesty rule ----------------------------------------------------------------------
 
 
@@ -658,6 +750,9 @@ def test_the_workflow_posts_the_body_oxn_rendered_rather_than_building_its_own(t
 
     assert "oxn review" in runs
     assert ".comment.body" in runs, "the job posts what OXN rendered"
+    assert "/reviews" in runs, "one review, summary plus line comments"
+    assert "REQUEST_CHANGES" not in runs and '"COMMENT"' in runs, "a review that gates is a gate"
+    assert ".comments" in runs, "the line comments OXN decided were placeable"
     assert "import json" not in runs, "and does not rebuild it"
     assert "OXN_OLLAMA_HOST" in _WORKFLOW, (
         "a runner has no model host, so the file has to say what it would take to get prose"

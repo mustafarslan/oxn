@@ -233,12 +233,18 @@ jobs:
         env:
           BASE: origin/${{ github.event.repository.default_branch }}
         run: oxn review --base "$BASE" --json > review.json
+      # One review: the summary as its body, plus a line comment for each finding this pull
+      # request introduced *on a line the diff contains*. `oxn review` decides which qualify --
+      # GitHub refuses the whole review with a 422 for a comment off the diff, and a line
+      # comment on code the author did not write is the most attributable way to be wrong.
+      # `event: COMMENT`, never REQUEST_CHANGES: this does not gate.
       - name: Comment
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          jq -r .comment.body review.json > body.md
-          gh pr comment ${{ github.event.issue.number }} --body-file body.md
+          jq '{body: .comment.body, event: "COMMENT", comments: .comments}' review.json > review-request.json
+          gh api "repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}/reviews" \
+            --input review-request.json
 """
 
 
