@@ -1209,7 +1209,11 @@ oracle only** — the measured 146 ms import cost makes networkx unaffordable in
 | **(d) Z3** | **MIT**, `z3-solver` wheel | Wrong tool for graph rules; right tool for state-machine and invariant verification | — | **Optional extra `oxn[smt]`** — this is `idea.md` §8's `verify_state_invariants` |
 
 **What (c) actually turned out to be worth, measured 2026-09-14.** The repair suggestion is
-real and is now what `oxn arch` reports, but clingo earns almost none of the credit.
+real and is now what `oxn arch` reports — the fewest component edges that break each ring, with
+the import statements behind each named, since a component edge is not an edit anyone performs.
+The minimisation is unweighted in edges, so the two counts diverge (nest's largest ring: 19
+edges, 81 imports); minimising imports instead is a weighted variant that is not built. clingo
+earns almost none of the credit.
 `scripts/measure_cycles.py` counts every dependency ring in seven projects: **21 rings, 18 of
 them five components or fewer and 19 inside the exact algorithm's reach**. A Held-Karp dynamic
 program over node subsets — about forty

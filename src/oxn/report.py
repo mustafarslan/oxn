@@ -257,6 +257,9 @@ def _arch_payload(graph: Any, report: Any, *, show_unresolved: bool) -> dict[str
         **report.as_dict(),
         "martin": _martin_rows(report),
     }
+    # `hard_files` is the file-level form of the same edges `analyse` found the rings in --
+    # it is passed `initialisation`, which is `hard_components`. The two must stay paired: run
+    # the rings over all imports and the cut would name edges this table cannot explain.
     _name_the_imports(payload["cycles"], graph)
     if show_unresolved:
         payload["unresolved_imports"] = [
@@ -290,6 +293,13 @@ def _name_the_imports(rings: list[dict[str, Any]], graph: Any) -> None:
             {"from": source, "to": target, "imports": sorted(behind.get((source, target), []))}
             for source, target in ring["cut"]
         ]
+        # **The two counts are far apart and only one of them is an edit.** `cut_size` counts
+        # component edges, which is what the minimisation is over; removing one means deleting
+        # every import behind it. On `typescript-nest`'s largest ring that is 19 edges and 81
+        # import statements, so reporting the first as "19 imports" understates the work by
+        # four times. They coincide only where each edge has a single import behind it, which
+        # is every ring in this repository and no ring in a large one.
+        ring["imports_to_remove"] = sum(len(edge["imports"]) for edge in ring["cut"])
 
 
 def run_arch(

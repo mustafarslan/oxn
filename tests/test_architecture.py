@@ -607,3 +607,53 @@ def test_governed_layers_reads_every_contract_kind() -> None:
     assert governed_layers([Contract("c", "independence", modules=("a", "b"))]) == {"a", "b"}
     assert governed_layers([Contract("c", "deep_import", package="a")]) == {"a"}
     assert governed_layers([Contract("c", "acyclic")]) == set()
+
+
+def test_the_cut_reports_component_edges_and_import_statements_separately() -> None:
+    """Two counts, because only one of them is the edit.
+
+    The minimisation is over component edges; removing one means deleting every import behind
+    it. The first version of this rendering printed the edge count and called them "imports",
+    which reads correctly on a ring where each edge has one import behind it -- every ring in
+    this repository -- and understates `typescript-nest`'s largest by four times, 19 against
+    81. This fixture puts three imports behind one edge so the two can never collapse.
+    """
+    from oxn.report import _name_the_imports
+
+    class _Graph:
+        hard_files = {
+            "a/one.py": {"b/x.py", "b/y.py", "b/z.py"},
+            "b/x.py": {"a/one.py"},
+        }
+        membership = {"a/one.py": "a", "b/x.py": "b", "b/y.py": "b", "b/z.py": "b"}
+
+        def component_of(self, path: str) -> str:
+            return self.membership[path]
+
+    rings = [{"size": 2, "members": ["a", "b"], "cut": [("a", "b")], "cut_size": 1}]
+    _name_the_imports(rings, _Graph())
+
+    assert rings[0]["cut_size"] == 1
+    assert rings[0]["imports_to_remove"] == 3
+    assert rings[0]["cut"][0]["imports"] == [
+        ["a/one.py", "b/x.py"],
+        ["a/one.py", "b/y.py"],
+        ["a/one.py", "b/z.py"],
+    ]
+
+
+def test_a_declined_ring_has_no_import_count_to_report() -> None:
+    """`None` must survive to the renderer rather than becoming a zero nobody can act on."""
+    from oxn.report import _name_the_imports
+
+    class _Graph:
+        hard_files: dict[str, set[str]] = {}
+        membership: dict[str, str] = {}
+
+        def component_of(self, path: str) -> str:
+            return path
+
+    rings = [{"size": 25, "members": [], "cut": None, "cut_size": None}]
+    _name_the_imports(rings, _Graph())
+    assert rings[0]["cut"] is None
+    assert rings[0].get("imports_to_remove") is None

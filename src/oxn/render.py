@@ -278,8 +278,12 @@ def _arch_cut(cycle: dict[str, Any], console: Console) -> None:
             "no minimal cut computed[/dim]"
         )
         return
-    plural = "" if cycle["cut_size"] == 1 else "s"
-    console.print(f"    [dim]smallest break: {cycle['cut_size']} import{plural}[/dim]")
+    edges = cycle["cut_size"]
+    imports = cycle["imports_to_remove"]
+    console.print(
+        f"    [dim]smallest break: {edges} component edge{'' if edges == 1 else 's'}, "
+        f"{imports} import statement{'' if imports == 1 else 's'}[/dim]"
+    )
     for edge in cycle["cut"][:3]:
         for source, target in edge["imports"][:2]:
             console.print(f"      [dim]{source} -> {target}[/dim]")

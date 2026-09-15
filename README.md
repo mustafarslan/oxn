@@ -170,8 +170,8 @@ covers the exactly-measured classes and the rest are counted and named rather th
 
 `oxn arch` reports the dependency graph, and a dependency cycle is the one architectural
 finding it can turn into a concrete edit. Naming the components in a ring states the problem
-and leaves the hard half to the reader, so it also names the fewest imports whose removal
-breaks it:
+and leaves the hard half to the reader, so it also names the fewest component edges whose
+removal breaks it, and the import statements behind each:
 
 ```sh
 oxn arch
@@ -180,7 +180,7 @@ oxn arch
 ```
 Cycles (1)
   2 components: src/oxn, src/oxn/vcs
-    smallest break: 1 import
+    smallest break: 1 component edge, 1 import statement
       src/oxn/vcs/analysis.py -> src/oxn/thresholds.py
 ```
 
@@ -188,6 +188,12 @@ That set is minimal, not merely sufficient: it is the minimum feedback arc set, 
 exactly by a dynamic program over the ring's components. It is also not always the *only*
 minimal set — two packages importing each other are broken by cutting either — so read it as
 the size being proven and the particular edges being one answer of that size.
+
+**Two counts, because only one of them is the work.** The minimisation is over *component
+edges*, and removing one means deleting every import behind it. Those numbers diverge fast:
+`typescript-nest`'s largest ring is 19 component edges and 81 import statements. Minimising
+the second instead — weighting each edge by the imports behind it — is a different and equally
+well-defined problem, and it is not built; the number reported is the unweighted one.
 
 Rings above 20 components are declined rather than guessed at, unless `oxn[asp]` is installed:
 
