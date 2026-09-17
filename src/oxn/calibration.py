@@ -414,18 +414,34 @@ _ENFORCEMENT: tuple[Parameter, ...] = (
         name="RETRY_BUDGET",
         value=float(thresholds.RETRY_BUDGET),
         evidence=Evidence.JUDGEMENT,
-        observations=0,
+        # Repair trajectories in `benchmarks/dogfood-log.jsonl`: this parameter's cost at its
+        # current value rather than a fit, so `evidence` stays `JUDGEMENT` and 3 has not
+        # moved. Counted as runs beginning at `attempt == 1`, because the log grew through
+        # seven row shapes and `run`/`arm`/`repeat` are absent from 35 of its 44 rows --
+        # keying on them silently collapsed unlike rows into one trajectory and undercounted
+        # these as 16.
+        observations=24,
         provenance=(
             "3, the smallest count that lets an agent fail, read the increment trail and "
             "try a different shape. arXiv 2508.11958 establishes that the loop needs a "
             "bound -- LLM refactoring often fails to reach the threshold at all -- but "
-            "measures whether a repair lands, not how many attempts are worth paying for"
+            "measures whether a repair lands, not how many attempts are worth paying for. "
+            "Measured since on the 24 repair trajectories in benchmarks/dogfood-log.jsonl, "
+            "which runs the loop this budget governs: 5 landed a repair, 4 of them at the "
+            "first attempt and 1 at the second, none at the third. Six trajectories reached "
+            "a third attempt and none converged, so at 3 this budget has never cut off a "
+            "repair that was going to work -- if anything the third attempt looks unearned"
         ),
         fit_when=(
-            "the attempt trajectories this budget already records are collected across "
-            "sessions. The question is empirical and cheaply answered: of the repairs that "
-            "eventually succeed, what fraction needed a third attempt or a fourth? A budget "
-            "set below that quantile halts work that would have converged"
+            "there are enough trajectories to take a quantile. The measurement above is the "
+            "right one and n=5 successes is far too few to set a number by; what it wants is "
+            "more of them, from varied agents on varied repositories rather than this one -- "
+            "P11's grid. The *hook* ledger cannot supply them, and an earlier version of this "
+            "entry wrongly said it already did: `retry.charge` rewrites each path with only "
+            "what the current run found, so a violation is forgotten at the moment it is "
+            "repaired, which is precisely the event a fit needs. Collecting from real hook "
+            "sessions would mean recording (attempts, repaired) append-only, at one extra "
+            "write per run against ADR-0002's budget"
         ),
     ),
 )

@@ -331,12 +331,15 @@ def test_an_explicitly_empty_budget_means_the_default(tmp_path: Path) -> None:
 def test_the_calibration_surface_lists_the_budget() -> None:
     """`oxn calibration` claims to list *every* tunable. A number that hides in a module is
     exactly the folklore that surface exists to prevent."""
-    from oxn.calibration import parameters
+    from oxn.calibration import Evidence, parameters
 
     budget = next(p for p in parameters() if p.name == "RETRY_BUDGET")
 
     assert budget.value == float(thresholds.RETRY_BUDGET)
-    assert budget.observations == 0
+    # Repair trajectories back its *cost*, not its value: `observations` counts what
+    # has been seen at the current setting, and `evidence` carries whether it was fitted.
+    assert budget.observations == 24
+    assert budget.evidence is Evidence.JUDGEMENT
 
 
 def test_the_readme_quotes_what_the_hook_actually_says() -> None:
@@ -361,3 +364,49 @@ def test_the_readme_quotes_what_the_hook_actually_says() -> None:
 
 def _key() -> str:
     return "cognitive_complexity|edited.py|edited.tangled"
+
+
+def dogfood_rows() -> list[dict]:
+    """Every attempt `scripts/dogfood.py` has logged, oldest first.
+
+    Shared by the two tests below rather than private to either: they assert different claims
+    about the same file -- how many trajectories it holds, and where the repairs landed.
+    """
+    log = Path(__file__).resolve().parent.parent / "benchmarks" / "dogfood-log.jsonl"
+    return [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
+
+
+def test_the_retry_budget_counts_the_trajectories_it_was_observed_on() -> None:
+    """A trajectory is a run beginning at `attempt == 1`, and that definition is a correction.
+
+    The log grew through seven row shapes, and `run`, `arm` and `repeat` are absent from 35 of
+    its 44 rows -- grouping on them collapsed unlike rows into one trajectory and undercounted
+    these as 16. Every row has carried `attempt` since the first one.
+    """
+    from oxn.calibration import parameters
+
+    budget = next(parameter for parameter in parameters() if parameter.name == "RETRY_BUDGET")
+    starts = [row for row in dogfood_rows() if row["attempt"] == 1]
+
+    assert budget.observations == len(starts)
+
+
+def test_no_repair_that_worked_ever_needed_a_third_attempt() -> None:
+    """The claim in `RETRY_BUDGET`'s provenance, pinned to the file it was measured from.
+
+    An accepted attempt *is* a landing, so no grouping is needed to say which attempt each
+    repair arrived on. Five successes is why the parameter stays provisional even though the
+    observation points the right way.
+
+    The trajectories come from `benchmarks/dogfood-log.jsonl` and not from the hook ledger,
+    which cannot supply them: `charge` rewrites each path with only what the current run
+    found, so a violation is forgotten at the moment it is repaired -- exactly the event a fit
+    needs. An earlier `fit_when` claimed otherwise.
+    """
+    from oxn.calibration import parameters
+
+    budget = next(parameter for parameter in parameters() if parameter.name == "RETRY_BUDGET")
+    landed = sorted(row["attempt"] for row in dogfood_rows() if row["accepted"])
+
+    assert landed == [1, 1, 1, 1, 2]
+    assert budget.is_provisional
