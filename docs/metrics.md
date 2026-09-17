@@ -1281,7 +1281,7 @@ disagree with each other is red forever.
 | Param count, NLOC | **lizard** | MIT | equality |
 | Import graph / Python | **grimp / import-linter** | BSD-2 | **graph-equality** (node and edge sets) |
 | Import graph / JS-TS | **dependency-cruiser** | MIT | graph-equality + cycle-set equality |
-| Import graph / Java | **jdeps** | JDK | graph-equality at package level |
+| Import graph / Java | **jdeps** | JDK | **containment, not equality, and measured: OXN ⊆ jdeps** — bytecode sees types erasure and inference leave unnamed in source (`docs/divergences.md`) |
 | Graph algorithms | **networkx** | BSD-3 | equality on random graphs |
 | VCS metrics | **code-maat** (GPL-3.0, CI subprocess = licence-clean), **PyDriller** (Apache-2.0) | | equality on churn and coupling |
 | Call graph / dead code | **Joern** (Apache-2.0), **vulture** (MIT), **knip** (MIT) | | precision/recall, not equality |

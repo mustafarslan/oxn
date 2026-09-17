@@ -282,6 +282,40 @@ executes both. OXN modelled one target per import, which silently lost an edge w
 package was not imported anywhere else. It matched by luck on the first corpus. Imports now
 resolve to a *set* of targets.
 
+### Java resolution
+
+**Oracle-compared against jdeps** (`tests/test_oracle_jdeps.py`), 2026-09-17, over the 50
+main and test classes of `java-spring-petclinic`: **jdeps 27 in-package edges, OXN 24, agreed
+24 — 88.9%, and OXN is a strict subset.** The containment is the result, not the ratio:
+**every edge OXN records, the compiler also resolved.** OXN invents nothing, which is the
+direction that matters everywhere in this document — a wrong edge corrupts every downstream
+metric silently, where a missing one is merely absent.
+
+The other direction does not hold and cannot, because the two tools answer different
+questions. **jdeps reads bytecode and sees the type the compiler resolved; OXN reads imports
+and sees the type the source names.** Wherever inference or erasure puts a type in the class
+file that never appeared in the source, no import exists for *any* import-based tool to find.
+All three divergences are that one rule, each confirmed in the constant pool with `javap -v`:
+
+| site | mechanism | the type never written down |
+|---|---|---|
+| `owner.getPet(name)` | the invoked method's return descriptor | `Pet` |
+| `EntityUtils.getById(vets, Vet.class, 3)` | `<T extends BaseEntity>` erased into the descriptor | `BaseEntity` |
+| `vet.getSpecialties().get(0).getName()` | `get` erases to `Object`, compiler inserts a checkcast | `Specialty` |
+
+Two things are worth recording rather than rounding away. **The population is small for a
+structural reason**: petclinic's classes depend on *Spring*, not on each other, so only 27
+in-package edges exist at all — the rule above is exercised by exactly three of them. And
+**`main` alone agrees perfectly**, 10 edges to 10 with no divergence in either direction; all
+three divergences are in test sources, where fluent assertion chains over generic collections
+are what produce inferred types in the first place.
+
+The comparison also has a failure mode the other two do not, and it is guarded rather than
+skipped: `target/` is a gitignored build artifact that can be from any commit, and jdeps on
+stale bytecode looks exactly like an OXN resolver bug. The test asserts the compiled class
+set equals the source set before comparing anything, and **fails** — naming `./mvnw -o
+test-compile` — rather than skipping, because a skip would hide that forever.
+
 ### JavaScript resolution
 
 **Oracle-compared against dependency-cruiser 18.3.1** (`tests/test_oracle_depcruise.py`),

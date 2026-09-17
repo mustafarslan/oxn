@@ -106,8 +106,28 @@ jobs:
       - name: Install the JavaScript oracle
         working-directory: tests/oracles
         run: npm install --no-save --no-audit --no-fund eslint@9 eslint-plugin-sonarjs@4
+      # dependency-cruiser is the import-graph oracle for JavaScript and goes on PATH rather
+      # than into tests/oracles: the test invokes `depcruise` by name, as a user would.
+      - name: Install the import-graph oracle
+        run: npm install -g --no-audit --no-fund dependency-cruiser@18.3.1 typescript@5
       - name: Fetch corpora
-        run: python scripts/fetch_corpora.py --name python-httpx
+        run: >
+          python scripts/fetch_corpora.py
+          --name python-httpx --name javascript-eslint --name java-spring-petclinic
+      # jdeps ships with the JDK; petclinic's pom enforces 17 as a minimum. This sits *after*
+      # the fetch on purpose: `cache: maven` keys on `**/pom.xml`, and corpora are cloned by
+      # the step above, so higher up the glob matches nothing and the cache is dead at best.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      # jdeps reads bytecode, so the Java oracle needs the corpus *compiled* -- corpora are
+      # cloned, never built. The test fails rather than skips on stale output, so this must
+      # run; `test-compile` stops short of running petclinic's tests, which is all jdeps needs.
+      - name: Compile the Java corpus for jdeps
+        working-directory: benchmarks/corpora/java-spring-petclinic
+        run: ./mvnw -B -q test-compile
       - run: pytest -m oracle
         env:
           OXN_SONARJS_DIR: ${{ github.workspace }}/tests/oracles
