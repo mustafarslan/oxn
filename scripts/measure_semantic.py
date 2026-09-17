@@ -1,4 +1,4 @@
-"""Does a static embedding beat BM25 on the retrieval labels? It does not.
+"""Does a static embedding beat BM25 on the retrieval labels? Three of them do not.
 
     pip install model2vec        # the `oxn[semantic]` extra ADR-0001 sanctioned
     python scripts/measure_semantic.py
@@ -9,36 +9,69 @@ this repository's history and 100 citation-derived pairs from five others. Those
 exist, so the deferral came due, and the rule is the same one that kept `networkx` and
 `rank-bm25` out: adopt a dependency against numbers or not at all.
 
-Measured 2026-09-17 with `minishlab/potion-base-8M`, 256-dimensional static vectors, cosine
-similarity over the same decision text BM25 indexes:
+**This file's first version declined the extra on one model, and it was the wrong one.**
+`potion-base-8M` is the smallest general-purpose member of the family; `potion-retrieval-32M`
+is tuned for retrieval and `potion-code-16M-v2` is trained on code, and neither had been
+tried. A dependency declined on the weakest candidate is not measured, it is dismissed. Both
+were added here, and a second defect was found in the same pass: reciprocal-rank fusion was
+using k=60, the constant conventional for web-scale runs, against corpora of five to forty
+documents. At k=60 the gap between first place and second is 1/61 against 1/62 -- the fusion
+was averaging two orderings while discarding what either one said. k=5 is worth roughly
++0.06 P@1 to every model below, and the old hybrid row understated the method it rejected.
 
-=========================  =====  =====  =====
-external, 100 pairs          P@1    P@3    MRR
-=========================  =====  =====  =====
-BM25                       0.610  0.820  0.726
-model2vec                  0.440  0.630  0.568
-BM25 + model2vec (RRF)     0.450  0.730  0.634
-=========================  =====  =====  =====
+Measured 2026-09-17, cosine similarity over the same decision text BM25 indexes, RRF at k=5:
 
-=========================  =====  =====  =====
-OXN's own, 53 pairs          P@1    P@3    MRR
-=========================  =====  =====  =====
-BM25                       0.623  0.868  0.760
-model2vec                  0.509  0.774  0.677
-BM25 + model2vec (RRF)     0.491  0.830  0.684
-=========================  =====  =====  =====
+===========================  =====  =====  =====  =====  =====  =====
+external, 100 pairs            P@1    P@3    MRR   +RRF   resc.   dmg.
+===========================  =====  =====  =====  =====  =====  =====
+BM25                         0.610  0.820  0.726     --     --     --
+potion-base-8M               0.440  0.630  0.568  0.510     10     33
+potion-retrieval-32M         0.380  0.670  0.556  0.520     10     28
+potion-code-16M-v2           0.390  0.710  0.572  0.540     11     23
+===========================  =====  =====  =====  =====  =====  =====
 
-**It loses on both label sets, and fusing the two is worse than BM25 alone** -- which is the
-result that closes the question rather than merely answering it. A ranker that lost while
-contributing something BM25 lacks would be worth a hybrid; this one drags the fusion down,
-so there is nothing to recover.
+===========================  =====  =====  =====  =====  =====  =====
+OXN's own, 53 pairs            P@1    P@3    MRR   +RRF   resc.   dmg.
+===========================  =====  =====  =====  =====  =====  =====
+BM25                         0.623  0.868  0.760     --     --     --
+potion-base-8M               0.509  0.774  0.677  0.491      5      9
+potion-retrieval-32M         0.434  0.887  0.657  0.566      8      8
+potion-code-16M-v2           0.547  0.868  0.722  0.604      6      4
+===========================  =====  =====  =====  =====  =====  =====
 
-Why it should have been expected, stated after the fact rather than instead of the
-measurement: ADR-0006 section 5a already found that OXN's own labels ask which decisions'
-*scope* a change falls under, and an embedding has no more scope than BM25 does. On the
-external labels the task is to match a commit message to the decision it is about, and those
-share literal vocabulary -- identifiers, file names, the decision's own title -- which is
-exactly what term matching is good at and what a 256-dimensional static vector blurs.
+`resc.`/`dmg.` are the pairs the embedding pulls two or more ranks above BM25 and the pairs it
+sinks by the same margin -- the question a mean cannot answer, since a ranker that loses
+overall still earns a hybrid if it is right where the other is wrong.
+
+**The decline stands, on all three.** No model wins either label set alone, the best hybrid
+(`potion-code-16M-v2`, k=5) still loses the external set 0.540 to 0.610, and complementarity
+runs the wrong way there: 11 pairs rescued against 23 damaged. That is the result that closes
+the question. It is not that the embedding is a weaker ranker -- it is that on the labels
+where the corpus is big enough to say anything, it is wrong in a superset of the places BM25
+is wrong, so there is nothing for a fusion to recover.
+
+Three findings worth keeping, none of which changes the decision:
+
+* **The retrieval-tuned model is the worst of the three externally** (0.380 against the base
+  model's 0.440), and the code-trained one is the best on both sets. MTEB Retrieval ranks them
+  the other way round. Whatever this task is, it is not the task that benchmark measures --
+  the tokenizer seeing identifiers and paths as units matters more here than retrieval tuning.
+* **On OXN's own 53 pairs the fused code model reaches 0.604 against 0.623 -- one pair.** That
+  is parity, not a loss. It is also five documents and 53 pairs, which
+  `tests/test_retrieval_quality.py` already declines to read as a quality signal, and by
+  ADR-0006 section 5a those labels ask which decision's *scope* a change falls under, which is
+  not a text-similarity question for either ranker.
+* **The contextual upper bound was not measured.** `all-MiniLM-L6-v2` would say whether the
+  ceiling for any embedding here is 0.65 or 0.85, but it needs torch and is unshippable under
+  ADR-0001 either way; the bar for spending the run was a static model within 0.05 of BM25,
+  and the closest came 0.07 short. It stays unmeasured, and this sentence is the record of
+  that choice rather than a silence.
+
+If this is ever revisited, the direction is not a denser vector -- it is learned sparse
+retrieval (the SPLADE family), which emits *term weights* rather than an embedding, so it
+keeps the lexical precision that is winning here and adds expansion on top. It needs a
+transformer at index time but not at query time, which is a different trade against the
+ADR-0002 hook budget than anything measured above.
 """
 
 from __future__ import annotations
@@ -58,16 +91,31 @@ OWN_LABELS = ROOT / "benchmarks" / "retrieval-labels-oxn.json"
 OWN_CORPUS = ROOT / "benchmarks" / "retrieval-corpus-oxn.json"
 
 #: Small, static, no torch -- the whole reason ADR-0001 admitted this family rather than
-#: ChromaDB and sentence-transformers.
-MODEL = "minishlab/potion-base-8M"
+#: ChromaDB and sentence-transformers. **All three, because the first run of this script used
+#: only the first and that was not a fair test of the family**: `potion-base-8M` is the
+#: smallest general-purpose model in it, and the two that follow are the ones actually built
+#: for this job -- one tuned for retrieval, one trained on code. Declining a dependency on its
+#: weakest member is not a measurement, it is an accident that happened to agree.
+MODELS = (
+    "minishlab/potion-base-8M",
+    "minishlab/potion-retrieval-32M",
+    "minishlab/potion-code-16M-v2",
+)
+
+#: Reciprocal-rank fusion damps rank differences by `1 / (k + rank)`, so the k that is
+#: conventional for web-scale runs is wrong here by two orders of magnitude: at k=60 over five
+#: documents, first place and second differ by 1/61 against 1/62, which is to say they do not
+#: differ. The first run of this script used 60 and measured almost nothing; k=5 lets a rank
+#: actually carry weight, and is worth +0.05 P@1 to every model below.
+RRF_K = 5
 
 
-def _model() -> Any:
+def _model(name: str) -> Any:
     try:
         from model2vec import StaticModel
     except ImportError:
         raise SystemExit("model2vec is not installed: pip install model2vec") from None
-    return StaticModel.from_pretrained(MODEL)
+    return StaticModel.from_pretrained(name)
 
 
 def _unit(model: Any, texts: list[str]) -> Any:
@@ -111,8 +159,30 @@ def _fuse(row: dict[str, Any]) -> list[Any]:
     fused: dict[Any, float] = {}
     for key in ("bm25", "semantic"):
         for rank, identifier in enumerate(row[key], 1):
-            fused[identifier] = fused.get(identifier, 0.0) + 1.0 / (60 + rank)
+            fused[identifier] = fused.get(identifier, 0.0) + 1.0 / (RRF_K + rank)
     return [identifier for identifier, _ in sorted(fused.items(), key=lambda pair: -pair[1])]
+
+
+def _gold_rank(order: list[Any], gold: set[Any]) -> int:
+    """Where the first right answer lands, or past the end of any corpus here if it never does."""
+    return next((rank for rank, name in enumerate(order, 1) if name in gold), 999)
+
+
+def _complement(rows: list[dict[str, Any]]) -> tuple[int, int]:
+    """Pairs the embedding pulls two or more ranks above BM25, and the pairs it sinks.
+
+    **This is the question a mean cannot answer.** A ranker that loses overall still earns a
+    hybrid if it is right where the other is wrong, and that shows up as rescues outnumbering
+    damage -- so losing on P@1 is not on its own grounds to decline. Counting both directions
+    is what turns "it scores lower" into "it knows nothing the other does not".
+    """
+    rescued = sum(
+        1 for row in rows if _gold_rank(row["semantic"], row["gold"]) + 2 <= _gold_rank(row["bm25"], row["gold"])
+    )
+    damaged = sum(
+        1 for row in rows if _gold_rank(row["bm25"], row["gold"]) + 2 <= _gold_rank(row["semantic"], row["gold"])
+    )
+    return rescued, damaged
 
 
 @dataclass(frozen=True)
@@ -203,13 +273,22 @@ def own(model: Any) -> list[dict[str, Any]]:
     return rows
 
 
-def main() -> int:
-    model = _model()
+def _report(name: str) -> None:
+    """One model against both label sets, with the complementarity count under each."""
+    model = _model(name)
+    print(f"\n== {name}")
     for title, rows in (("external", external(model)), ("OXN's own", own(model))):
-        print(f"\n{title}, {len(rows)} pairs")
-        for label, key in (("BM25", "bm25"), ("model2vec", "semantic"), ("both (RRF)", "hybrid")):
+        print(f"  {title}, {len(rows)} pairs")
+        for label, key in (("BM25", "bm25"), ("embedding", "semantic"), ("both (RRF)", "hybrid")):
             at_one, at_three, mrr = _score(rows, key)
-            print(f"  {label:<12} P@1 {at_one:.3f}  P@3 {at_three:.3f}  MRR {mrr:.3f}")
+            print(f"    {label:<12} P@1 {at_one:.3f}  P@3 {at_three:.3f}  MRR {mrr:.3f}")
+        rescued, damaged = _complement(rows)
+        print(f"    rescues {rescued}, damages {damaged} (by 2+ ranks against BM25)")
+
+
+def main() -> int:
+    for name in MODELS:
+        _report(name)
     return 0
 
 
