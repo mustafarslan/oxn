@@ -281,6 +281,14 @@ Refusing costs the sentences, not the review. The rule is that prose nobody audi
 carry an unmeasured number — not that a pull request goes unanswered because a model
 misbehaved.
 
+The check reads numbers from the measurement, and **only where they are numbers rather than
+fragments of a name**. The payload carries the commit sha, and mining every digit run out of
+`d4e89d72e5c4e0206173e6dc3df513f8f131f126` put `126`, `131`, `206173`, `513`, `72` and `89`
+into an allowed set of twenty — a third of what a model could state came from an identifier,
+so "coverage rose to 206173" passed. The prose side stays deliberately looser: a writer who
+types digits is stating a number whatever they are glued to, and excusing `v2.1` or
+`Python 3.11` is exactly what the rule exists to refuse.
+
 The model is never shown the diff. A model given code reviews the code; this one restates
 measurements. It also means a workflow triggered from a fork never hands that fork's contents
 to a model.

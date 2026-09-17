@@ -42,6 +42,16 @@ if TYPE_CHECKING:  # pragma: no cover
 #: Any numeral a comment might contain: `16`, `1,939`, `0.14`, `98.75`.
 _NUMERAL = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
+#: A run of characters that could be one word or one number, so a number can be told from a
+#: fragment of a name. Underscores are *not* included: `test_p99` is two tokens, and the `99`
+#: in it is as much a name as the `p`.
+#:
+#: The rejection has to be per-token rather than per-digit-run, and a lookaround cannot do it:
+#: `(?<![A-Za-z])\d+(?![A-Za-z])` still matches `206173` inside `...e0206173e...` by
+#: backtracking to `20617`, whose next character is a digit. The token is the only unit at
+#: which "does this contain a letter" is a meaningful question.
+_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9,.]*")
+
 
 def changed_files(repo: Path | str, base: str, head: str) -> list[str]:
     """Repo-relative paths the range touched, as ``git diff --name-only`` reports them.
@@ -151,9 +161,15 @@ def _spellings(value: Any) -> set[str]:
 
     A percentage is admitted in both: a measurement holding `0.9875` is quoted as either
     `0.9875` or `98.75`, and refusing the second would refuse the natural sentence. A string
-    contributes the numerals inside it, because a finding's `message` already says
-    "cognitive_complexity 16, above the ceiling of 12" and those are the numbers a comment
+    contributes the **standalone** numerals inside it, because a finding's `message` already
+    says "cognitive_complexity 16, above the ceiling of 12" and those are the numbers a comment
     will repeat.
+
+    Standalone, because it used to be every digit run anywhere -- and the payload carries the
+    full 40-character commit sha. `d4e89d72e5c4e0206173e6dc3df513f8f131f126` contributed
+    `126`, `131`, `206173`, `513`, `72` and `89` to a set of twenty, so roughly a third of the
+    numbers a model was permitted to state came from an identifier rather than a measurement.
+    A reviewer writing "coverage rose to 206173" would have passed the honesty check.
     """
     if isinstance(value, bool):
         return set()
@@ -163,7 +179,16 @@ def _spellings(value: Any) -> set[str]:
             spelled.add(numeral(round(float(value) * 100, 4)))
         return spelled
     if isinstance(value, str):
-        return {numeral(match.group()) for match in _NUMERAL.finditer(value)}
+        # **Only from tokens that are not names.** The measurement side must not offer up
+        # digits that are fragments of an identifier; the prose side keeps `_NUMERAL`, because
+        # a writer who types digits is stating a number whatever they are glued to, and
+        # loosening it there would excuse `v2.1` and `py3.11`.
+        return {
+            numeral(match.group())
+            for token in _TOKEN.finditer(value)
+            if not any(character.isalpha() for character in token.group())
+            for match in _NUMERAL.finditer(token.group())
+        }
     return set()
 
 

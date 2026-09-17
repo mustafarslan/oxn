@@ -769,3 +769,56 @@ def test_the_workflow_posts_the_body_oxn_rendered_rather_than_building_its_own(t
 def _runs(job: dict) -> str:
     """Every shell command in a job, as one string to search."""
     return " ".join(str(step.get("run", "")) for step in job["steps"])
+
+
+# ---- the honesty rule must not be licensed by an identifier -----------------------------
+
+#: A real commit sha, kept literal. Its digit runs are what the quotable set used to absorb.
+A_REAL_SHA = "d4e89d72e5c4e0206173e6dc3df513f8f131f126"
+
+
+def test_a_commit_sha_licenses_no_numbers() -> None:
+    """The payload carries the full 40-character sha, and every digit run in it was quotable.
+
+    Measured on a real review payload: `126`, `131`, `206173`, `513`, `72` and `89` all came
+    from the sha, in an allowed set of twenty. Roughly a third of the numbers a model was
+    permitted to state were fragments of an identifier, so a reviewer writing "coverage rose
+    to 206173" passed a check whose own docstring says the strictness is the point.
+    """
+    allowed = quotable_numbers({"measured": {"commit": A_REAL_SHA, "short": A_REAL_SHA[:7]}})
+
+    assert allowed == set()
+    assert unquotable("coverage rose to 206173", allowed) == ["206173"]
+
+
+def test_a_substring_of_a_sha_is_not_a_number_either() -> None:
+    """The guard against fixing this with a lookaround, which does not work.
+
+    `(?<![A-Za-z])\\d+(?![A-Za-z])` still matches inside `...e0206173e...`: it backtracks to
+    `20617`, whose next character is a digit and so passes the lookahead. A token is the only
+    unit at which "does this contain a letter" is a meaningful question.
+    """
+    allowed = quotable_numbers({"commit": A_REAL_SHA})
+
+    assert "20617" not in allowed
+    assert "26" not in allowed
+
+
+def test_the_numbers_a_finding_actually_measured_still_count() -> None:
+    """Tightening must not cost the writer the figures it is supposed to quote."""
+    message = "added.py:1 added.wide has parameter_count 6, above the ceiling of 5"
+    allowed = quotable_numbers({"findings": [{"message": message, "value": 6.0, "ceiling": 5.0}]})
+
+    assert {"6", "5", "1"} <= allowed
+    assert unquotable(message, allowed) == []
+
+
+def test_the_prose_side_stays_strict() -> None:
+    """Asymmetric on purpose, and this is the guard against 'simplifying' to one pattern.
+
+    A writer who types digits is stating a number whatever they are glued to. Applying the
+    measurement-side rule to prose would excuse exactly the inventions the check exists to
+    refuse -- `Python 3.11` and `v2.1` are the two the docstring already names.
+    """
+    assert unquotable("v2.1 shipped", set()) == ["2.1"]
+    assert unquotable("Measured on Python 3.11", set()) == ["3.11"]

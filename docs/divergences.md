@@ -653,3 +653,28 @@ the host is unreachable so the default lane never depends on a model being up.
 One lesson from writing them: an *opinion* question ("is this actionable? YES/NO") produces
 an opinion answer and a brittle test. Asserting **capability** — can the model name a line
 it was given, and does it decline when it was not — is stable.
+
+### The honesty check was licensed by an identifier
+
+**A third of the numbers a model was permitted to state came from the commit sha.**
+`quotable_numbers` walks the payload and takes the numerals out of every string -- which is
+right for a finding's `message`, and wrong for `measured.commit`, a 40-character hash.
+`d4e89d72e5c4e0206173e6dc3df513f8f131f126` contributed `126`, `131`, `206173`, `513`, `72`
+and `89` to an allowed set of twenty, so "coverage rose to 206173" passed a check whose
+docstring says the strictness is the point.
+
+**Only the measurement side was tightened, and the asymmetry is load-bearing.** Prose keeps
+the looser pattern: a writer who types digits is stating a number whatever they are glued to,
+and applying the identifier exemption there would excuse `v2.1` and `Python 3.11` -- the two
+inventions the rule already names. The sha never reaches the checked prose: the footer that
+prints it belongs to `review_body`, OXN's own mechanical comment, not to the model's reply.
+
+**A lookaround does not fix it**, which is worth recording because it is the obvious attempt.
+`(?<![A-Za-z])\d[\d,]*(?![A-Za-z])` still yields `20617` and `26` from that sha: greedy
+matching backtracks until the trailing lookahead sees a digit rather than a letter. The token
+is the only unit at which "does this contain a letter" is a meaningful question.
+
+It also surfaced as a **flaky test**, which is how it was found. The fixture commits afresh
+each run, so a sha whose numerals happened to include `40` made a deliberately-dishonest
+"Up 40%." legitimate and the refusal test fail: **3 runs in 150**, measured, and **0 in 200**
+after the fix. The flake was the symptom; the leak was the defect.
