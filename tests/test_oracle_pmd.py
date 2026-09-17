@@ -1,114 +1,94 @@
-"""Duplication against PMD-CPD, the reference copy-paste detector."""
+"""Duplication against PMD-CPD, the reference copy-paste detector, in five languages.
+
+**This file measured one corpus in one language until it measured five.** The recall number
+it pinned -- 92% of PMD's duplicated lines -- came from httpx, and `DUPLICATION_MIN_TOKENS`
+carried `observations=1` and a `fit_when` saying the value could not be fitted "until clone
+recall is measured across more than one corpus" precisely because of that. Widening it found
+a detector bug that one Python package could not show: see `_select` in `oxn/volume/clones.py`
+and `docs/divergences.md`.
+
+The helpers live in `scripts/measure_duplication.py` and are loaded rather than duplicated
+here, for the reason `measure_semantic.py` loads the citation extractor: two copies of "what
+counts as a file both tools analysed" is how a measurement and its test come to disagree
+about what was measured.
+"""
 
 from __future__ import annotations
 
+import importlib.util
 import os
-import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
-from oracle_support import CORPUS
-from oxn.languages import get_parser
-
 pytestmark = pytest.mark.oracle
 
-PMD = Path(os.environ.get("OXN_PMD_DIR", "tools/pmd-bin")) / "bin" / "pmd"
+ROOT = Path(__file__).resolve().parent.parent
+CORPORA = ROOT / "benchmarks" / "corpora"
+PMD = Path(os.environ.get("OXN_PMD_DIR", ROOT / "tools" / "pmd-bin")) / "bin" / "pmd"
 
-requires_pmd = pytest.mark.skipif(
-    not PMD.exists(),
-    reason="PMD not installed; see scripts/check.py --oracle --install",
-)
+#: Recall floors per corpus, each a measured value rounded down to the nearest 0.01 -- not a
+#: target anybody aimed at. They differ by language because the *divergence* does: OXN reports
+#: one maximal non-overlapping class where PMD reports several overlapping ones, and how much
+#: that costs depends on how repetitive the corpus is. A floor per language says that; one
+#: floor for all five would either be unreachable for TypeScript or vacuous for Python.
+FLOORS = {
+    "python-httpx": 0.89,
+    "java-spring-petclinic": 0.85,
+    "go-kit": 0.83,
+    "javascript-eslint": 0.86,
+    "typescript-nest": 0.80,
+}
+
+requires_pmd = pytest.mark.skipif(not PMD.exists(), reason="PMD not installed; scripts/check.py --oracle --install")
 
 
-def _pmd_clone_lines(directory: Path, min_tokens: int) -> set[tuple[str, int]]:
-    """(path, line) for every line PMD-CPD reports as duplicated."""
-    import csv
-    import io
-
-    result = subprocess.run(
-        [
-            str(PMD),
-            "cpd",
-            "--minimum-tokens",
-            str(min_tokens),
-            "--language",
-            "python",
-            "--dir",
-            str(directory),
-            "--format",
-            "csv",
-        ],
-        capture_output=True,
-        text=True,
+def _measure() -> object:
+    """`scripts/measure_duplication.py`, loaded the way the retrieval tests load their script."""
+    spec = importlib.util.spec_from_file_location(
+        "measure_duplication", ROOT / "scripts" / "measure_duplication.py"
     )
-    lines: set[tuple[str, int]] = set()
-    for row in csv.reader(io.StringIO(result.stdout)):
-        if not row or row[0] == "lines":
-            continue
-        span = int(row[0])
-        rest = row[3:]
-        for index in range(0, len(rest) - 1, 2):
-            start = int(rest[index])
-            path = Path(rest[index + 1]).relative_to(directory).as_posix()
-            lines.update((path, start + offset) for offset in range(span))
-    return lines
-
-
-def _oxn_clone_lines(directory: Path, min_tokens: int) -> set[tuple[str, int]]:
-    from oxn.graph.sources import iter_source_files
-    from oxn.profiles import profile_for_path
-    from oxn.volume.clones import file_windows, find_clones
-
-    windows = {}
-    for path in iter_source_files([directory]):
-        profile = profile_for_path(str(path))
-        if profile is None:
-            continue
-        tree = get_parser(profile.name).parse(path.read_bytes())
-        if tree.root_node.has_error:
-            continue
-        relative = path.resolve().relative_to(directory).as_posix()
-        windows[relative] = file_windows(relative, tree.root_node, profile, min_tokens=min_tokens)
-
-    report = find_clones(windows, min_tokens=min_tokens, min_lines=4)
-    return {
-        (clone.path, line)
-        for klass in report.clone_classes
-        for clone in klass.occurrences
-        for line in clone.lines
-    }
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["measure_duplication"] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 @requires_pmd
-@pytest.mark.skipif(not CORPUS.exists(), reason="corpora not fetched")
 @pytest.mark.slow
-def test_duplication_recovers_what_pmd_cpd_finds() -> None:
-    """Recall against PMD-CPD, not equality.
+@pytest.mark.parametrize("corpus", sorted(FLOORS))
+def test_duplication_recovers_what_pmd_cpd_finds(corpus: str) -> None:
+    """Recall against PMD-CPD, not equality, in every language CPD has a lexer for.
 
-    The two tools tokenize differently and select overlapping candidates differently, so
-    exact clone-class equality is not a meaningful target. What matters for a duplication
-    detector is that it does not *miss* things: measured on httpx, OXN recovers 92% of the
-    lines PMD reports and flags more besides. See docs/divergences.md.
+    The two tools tokenize differently and resolve overlapping candidates differently, so
+    exact clone-class equality was never a meaningful target. What matters for a duplication
+    detector is what it *misses*, and missing it in one language only is the failure this
+    parametrization exists to catch: before the `_select` fix, recall ran from 0.69 in
+    TypeScript to 0.86 in Python, and the single Python assertion here saw none of it.
     """
-    directory = (CORPUS / "httpx").resolve()
-    theirs = _pmd_clone_lines(directory, 50)
-    ours = _oxn_clone_lines(directory, 50)
-
-    assert theirs, "PMD reported nothing; the oracle is misconfigured"
-    recall = len(ours & theirs) / len(theirs)
-    jaccard = len(ours & theirs) / len(ours | theirs)
-
-    assert recall >= 0.85, f"recall {recall:.2%} of PMD's duplicated lines"
-    assert jaccard >= 0.50, f"line-level Jaccard {jaccard:.2f}"
+    if not (CORPORA / corpus).exists():
+        pytest.skip("corpora not fetched")
+    measure = _measure()
+    loaded = measure.load(corpus)
+    row = measure._measure_at(loaded, 50)
+    assert row.pmd_lines, f"PMD reported nothing on {corpus}; the oracle is misconfigured"
+    assert row.recall >= FLOORS[corpus], (
+        f"{corpus}: recall {row.recall:.3f} of PMD's {row.pmd_lines} duplicated lines, "
+        f"against a floor of {FLOORS[corpus]}"
+    )
 
 
 @requires_pmd
-@pytest.mark.skipif(not CORPUS.exists(), reason="corpora not fetched")
 @pytest.mark.slow
 def test_duplication_agrees_with_pmd_on_which_files_are_affected() -> None:
-    directory = (CORPUS / "httpx").resolve()
-    theirs = {path for path, _ in _pmd_clone_lines(directory, 50)}
-    ours = {path for path, _ in _oxn_clone_lines(directory, 50)}
-    jaccard = len(ours & theirs) / len(ours | theirs)
-    assert jaccard >= 0.60, f"file-level Jaccard {jaccard:.2f}: {sorted(theirs ^ ours)}"
+    """File-level agreement on httpx, where the recorded divergence table was measured.
+
+    Kept on one corpus on purpose: file-level Jaccard is a much coarser statement than recall
+    and it moves with how a repository splits its modules, not with the detector.
+    """
+    if not (CORPORA / "python-httpx").exists():
+        pytest.skip("corpora not fetched")
+    measure = _measure()
+    row = measure._measure_at(measure.load("python-httpx"), 50)
+    assert row.file_jaccard >= 0.55, f"file-level Jaccard {row.file_jaccard:.2f}"

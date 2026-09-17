@@ -229,38 +229,63 @@ moves. The languages that genuinely gain are Python (1.78x), Rust (1.23x), TypeS
 
 ---
 
-## Duplication — Python (oracle: PMD-CPD 7.7.0)
+## Duplication — five languages (oracle: PMD-CPD 7.7.0)
 
 **Recall, not equality.** The two tools tokenize differently and resolve overlapping
 candidates differently, so identical clone classes were never a sensible target. What matters
 for a duplication detector is what it *misses*.
 
-Measured on httpx at `--minimum-tokens 50`:
+**This comparison ran on one Python package until it ran on five languages, and widening it
+found a bug.** `DUPLICATION_MIN_TOKENS` carried `observations=1` and a `fit_when` that said as
+much. Measured on whole corpora at `--minimum-tokens 50`, both tools given an identical file
+list (`--file-list`, not `--dir`, so a file one tool walks and the other skips cannot score as
+a miss):
 
-| | PMD-CPD | OXN |
-|---|---|---|
-| occurrences reported | 167 | 73 |
-| duplicated lines | 1,396 | 2,003 |
-| **recall of PMD's lines** | — | **92.1%** |
-| line-level Jaccard | — | 0.61 |
-| files flagged | 8 | 11 |
+| corpus | language | files | PMD lines | OXN lines | recall before | **recall after** |
+|---|---|---|---|---|---|---|
+| python-httpx | Python | 60 | 2,481 | 4,475 | 0.858 | **0.902** |
+| java-spring-petclinic | Java | 50 | 183 | 494 | 0.809 | **0.863** |
+| go-kit | Go | 256 | 6,301 | 8,258 | 0.798 | **0.841** |
+| javascript-eslint | JavaScript | 1,443 | 86,043 | 246,379 | 0.757 | **0.873** |
+| typescript-nest | TypeScript | 1,901 | 29,982 | 45,614 | 0.691 | **0.818** |
 
-OXN reports fewer, longer clones covering more lines: it extends every match maximally
-before selecting, so one long clone replaces several short ones. It recovers 92% of what PMD
-finds and flags three files PMD does not.
+**Rust is not in this table because PMD-CPD 7.7.0 ships no Rust lexer.** Five of the six
+launch languages are checked against an oracle here and the sixth is unchecked, which is a
+different statement from six.
 
-**One real bug came out of this comparison.** Selecting candidates in hash-bucket order let a
-*short* clone claim tokens a *longer* one needed, and the longer clone — the one worth
-reporting — was then discarded as overlapping. Extending every candidate before selecting,
-longest first, lifted recall from 59% to 92%. CI asserts recall ≥ 0.85 and file-level
-Jaccard ≥ 0.60.
+**The bug the single corpus could not show.** Selection claims tokens longest-first so a short
+clone cannot steal a long one's span — that part was already right, and lifted recall from 59%
+to 92% when it was introduced. What was still wrong is how a class was *refused*: the moment
+any one of its occurrences overlapped something already claimed, the whole class was dropped,
+taking untouched occurrences with it. Two files that are byte-identical copies could be
+reported as clean because a different pair of files shared a longer block containing the same
+code. On spring-petclinic, 14 of 94 candidate classes had two or more free occurrences and
+were being discarded for the sake of a third. Thinning a class to its free occurrences —
+keeping it when two or more survive, since two is what makes duplication duplication — raised
+recall in all five languages and none regressed.
+
+Python was the language least able to reveal it (+0.044) and TypeScript the most (+0.127),
+which is the argument for the parametrization rather than for the fix.
+
+**Why recall is not 1.0, and will not be.** OXN reports one maximal *non-overlapping* class
+where PMD reports several overlapping ones. Spring's three integration-test classes share an
+eleven-line block; PMD reports it as two overlapping pairs both containing the Postgres copy,
+while OXN gives those tokens to one class and the third copy has no free partner left to pair
+with. That is a policy difference rather than a miss, and it sets a ceiling below 1.0 that no
+amount of fixing removes. `tests/test_oracle_pmd.py` therefore floors recall per language, at
+the measured value rounded down — one floor for all five would be either unreachable for
+TypeScript or vacuous for Python.
+
+**On the line counts.** OXN reports more duplicated lines than PMD everywhere, most sharply on
+eslint (2.9x). Two causes, both deliberate: it extends every match maximally before selecting,
+so one long clone replaces several short ones; and it normalizes identifiers, detecting Type-2
+(renamed) clones where CPD's default settings compare identifier text and find only Type-1.
+Line-level Jaccard is correspondingly low (0.29–0.57) and is not a quality signal here — a
+tool that finds strictly more cannot score well on symmetric overlap.
 
 **Not detected:** Type-3 (gapped) clones, where an inserted or deleted statement breaks the
 run. Stated rather than hidden — a clone report that silently omits a category is worse than
 one that says what it covers.
-
-
----
 
 ## Import graph — Python (oracle: grimp 3.16)
 

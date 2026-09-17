@@ -331,12 +331,26 @@ _ANTI_GAMING: tuple[Parameter, ...] = (
         name="DUPLICATION_MIN_TOKENS",
         value=float(thresholds.DUPLICATION_MIN_TOKENS),
         evidence=Evidence.MEASURED,
-        observations=1,
+        observations=5,
         provenance=(
-            "50 rather than PMD-CPD's 100: measured against PMD-CPD on the pinned corpus, "
-            "where 100 missed the small copy-paste blocks agents actually produce"
+            "50 rather than PMD-CPD's 100. Measured 2026-09-17 against PMD-CPD across five "
+            "corpora, one per language CPD has a lexer for -- httpx, spring-petclinic, "
+            "go-kit, eslint and nest -- by `scripts/measure_duplication.py`. **Raising 50 to "
+            "100 discards between 46% and 81% of the duplication PMD reports** (httpx 72%, "
+            "petclinic 81%, go-kit 46%, eslint 46%, nest 50%), which is the cost this value "
+            "buys and the claim the old one-corpus provenance was making without a number. "
+            "Widening from the single corpus also found the defect behind `_select`: a clone "
+            "class was refused whole when any one occurrence was already claimed, which cost "
+            "recall in every language and most in TypeScript, 0.69 -> 0.82"
         ),
-        fit_when="clone recall is measured across more than one corpus",
+        fit_when=(
+            "a corpus of agent-written code exists. The old condition -- more than one "
+            "corpus -- is met, and the five above are all human-written open source, while "
+            "the reason this number is 50 is a claim about the short blocks *agents* paste. "
+            "The cost of 100 is now measured; what is still unmeasured is whether 50 is "
+            "better than 40 or 60, and no corpus here can say, because none of them was "
+            "written by the thing this threshold is aimed at"
+        ),
     ),
     Parameter(
         name="TRIVIAL_HELPER",

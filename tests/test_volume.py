@@ -33,6 +33,66 @@ def detect(sources: dict[str, str], *, min_tokens: int = 30, min_lines: int = 4)
     return find_clones(windows, min_tokens=min_tokens, min_lines=min_lines)
 
 
+# ---- selection -------------------------------------------------------------------------
+
+
+#: `BLOCK` again with more after it, so a class over the pair is strictly longer than a class
+#: over `BLOCK` alone and therefore claims its tokens first.
+TAIL = """
+    extra = [x for x in collection if x.enabled]
+    extra.sort(key=lambda x: x.value)
+    for entry in extra:
+        print(entry.value, entry.fallback, entry.enabled)
+    return extra
+"""
+
+
+def test_a_clone_class_keeps_the_occurrences_a_longer_class_did_not_claim() -> None:
+    """Two files that are copies of each other were reported clean, and nothing in them was
+    the reason -- a *different* pair of files shared a longer block containing the same code.
+
+    Selection claims tokens longest-first so that a short clone cannot steal a long one's
+    span. That is right, and the way it refused was not: a class was dropped whole the moment
+    any one of its occurrences was already claimed. Here `a.py` and `b.py` share `BLOCK+TAIL`
+    and take the long class; `c.py` and `d.py` are byte-identical files containing `BLOCK`,
+    they overlap nothing at all, and they went unreported for the sake of the two occurrences
+    inside `a.py` and `b.py` that were legitimately spoken for.
+
+    Thinning the class to its free occurrences is the fix, with two the bar to clear because
+    that is what makes duplication duplication. Measured on spring-petclinic, 14 of 94
+    candidate classes had two or more untouched occurrences and were being discarded; recall
+    against PMD-CPD rose in all five languages `tests/test_oracle_pmd.py` checks, furthest in
+    TypeScript at 0.69 -> 0.82.
+    """
+    wide = f"def wide(collection, threshold, weight):{BLOCK}{TAIL}"
+    narrow = f"def narrow(collection, threshold, weight):{BLOCK}"
+    report = detect({"a.py": wide, "b.py": wide, "c.py": narrow, "d.py": narrow})
+    affected = report.duplicate_lines_by_file()
+
+    assert {"c.py", "d.py"} <= set(affected), (
+        "two identical files report no duplication between them; reported: "
+        f"{sorted(affected)}"
+    )
+    assert {"a.py", "b.py"} <= set(affected), "the longer class must still be reported"
+
+
+def test_an_occurrence_a_longer_class_claimed_is_not_reported_twice() -> None:
+    """The other half of the same rule, and the reason thinning is not simply a loosening.
+
+    A token belongs to one clone class. `c.py` joining the `BLOCK` class must not also let
+    `a.py`'s copy of `BLOCK` be reported inside it, because those lines are already accounted
+    for by the longer class -- counting them again would inflate duplicated-line totals, which
+    are what the volume tier reports.
+    """
+    wide = f"def wide(collection, threshold, weight):{BLOCK}{TAIL}"
+    narrow = f"def narrow(collection, threshold, weight):{BLOCK}"
+    report = detect({"a.py": wide, "b.py": wide, "c.py": narrow, "d.py": narrow})
+
+    for klass in report.clone_classes:
+        paths = {occurrence.path for occurrence in klass.occurrences}
+        assert paths in ({"a.py", "b.py"}, {"c.py", "d.py"}), f"unexpected class over {paths}"
+
+
 # ---- normalization ---------------------------------------------------------------------
 
 

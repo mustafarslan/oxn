@@ -216,10 +216,11 @@ def _select(
     classes: list[CloneClass] = []
 
     for length, starts in grown:
-        occurrences = _admit(files, starts, length, claimed, min_lines)
+        free = [seed for seed in starts if not _overlaps(claimed[seed[0]], seed[1], length)]
+        occurrences = _admit(files, free, length, min_lines)
         if occurrences is None:
             continue
-        for path, start in starts:
+        for path, start in free:
             claimed[path].update(range(start, start + length))
         classes.append(CloneClass(occurrences))
     return classes
@@ -227,19 +228,26 @@ def _select(
 
 def _admit(
     files: Analysed,
-    starts: list[tuple[str, int]],
+    free: list[tuple[str, int]],
     length: int,
-    claimed: dict[str, set[int]],
     min_lines: int,
 ) -> tuple[Clone, ...] | None:
-    """The occurrences of this class, or None if it may not be reported.
+    """The occurrences of this class that may still be reported, or None if too few remain.
 
-    Two reasons to refuse: any of its tokens already belong to a longer class, or it spans
-    too few *lines* to be worth a reader's attention however many tokens it has.
+    **A class is thinned by what a longer clone already claimed, not refused because of it.**
+    Refusing wholesale was the second half of the bug this module's docstring describes fixing
+    once: ordering candidates by length stopped a short clone from stealing a long one's
+    tokens, but a class whose *one* overlapping occurrence sank its other two was still
+    losing real duplication. Measured on spring-petclinic, 14 of 94 candidate classes had two
+    or more untouched occurrences and were discarded for the sake of a third.
+
+    Two occurrences is what makes duplication duplication, so that is the bar to clear here;
+    spanning fewer than `min_lines` is the other refusal, and it is about a reader's
+    attention rather than overlap.
     """
-    if any(_overlaps(claimed[path], start, length) for path, start in starts):
+    if len(free) < 2:
         return None
-    occurrences = tuple(_clone(files, path, start, length) for path, start in starts)
+    occurrences = tuple(_clone(files, path, start, length) for path, start in free)
     if any(clone.line_count < min_lines for clone in occurrences):
         return None
     return occurrences
