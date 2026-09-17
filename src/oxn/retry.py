@@ -46,6 +46,18 @@ LEDGER_DIR = Path(".oxn") / "cache" / "attempts"
 #: Session files older than this are deleted the next time any ledger is written.
 MAX_LEDGER_AGE_S = 7 * 24 * 60 * 60
 
+#: Where a *repair* is recorded: append-only, one line per violation that stopped being
+#: reported. Deliberately outside `LEDGER_DIR`, which `_prune` empties on a seven-day timer --
+#: this is the opposite kind of file, evidence meant to accumulate across sessions rather than
+#: session state meant to expire, and putting it under a directory something sweeps would be a
+#: bug waiting for a glob to change.
+#:
+#: **It exists because the ledger cannot answer the question the retry budget poses.**
+#: `charge` rewrites each path with only what the current run found, so a violation is
+#: forgotten at the moment it is repaired -- and "of the repairs that eventually succeed, how
+#: many attempts did they need" is a question about exactly those forgotten events.
+REPAIRS = Path(".oxn") / "cache" / "repairs.jsonl"
+
 #: How much of a value trajectory to keep. Enough to show whether the agent was converging
 #: when the budget ran out, which is the question the halt report has to answer.
 MAX_TRAJECTORY = 8
@@ -85,7 +97,14 @@ def ledger_path(root: Path, session: str) -> Path:
     return root / LEDGER_DIR / f"{_safe(session)}.json"
 
 
-def charge(path: Path, measured: dict[str, dict[str, float]]) -> dict[str, Attempt]:
+def repairs_path(root: Path) -> Path:
+    """Where this machine's repair outcomes accumulate. One file, not one per session."""
+    return root / REPAIRS
+
+
+def charge(
+    path: Path, measured: dict[str, dict[str, float]], repairs: Path | None = None
+) -> dict[str, Attempt]:
     """Record one hook run against the ledger at `path`, and say where each violation stands.
 
     `measured` maps each path this run looked at to the violations it found there, as
@@ -97,6 +116,7 @@ def charge(path: Path, measured: dict[str, dict[str, float]]) -> dict[str, Attem
     """
     stored = _read(path)
     attempts: dict[str, Attempt] = {}
+    landed: list[dict[str, object]] = []
     for source, findings in measured.items():
         previous = stored.get(source, {})
         current: dict[str, object] = {}
@@ -104,9 +124,49 @@ def charge(path: Path, measured: dict[str, dict[str, float]]) -> dict[str, Attem
             attempt = _extend(previous.get(key), value)
             attempts[key] = attempt
             current[key] = {"count": attempt.count, "values": list(attempt.values)}
+        landed += _landed(previous, findings)
         stored[source] = current
     _write(path, stored)
+    if repairs is not None and landed:
+        _append(repairs, landed)
     return attempts
+
+
+def _landed(previous: dict[str, object], findings: dict[str, float]) -> list[dict[str, object]]:
+    """Violations this path used to have and no longer does -- one repair each.
+
+    Only a path present in `measured` reaches here, so "gone" means measured-and-clean rather
+    than not-looked-at, which is the distinction that makes the record mean anything.
+    """
+    records = []
+    for key, stale in previous.items():
+        if key in findings or not isinstance(stale, dict):
+            continue
+        count = stale.get("count")
+        records.append(
+            {
+                "at": int(time.time()),
+                "rule": key.split("|")[0],
+                "attempts": count if isinstance(count, int) else 0,
+                "values": stale.get("values"),
+            }
+        )
+    return records
+
+
+def _append(path: Path, records: list[dict[str, object]]) -> None:
+    """Add repair records, and never fail the hook if that cannot be done.
+
+    **The common path does not reach here at all.** A run in which nothing was repaired has
+    nothing to append, so ADR-0002's per-edit budget pays for this only on the edits that
+    actually fixed something -- which is the rare case, and the only one worth a write.
+    """
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.writelines(json.dumps(record) + "\n" for record in records)
+    except OSError:
+        return
 
 
 def _extend(previous: object, value: float) -> Attempt:

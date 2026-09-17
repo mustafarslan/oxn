@@ -113,12 +113,14 @@ def _charge_retries(report: Any, settings: Any, session: str) -> None:
     """
     if settings.retry_budget <= 0:
         return
-    from oxn.retry import charge, ledger_path  # noqa: PLC0415 -- lazy; see the docstring
+    from oxn.retry import charge, ledger_path, repairs_path  # noqa: PLC0415 -- lazy
 
     measured: dict[str, dict[str, float]] = {path: {} for path in report.paths}
     for finding in report.failing:
         measured.setdefault(finding.path, {})[finding.key] = finding.value
-    report.attempts = charge(ledger_path(settings.root, session), measured)
+    report.attempts = charge(
+        ledger_path(settings.root, session), measured, repairs_path(settings.root)
+    )
     report.retry_budget = settings.retry_budget
 
 

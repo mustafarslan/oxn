@@ -457,12 +457,16 @@ _ENFORCEMENT: tuple[Parameter, ...] = (
             "there are enough trajectories to take a quantile. The measurement above is the "
             "right one and n=5 successes is far too few to set a number by; what it wants is "
             "more of them, from varied agents on varied repositories rather than this one -- "
-            "P11's grid. The *hook* ledger cannot supply them, and an earlier version of this "
+            "P11's grid. The hook *ledger* cannot supply them, and an earlier version of this "
             "entry wrongly said it already did: `retry.charge` rewrites each path with only "
             "what the current run found, so a violation is forgotten at the moment it is "
-            "repaired, which is precisely the event a fit needs. Collecting from real hook "
-            "sessions would mean recording (attempts, repaired) append-only, at one extra "
-            "write per run against ADR-0002's budget"
+            "repaired, which is precisely the event a fit needs. `.oxn/cache/repairs.jsonl` "
+            "now keeps it -- one append-only line per violation that stopped being reported, "
+            "carrying the attempt count and the value trajectory. It costs the hook nothing "
+            "on the common path, because a run that repaired nothing has nothing to append: "
+            "measured at 390 ms median with and without it, indistinguishable. So real "
+            "sessions accumulate the events from here on, and the remaining gap is time and "
+            "variety rather than mechanism"
         ),
     ),
 )

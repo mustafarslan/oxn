@@ -427,3 +427,92 @@ def test_many_helpers_counts_the_extractions_it_was_observed_on() -> None:
 
     assert budget.observations == len(extractions)
     assert budget.is_provisional
+
+
+# ---- what the ledger forgets, and the record that keeps it ------------------------------
+
+
+def test_a_repair_is_recorded_with_the_attempts_it_took(tmp_path) -> None:
+    """The event the ledger drops, which is the one the retry budget needs to be fitted.
+
+    `charge` rewrites each path with only what the current run found, so a violation that gets
+    fixed leaves no trace at the moment it is fixed -- and "of the repairs that eventually
+    succeed, how many attempts did they need" is a question about exactly those events.
+    """
+    from oxn.retry import charge, ledger_path, repairs_path
+
+    ledger, repairs = ledger_path(tmp_path, "s"), repairs_path(tmp_path)
+    key = "cognitive_complexity|a.py|a.f"
+    charge(ledger, {"a.py": {key: 27.0}}, repairs)
+    charge(ledger, {"a.py": {key: 19.0}}, repairs)
+    charge(ledger, {"a.py": {}}, repairs)
+
+    recorded = [json.loads(line) for line in repairs.read_text().splitlines()]
+    assert [(r["rule"], r["attempts"], r["values"]) for r in recorded] == [
+        ("cognitive_complexity", 2, [27.0, 19.0])
+    ]
+
+
+def test_a_run_that_repairs_nothing_writes_nothing(tmp_path) -> None:
+    """The common path must not pay for the rare one.
+
+    ADR-0002 gives the hook 200 ms p95 on every edit, and almost every edit repairs nothing.
+    An append-only record that appended on every run would spend that budget to learn nothing.
+    """
+    from oxn.retry import charge, ledger_path, repairs_path
+
+    ledger, repairs = ledger_path(tmp_path, "s"), repairs_path(tmp_path)
+    key = "cognitive_complexity|a.py|a.f"
+    charge(ledger, {"a.py": {key: 27.0}}, repairs)
+    charge(ledger, {"a.py": {key: 27.0}}, repairs)
+
+    assert not repairs.exists()
+
+
+def test_a_file_that_was_not_measured_is_not_a_repair(tmp_path) -> None:
+    """ "Gone" has to mean measured-and-clean, not merely absent from this run.
+
+    `charge`'s contract already draws that line -- paths absent from `measured` keep whatever
+    the ledger holds -- and a repair record that ignored it would count every narrow hook run
+    as having fixed everything it did not look at.
+    """
+    from oxn.retry import charge, ledger_path, repairs_path
+
+    ledger, repairs = ledger_path(tmp_path, "s"), repairs_path(tmp_path)
+    charge(ledger, {"a.py": {"cognitive_complexity|a.py|a.f": 27.0}}, repairs)
+    charge(ledger, {"b.py": {}}, repairs)
+
+    assert not repairs.exists()
+
+
+def test_the_record_outlives_the_ledgers_it_came_from(tmp_path) -> None:
+    """It accumulates across sessions; the ledgers expire on a seven-day timer.
+
+    Session state and evidence are opposite kinds of file, so the record lives outside
+    `LEDGER_DIR` rather than trusting `_prune`'s glob to keep missing it.
+    """
+    from oxn.retry import LEDGER_DIR, charge, ledger_path, repairs_path
+
+    ledger, repairs = ledger_path(tmp_path, "s"), repairs_path(tmp_path)
+    key = "cognitive_complexity|a.py|a.f"
+    charge(ledger, {"a.py": {key: 27.0}}, repairs)
+    charge(ledger, {"a.py": {}}, repairs)
+
+    assert repairs.exists()
+    assert LEDGER_DIR not in repairs.parents
+    assert not str(repairs).startswith(str(tmp_path / LEDGER_DIR))
+
+
+def test_an_unwritable_record_does_not_fail_the_hook(tmp_path) -> None:
+    """Losing a data point costs a calibration sample; failing here costs the gate."""
+    from oxn.retry import charge, ledger_path
+
+    ledger = ledger_path(tmp_path, "s")
+    blocked = tmp_path / "blocked"
+    blocked.write_text("not a directory")
+    key = "cognitive_complexity|a.py|a.f"
+
+    charge(ledger, {"a.py": {key: 27.0}}, blocked / "repairs.jsonl")
+    attempts = charge(ledger, {"a.py": {}}, blocked / "repairs.jsonl")
+
+    assert attempts == {}
