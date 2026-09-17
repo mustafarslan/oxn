@@ -13,6 +13,8 @@ Two findings worth stating, because both contradict the usual description:
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from oxn.profiles.base import LanguageProfile, Wrapper
 from oxn.profiles.spec import (
     CognitiveSpec,
@@ -227,7 +229,7 @@ _PARAMETER_KINDS = frozenset({"required_parameter", "optional_parameter", "rest_
 TYPESCRIPT = LanguageProfile(
     name="typescript",
     grammar="typescript",
-    extensions=frozenset({".ts", ".tsx", ".mts", ".cts"}),
+    extensions=frozenset({".ts", ".mts", ".cts"}),
     # Three ways, any of which is sound: `#name`, the `private` modifier, and a top-level
     # declaration an ES module does not export.
     privacy="hash",
@@ -252,6 +254,18 @@ TYPESCRIPT = LanguageProfile(
     ),
     metrics=_TS_METRICS,
 )
+
+#: The same language, a different grammar. `tree-sitter-typescript` ships `typescript` and
+#: `tsx` separately and the first cannot parse JSX, so every `.tsx` file in a React project
+#: came back `has_error` -- and every pass drops such a file without a word.
+#:
+#: Built with `replace` rather than written out, so the node-kind tables cannot drift: a
+#: profile *is* a grammar's vocabulary, and two hand-maintained copies of it would agree
+#: until the day one was edited. `name` stays "typescript" deliberately -- it is the label
+#: every metric, cache row and report groups by, and a phantom "tsx" language would split
+#: TypeScript's figures in half. Only `grammar` and `extensions` differ, which is what
+#: `tests/test_grammars.py` asserts.
+TSX = replace(TYPESCRIPT, grammar="tsx", extensions=frozenset({".tsx"}))
 
 JAVASCRIPT = LanguageProfile(
     name="javascript",

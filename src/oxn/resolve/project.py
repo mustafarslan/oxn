@@ -141,7 +141,7 @@ def class_models_for(relative: str, path: Path) -> tuple[str, Any, Any, Any, Any
     if profile is None:
         return None
     source = path.read_bytes()
-    tree = get_parser(profile.name).parse(source)
+    tree = get_parser(profile.grammar).parse(source)
     if tree.root_node.has_error:
         return None
     scopes = build_scopes(tree.root_node, profile)

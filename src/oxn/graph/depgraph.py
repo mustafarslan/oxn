@@ -142,7 +142,7 @@ def _parsed_tree(path: Path) -> tuple[LanguageProfile, Node] | None:
     profile = profile_for_path(str(path))
     if profile is None:
         return None
-    tree = get_parser(profile.name).parse(path.read_bytes())
+    tree = get_parser(profile.grammar).parse(path.read_bytes())
     if tree.root_node.has_error:
         return None
     return profile, tree.root_node

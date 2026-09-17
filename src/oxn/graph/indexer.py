@@ -133,12 +133,13 @@ class Indexer:
             )
         )
 
-    def _parser(self, language: str) -> object:
-        if language not in self._parsers:
+    def _parser(self, grammar: str) -> object:
+        """Cached per *grammar*, not per language: `.ts` and `.tsx` are one language and two."""
+        if grammar not in self._parsers:
             from oxn.languages import get_parser
 
-            self._parsers[language] = get_parser(language)
-        return self._parsers[language]
+            self._parsers[grammar] = get_parser(grammar)
+        return self._parsers[grammar]
 
     def grammar_version(self) -> str:
         """Identifies the grammar set. Part of the cache key, so a pack upgrade invalidates."""
@@ -193,7 +194,7 @@ class Indexer:
         if state is _Freshness.CURRENT:
             return None, True
 
-        parser = self._parser(profile.name)
+        parser = self._parser(profile.grammar)
         tree = parser.parse(source)  # type: ignore[attr-defined]
         parsed = build_file(rel, source, profile, tree.root_node)
         if state is _Freshness.STALE:

@@ -153,7 +153,7 @@ def ingest_index(indexer: Indexer, index_path: Path | str) -> IngestReport:
             continue
 
         source = source_path.read_bytes()
-        tree = get_parser(profile.name).parse(source)
+        tree = get_parser(profile.grammar).parse(source)
         if tree.root_node.has_error:
             report.skipped.append(relative)
             continue

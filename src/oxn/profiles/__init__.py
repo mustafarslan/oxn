@@ -12,7 +12,7 @@ from oxn.profiles.go import GO
 from oxn.profiles.java import JAVA
 from oxn.profiles.python import PYTHON
 from oxn.profiles.rust import RUST
-from oxn.profiles.typescript import JAVASCRIPT, TYPESCRIPT
+from oxn.profiles.typescript import JAVASCRIPT, TSX, TYPESCRIPT
 
 #: Every language OXN can analyse. A profile, not a grammar, is what makes a language
 #: supported: the grammar alone cannot tell the graph builder what a function is.
@@ -20,8 +20,12 @@ PROFILES: dict[str, LanguageProfile] = {
     profile.name: profile for profile in (PYTHON, TYPESCRIPT, JAVASCRIPT, GO, RUST, JAVA)
 }
 
+#: `TSX` is here and deliberately *not* in `PROFILES`: that registry is keyed by
+#: `profile.name`, which TSX shares with TYPESCRIPT on purpose, so adding it would silently
+#: overwrite the entry every by-name lookup returns. Extension is the only axis on which the
+#: two differ, and this is the map that is keyed by it.
 _BY_EXTENSION: dict[str, LanguageProfile] = {
-    ext: profile for profile in PROFILES.values() for ext in profile.extensions
+    ext: profile for profile in (*PROFILES.values(), TSX) for ext in profile.extensions
 }
 
 

@@ -545,6 +545,27 @@ The acceptance gate for a language profile is **agreement**, not parsing. Identi
 transliterated into all six launch languages must score identically, and that test found
 three bugs here that no single-language test could.
 
+### One language, two grammars: `.tsx`
+
+**Six launch languages, seven grammars.** `tree-sitter-typescript` ships `typescript` and
+`tsx` separately, and the first cannot parse JSX at all. OXN mapped `.tsx` to `typescript`
+until 2026-09-17, so **10 of the 11 `.tsx` files across the corpora failed to parse**; all 10
+parse now.
+
+What makes this worth a section is not the mapping but **how quietly it failed**. A file whose
+tree has an error node is dropped by every pass that reads one — the import graph
+(`depgraph.py`), duplication (`volume/scan.py`), the symbol index (`resolve/project.py`) and
+resolution measurement (`resolve/measure.py`) — and none of them says so. The symptom was
+therefore not an error. It was a React project reported as checked and clean, with its
+components absent from the import graph.
+
+`LanguageProfile.grammar` had existed from the start, on all six profiles, and was **read by
+nothing**: every parse site called `get_parser(profile.name)`. That agreed with the grammar
+for all six launch languages, which is why it survived — `.tsx` is the first case where the
+label a metric groups by and the grammar that parses the file must differ. The `TSX` profile
+keeps `name="typescript"` for exactly that reason; a phantom "tsx" language would split
+TypeScript's published figures in half.
+
 ### Three grammars spell `else if` three different ways
 
 | language | shape |

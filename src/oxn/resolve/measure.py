@@ -367,7 +367,7 @@ def _parse_corpus(root: Path) -> tuple[dict[str, _ParsedFile], DependencyGraph]:
         if profile is None:
             continue
         source = path.read_bytes()
-        tree = get_parser(profile.name).parse(source)
+        tree = get_parser(profile.grammar).parse(source)
         if tree.root_node.has_error:
             continue
         relative = path.resolve().relative_to(root).as_posix()

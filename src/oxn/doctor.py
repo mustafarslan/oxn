@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from oxn.languages import LAUNCH_LANGUAGES
+from oxn.languages import GRAMMARS
 
 if TYPE_CHECKING:  # pragma: no cover
     from rich.console import Console
@@ -29,16 +29,21 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 def check_grammars() -> dict[str, str | None]:
-    """Load every launch grammar. Maps language name to an error string, or ``None`` if fine."""
+    """Load every grammar OXN parses with. Maps grammar id to an error string, or ``None``.
+
+    Keyed by *grammar*, not language: there are seven grammars for six languages, because
+    `tsx` is a separate one and a `.tsx` file cannot be parsed without it. Reporting only the
+    six would let the grammar that React projects depend on fail to download unnoticed.
+    """
     results: dict[str, str | None] = {}
-    for name in LAUNCH_LANGUAGES:
+    for grammar in sorted(GRAMMARS):
         try:
             from oxn.languages import get_language
 
-            get_language(name)
-            results[name] = None
+            get_language(grammar)
+            results[grammar] = None
         except Exception as exc:  # noqa: BLE001 -- doctor reports failures, never raises
-            results[name] = f"{type(exc).__name__}: {exc}"
+            results[grammar] = f"{type(exc).__name__}: {exc}"
     return results
 
 

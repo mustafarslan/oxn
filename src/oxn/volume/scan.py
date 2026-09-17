@@ -83,7 +83,7 @@ def scan_duplication(
         if profile is None:
             continue
         source = path.read_bytes()
-        tree = get_parser(profile.name).parse(source)
+        tree = get_parser(profile.grammar).parse(source)
         if tree.root_node.has_error:
             continue
         relative = indexer.relative(path)

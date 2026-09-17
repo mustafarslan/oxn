@@ -26,30 +26,43 @@ LAUNCH_LANGUAGES: dict[str, str] = {
 }
 
 
+#: Every grammar OXN parses with. **Not the same set as the launch languages**, and that is
+#: the point: TypeScript needs two, because `tree-sitter-typescript` ships `typescript` and
+#: `tsx` as separate grammars and the first cannot parse JSX at all.
+#:
+#: `.tsx` was mapped to the `typescript` grammar until 2026-09-17, so every React component
+#: in a repository failed to parse -- and failed *silently*, because each pass drops a file
+#: with `has_error` and nothing reported it: no import edges, no duplication, no symbols, no
+#: call graph, and a clean bill of health. `LanguageProfile.grammar` existed for exactly this
+#: distinction and was read by nothing; every parse site took `profile.name` instead, which
+#: worked only because the two agreed for all six launch languages.
+GRAMMARS: frozenset[str] = frozenset({*LAUNCH_LANGUAGES.values(), "tsx"})
+
+
 class UnknownLanguageError(KeyError):
     """Raised for a language OXN has no grammar mapping for."""
 
 
-def get_language(name: str) -> Language:
-    """Return the tree-sitter ``Language`` for an OXN language name.
+def get_language(grammar: str) -> Language:
+    """Return the tree-sitter ``Language`` for a *grammar id* -- `profile.grammar`.
+
+    A grammar id, not a language name. They coincide for five of the six launch languages,
+    which is why taking the name worked for as long as it did; `tsx` is the one that differs,
+    and a language name would have no way to ask for it.
 
     The grammar is downloaded and cached by ``tree-sitter-language-pack`` on first use,
-    so the first call for a given language may touch the network; later calls do not.
+    so the first call for a given grammar may touch the network; later calls do not.
     """
-    try:
-        grammar_id = LAUNCH_LANGUAGES[name]
-    except KeyError as exc:
-        raise UnknownLanguageError(
-            f"{name!r} is not a launch language; known: {sorted(LAUNCH_LANGUAGES)}"
-        ) from exc
+    if grammar not in GRAMMARS:
+        raise UnknownLanguageError(f"{grammar!r} is not a grammar OXN parses; {sorted(GRAMMARS)}")
 
     from tree_sitter_language_pack import get_language as _pack_get_language
 
-    return _pack_get_language(grammar_id)
+    return _pack_get_language(grammar)
 
 
-def get_parser(name: str) -> Parser:
-    """Return a tree-sitter ``Parser`` configured for an OXN language name."""
+def get_parser(grammar: str) -> Parser:
+    """Return a tree-sitter ``Parser`` for a grammar id -- `profile.grammar`, never `.name`."""
     from tree_sitter import Parser as _Parser
 
-    return _Parser(get_language(name))
+    return _Parser(get_language(grammar))
