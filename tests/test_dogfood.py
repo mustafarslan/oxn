@@ -701,3 +701,28 @@ def test_the_go_bed_names_out_the_packages_that_fail_on_their_own_tree() -> None
     assert "./metrics/cloudwatch/..." not in packages
     assert "./..." not in packages, "`./...` readmits both; the list is the exclusion"
     assert "./metrics/prometheus/..." in packages, "the other nine TestGauge packages stay"
+
+
+def test_a_bed_that_declares_verification_it_cannot_run_is_still_refused() -> None:
+    """"No verification declared" and "declared but unrunnable here" used to be one state.
+
+    typescript-nest's `verify` commands are correct -- `npm test`, `npm run lint` -- and the
+    bed still cannot run, because the pinned checkout's dependencies do not install: the
+    committed lock file is out of sync with `package.json`, so `npm ci` refuses, and `npm
+    install` abandons the pin only to hit a real peer conflict between `@apollo/server` and
+    the `graphql` major `@nestjs/apollo` admits. The refusal keyed on empty `verify`, which
+    this bed does not have, so it would have been handed 60 targets and failed all of them
+    on a missing `vitest`.
+    """
+    import sys
+
+    import pytest
+
+    sys.path.insert(0, "scripts")
+    from beds import bed
+
+    with pytest.raises(SystemExit, match="cannot run it here"):
+        bed("typescript-nest")
+
+    for still_fine in ("go-kit", "python-httpx"):
+        bed(still_fine)

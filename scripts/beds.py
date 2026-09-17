@@ -229,7 +229,29 @@ _OSS: dict[str, Bed] = {
         name="typescript-nest",
         corpus="typescript-nest",
         sources=("packages",),
+        # **`npm test` cannot run without an install, and this bed declared no `prepare`** --
+        # the same family of defect as httpx's, which installed nothing and scored `tests
+        # FAIL` on every attempt. The command is `npm ci`, not `npm install`, because the
+        # corpus ships a lock file and a bed that re-resolves versions per sandbox is not
+        # verifying the pinned tree it was fetched to verify. It is not set, because at this
+        # pin it cannot succeed -- see `blocked_on`.
         verify=(("tests", "npm", "test"), ("lint", "npm", "run", "lint")),
+        blocked_on=(
+            "this pin's dependency tree cannot be installed, by either command, and neither "
+            "failure is something a repair here causes or fixes. `npm ci` refuses outright: "
+            "the committed `package-lock.json` is out of sync with `package.json`, pinning "
+            "`@nestjs/apollo` and `@nestjs/graphql` at 13.4.5 where the manifest asks for "
+            "14.0.0 -- upstream bumped the manifest without regenerating the lock. Falling "
+            "back to `npm install` abandons the pin, and then hits a genuine conflict: "
+            "`@apollo/server@5.5.1` requires `graphql@^16.11.0` while `@nestjs/apollo@14` "
+            "admits `^17.0.0`, which is what resolves. `--legacy-peer-deps` would install a "
+            "tree npm itself calls invalid, and a bed whose dependencies are wrong reports "
+            "`tests FAIL` for reasons that have nothing to do with the repair -- which is "
+            "the failure this file exists to stop repeating. The fix is a corpus re-pin to "
+            "a commit whose lock is in sync, and that is not free: `benchmarks/lock.json` "
+            "is the same checkout the ceiling, duplication and retrieval numbers were "
+            "measured against, so moving it moves them"
+        ),
         why="TypeScript, and a framework whose whole subject is layering.",
     ),
     "java-spring-petclinic": Bed(
@@ -292,9 +314,15 @@ BEDS: dict[str, Bed] = {
 def bed(name: str) -> Bed:
     """The bed registered under `name`, refused with the reason when it cannot run.
 
-    Three refusals, and they say different things on purpose: an unknown name is a typo, an
-    unfetched bed needs one command, and a bed with no verification needs a decision. A
-    harness that ran anyway would report a repair nothing checked.
+    Four refusals, and they say different things on purpose: an unknown name is a typo, an
+    unfetched bed needs one command, a bed with no verification needs a decision, and a bed
+    whose corpus cannot be prepared at its pin needs a re-pin. A harness that ran anyway
+    would report a repair nothing checked.
+
+    The fourth was added for typescript-nest, and the distinction it draws is the useful
+    part: that bed's `verify` commands are right, and it still cannot run, because the pinned
+    checkout's dependencies do not install. "No verification declared" and "verification
+    declared but unrunnable here" are different states and used to be one.
     """
     found = BEDS.get(name)
     if found is None:
@@ -310,6 +338,12 @@ def bed(name: str) -> Bed:
             f"{name} has no verification commands, so a repair there could not be checked.\n"
             f"    {found.blocked_on}.\n"
             f"Set `verify` on it in scripts/beds.py once that is decided."
+        )
+    if found.blocked_on:
+        raise SystemExit(
+            f"{name} declares verification but cannot run it here:\n"
+            f"    {found.blocked_on}.\n"
+            f"Clear `blocked_on` in scripts/beds.py once that is no longer true."
         )
     return found
 
