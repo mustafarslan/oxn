@@ -726,3 +726,45 @@ def test_a_bed_that_declares_verification_it_cannot_run_is_still_refused() -> No
 
     for still_fine in ("go-kit", "python-httpx"):
         bed(still_fine)
+
+
+def test_a_target_is_measurable_with_an_interpreter_that_has_no_oxn(tmp_path) -> None:
+    """Every external bed scored `999 -> 999`, and the model was never the reason.
+
+    `measure` ran `{sandbox.python} -m oxn metrics`, using the *bed's* interpreter. That venv
+    holds the bed's dependencies and `oxn` is not among them, so the command exited non-zero
+    and returned `UNMEASURABLE` -- for `score_before` too, on the untouched file. Nothing
+    improves on 999, so `improved` was false for every candidate, none was ever judged, and
+    the funnel read as a model that could not refactor. `self` was the only bed where it
+    worked, because its venv is this project and therefore has `oxn` in it.
+
+    Measuring is a tree-sitter parse of source text. It never needed the bed's environment,
+    and this test pins that by handing it an interpreter path that does not exist.
+    """
+    import sys
+    from types import SimpleNamespace
+
+    sys.path.insert(0, "scripts")
+    from gauntlet import UNMEASURABLE, measure
+    from targets import Target
+
+    source = tmp_path / "sample.py"
+    source.write_text(
+        "def knotty(rows, flag):\n"
+        "    total = 0\n"
+        "    for row in rows:\n"
+        "        if flag:\n"
+        "            for cell in row:\n"
+        "                if cell:\n"
+        "                    total += 1\n"
+        "                elif cell is None:\n"
+        "                    total -= 1\n"
+        "    return total\n"
+    )
+    sandbox = SimpleNamespace(path=tmp_path, python=tmp_path / "no" / "such" / "python")
+
+    got = measure(sandbox, Target(qualified_name="sample.knotty", path="sample.py", score=0.0))
+
+    assert got.present, "the target was not found, so the bed's interpreter is back"
+    assert got.target != UNMEASURABLE
+    assert got.target > 0

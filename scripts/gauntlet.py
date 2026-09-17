@@ -453,9 +453,19 @@ def measure(sandbox: Sandbox | None, target: Target) -> Measurement:
     Per-entity rather than aggregate because the shredding test needs to know *which*
     functions are new and what each of them is worth -- a file total cannot answer either,
     and a file total was the whole of the evidence when the detector was inverted.
+
+    **Measured with the harness's interpreter, not the bed's, and that distinction is the
+    whole of why every external bed scored `999 -> 999`.** The bed's interpreter is for
+    running the bed's checks: it lives in a venv holding the bed's dependencies, and `oxn` is
+    not one of them, so `python -m oxn metrics` exited non-zero there and every score --
+    including `score_before`, on the untouched file -- came back `UNMEASURABLE`. Nothing can
+    improve on 999, so `improved` was always false, no candidate was ever judged, and the one
+    bed where this worked was `self`, whose venv has `oxn` in it because `oxn` is what it is.
+    Measuring is static analysis over source text; it needs a tree-sitter parse and no import
+    of the code at all, so the bed's environment was never relevant to it.
     """
     base = sandbox.path if sandbox else ROOT
-    interpreter = str(sandbox.python) if sandbox else sys.executable
+    interpreter = sys.executable
     result = subprocess.run(
         [interpreter, "-m", "oxn", "metrics", "--json", "--limit", "400", target.path],
         cwd=base,
