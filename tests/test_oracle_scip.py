@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -430,17 +431,73 @@ requires_scip_typescript = pytest.mark.skipif(
 )
 
 
+def _source_coverage(corpus: Path, index: Path) -> float:
+    """Call coverage over the files that are not tests.
+
+    **The population P5's criterion was stated over.** A coverage ratio describes whichever
+    files the index happened to contain, so widening the index moves it without anything
+    about resolution having changed -- and a guard that cannot tell those apart stops being a
+    guard the first time someone indexes more. On `typescript-nest` the split is exact:
+    `.spec.ts` is the suffix its `tsconfig.spec.json` selects on.
+    """
+    from oxn.graph.builder import build_file
+    from oxn.languages import get_parser
+    from oxn.profiles import profile_for_path
+    from oxn.scip.index import load_index
+    from oxn.scip.join import join_document
+
+    sites = joined = 0
+    for document in load_index(index).documents:
+        if document.relative_path.endswith(".spec.ts"):
+            continue
+        source_path = corpus / document.relative_path
+        profile = profile_for_path(document.relative_path)
+        if profile is None or not source_path.exists():
+            continue
+        source = source_path.read_bytes()
+        tree = get_parser(profile.name).parse(source)
+        if tree.root_node.has_error:
+            continue
+        parsed = build_file(document.relative_path, source, profile, tree.root_node)
+        result = join_document(list(parsed.entities), profile, tree.root_node, document)
+        sites += result.call_sites
+        joined += result.joined_call_sites
+    return joined / sites if sites else 0.0
+
+
 @requires_scip_typescript
 @pytest.mark.skipif(not TS_CORPUS.exists(), reason="corpora not fetched")
 @pytest.mark.slow
 def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     """The fifth language, and the corpus whose exclusion count was hiding a real defect.
 
-    On `typescript-nest`: L2 coverage **99.9% of declarations and 76.2% of call sites**,
-    index built in 3 s. L0/L1 scores **100% precision when certain** at 57.9% confident
-    recall, 70.1% overall at 100% recall, over 2,470 graded sites -- 190 of them gradeable
-    only once a callable bound to a name stopped being anonymous to the SCIP join, and 108
-    more once a nameless `local N` symbol stopped being asked to agree about a name.
+    On `typescript-nest`: L2 coverage **98.6% of declarations and 33.0% of call sites**,
+    index built in 4 s. L0/L1 scores **99.7% precision when certain** at 58.0% confident
+    recall, 69.8% overall at 100% recall, over 6,240 graded sites.
+
+    **Those are the numbers since the index began covering the tests, on 2026-09-17, and the
+    coverage figure got worse for a good reason.** `scip-typescript` indexes the `tsconfig.json`
+    it is handed; nest declares its tests in a sibling `tsconfig.spec.json` that nothing asked
+    it to read, so 424 `*.spec.ts` files had no L2 symbols at all and the measured population
+    was 1,020 files of 1,913. `Indexer.projects` now passes every root `tsconfig*.json`: 1,444
+    files, 40,359 call sites, **91.0% of the tree** against 18.5%. Joined call sites more than
+    doubled, 6,233 -> 13,337, and the graded population went 2,470 -> 6,240.
+
+    **The ratio fell because the population changed, not the resolver.** Split on the same
+    index: non-test files join at **76.2%**, the identical figure to before, and the 424 test
+    files at **22.1%** over 32,175 sites. Roughly half their call heads are `expect` (6,083),
+    `it` (3,894), `describe` (2,164) and vitest matchers -- framework code outside this tree,
+    which nothing inside it can be joined to. That is why the assertions below are three: the
+    original 70% guard over non-test files, where P5's criterion was stated; a floor on the
+    absolute joined count, which is what a reverted fix trips and no ratio would; and an honest
+    project-wide floor.
+
+    **Precision fell 100% -> 99.7% and that is a finding, not noise.** Eleven of 3,622 confident
+    answers are wrong, every one a generic method name -- `send`, `get`, `create`, `update`,
+    `remove`, `findOne`, `findAll` -- inside `integration/`, where a dozen independent sample
+    applications each define their own `ConfigService.get` and `AppController.send`.
+    Unique-name resolution is only as unique as the file set it runs over, and widening the set
+    is what made that visible. Not fixed here.
 
     **Confident recall was 56.7% until 2026-09-14, and two changes moved it, both aimed at
     ECMAScript's idioms.** Following a barrel is worth eight: nest has 96 files that are nothing
@@ -457,10 +514,12 @@ def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     know why, and deliberately: the last causal story told from these corpora was an artifact
     of a grader bug, and two rows on each side is a pattern, not a cause.
 
-    **The 76.2% call coverage misses P5's >=85% criterion, and the cause is one thing.**
+    **The call coverage misses P5's >=85% criterion, and the cause is one thing.**
     Recounted 2026-09-11 by `IngestReport`, which reports the split now rather than leaving it
-    to a script: of 8,184 call sites, 6,233 joined and **1,951 (23.8%) had no SCIP occurrence
-    at the callee**. Sites with an occurrence and no enclosing entity: **0**.
+    to a script: of 8,184 call sites then indexed, 6,233 joined and **1,951 (23.8%) had no SCIP
+    occurrence at the callee**. Over the wider 2026-09-17 population it is 40,359 sites, 13,337
+    joined and **27,022 (67.0%) with no occurrence**. Sites with an occurrence and no enclosing
+    entity: **0**, before and after.
 
     That last number is the correction. This docstring said 10.5% and 5.9%, and the second
     figure -- "a module-level call has no caller to hang an edge on" -- stopped being true when
@@ -533,8 +592,22 @@ def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
         ).fetchone()[0]
     assert fabricated == 0, f"{fabricated} L2 edges resolved a local symbol into another file"
     assert report.definition_coverage >= 0.90, f"{report.definition_coverage:.1%}"
-    assert report.call_coverage >= 0.70, (
-        f"{report.call_coverage:.1%} (below P5's 85%; see the receiver-fallback note above)"
+
+    # **Three assertions, because one ratio cannot separate a worse join from a wider net.**
+    # Indexing `tsconfig.spec.json` alongside `tsconfig.json` brought 424 test files in, and
+    # they carry 32,175 call sites that join at 22.1% -- so the project-wide figure fell from
+    # 76.2% to 33.0% while the resolver did not change at all.
+    assert _source_coverage(corpus, index) >= 0.70, (
+        "L2 coverage of non-test files regressed; this is the population P5's criterion was "
+        "stated over and it is unaffected by which tsconfigs are indexed"
+    )
+    # The absolute count is what notices the fix being lost: drop the `tsconfig*.json`
+    # discovery in `scip.runner` and this falls back to 6,233, which no ratio would flag.
+    assert report.joined_call_sites >= 13_000, f"{report.joined_call_sites:,} joined call sites"
+    assert report.call_coverage >= 0.30, (
+        f"{report.call_coverage:.1%} project-wide. Test files join at 22.1% because roughly "
+        "half their call heads are `expect`, `it`, `describe` and vitest matchers -- framework "
+        "code that is not in this tree and so cannot be joined to anything in it."
     )
 
     accuracy = measure_corpus(corpus, index, language="typescript")

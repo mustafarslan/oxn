@@ -47,12 +47,25 @@ class IngestReport:
     #: **The scope of `call_coverage`'s denominator, which is otherwise invisible.** This loop
     #: walks the index's documents, so a file the indexer never covered contributes no call
     #: sites -- neither joined nor missed -- and the coverage figure is silently "of call sites
-    #: in files the indexer saw". On `typescript-nest` that is 1,020 files of 1,913 and 8,184
-    #: call sites of 44,548: the published 76.2% describes 18% of the tree. Nothing is wrong
-    #: with the measurement -- you cannot join what was not indexed -- but a reader takes "76%
-    #: of call sites" to mean the project's, and until this counter existed nothing said
+    #: in files the indexer saw". On `typescript-nest` that was 1,020 files of 1,913 and 8,184
+    #: call sites of 44,336: the 76.2% then published described 18.5% of the tree. Nothing was
+    #: wrong with the measurement -- you cannot join what was not indexed -- but a reader takes
+    #: "76% of call sites" to mean the project's, and until this counter existed nothing said
     #: otherwise.
+    #:
+    #: **Then the counter was acted on rather than admired.** `scip-typescript` indexes the
+    #: `tsconfig.json` it is given, and nest declares its tests in a sibling
+    #: `tsconfig.spec.json` nothing asked it to read; `Indexer.projects` now passes both. That
+    #: is 1,444 files and 40,359 call sites, **91.0% of the tree** against 18.5%. The headline
+    #: coverage *fell*, 76.2% to 33.0%, and the resolver did not change: the 424 test files
+    #: join at 22.1% because roughly half their call heads are `expect`, `it`, `describe` and
+    #: vitest matchers -- framework code that is not in this tree and cannot be joined to
+    #: anything in it. Coverage over the non-test files is 76.2%, exactly what it was.
     unindexed_files: int = 0
+    #: Documents the index described more than once, dropped by the parser. A project whose
+    #: SCIP projects overlap -- a `tsconfig.json` and a `tsconfig.spec.json` both including
+    #: `integration/**` -- emits a file once per project. See `ScipIndex.duplicate_documents`.
+    duplicate_documents: int = 0
     definition_sites: int = 0
     joined_definition_sites: int = 0
     seconds: float = 0.0
@@ -95,6 +108,7 @@ class IngestReport:
             "calls_without_occurrence": self.calls_without_occurrence,
             "calls_without_caller": self.calls_without_caller,
             "unindexed_files": self.unindexed_files,
+            "duplicate_documents": self.duplicate_documents,
             "definition_coverage": round(self.definition_coverage, 4),
             "seconds": round(self.seconds, 2),
             "skipped": self.skipped[:20],
@@ -118,7 +132,9 @@ def ingest_index(indexer: Indexer, index_path: Path | str) -> IngestReport:
 
     started = time.perf_counter()
     index = load_index(index_path)
-    report = IngestReport(documents=len(index.documents))
+    report = IngestReport(
+        documents=len(index.documents), duplicate_documents=index.duplicate_documents
+    )
 
     for document in index.documents:
         relative = document.relative_path

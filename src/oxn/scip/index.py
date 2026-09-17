@@ -105,6 +105,21 @@ class ScipIndex:
 
     documents: list[ScipDocument] = field(default_factory=list)
     external_symbols: list[ScipSymbol] = field(default_factory=list)
+    #: Documents dropped because another already covered that path.
+    #:
+    #: **One index can describe a file twice.** A SCIP indexer is given *projects*, not files,
+    #: and a file included by two of them is emitted once per project -- `scip-typescript`
+    #: over `tsconfig.json` and `tsconfig.spec.json` produces 1,840 documents for 1,444 paths
+    #: on `typescript-nest`, because both configs include `integration/**`. The store is safe
+    #: either way (`put_symbols` and `put_edges` replace by path), but every counter on
+    #: `IngestReport` accumulates per document, so the copies would inflate `call_sites` and
+    #: `symbols` for 396 files while the ratios quietly stayed plausible.
+    #:
+    #: Kept as a number rather than dropped in silence: it says a project's configs overlap,
+    #: which is a fact about that project and not a fault. On nest's 396 the two copies carry
+    #: identical occurrence counts, so which one survives does not matter -- the first does,
+    #: because that is reproducible.
+    duplicate_documents: int = 0
 
     @property
     def occurrence_count(self) -> int:
@@ -120,10 +135,17 @@ def load_index(path: Path | str) -> ScipIndex:
 
 
 def parse_index(data: bytes) -> ScipIndex:
+    """Parse a SCIP index, keeping one document per path. See `ScipIndex.duplicate_documents`."""
     index = ScipIndex()
+    seen: set[str] = set()
     for number, _, value in iter_fields(data):
         if number == _DOCUMENTS and isinstance(value, bytes):
-            index.documents.append(_parse_document(value))
+            document = _parse_document(value)
+            if document.relative_path in seen:
+                index.duplicate_documents += 1
+                continue
+            seen.add(document.relative_path)
+            index.documents.append(document)
         elif number == _EXTERNAL_SYMBOLS and isinstance(value, bytes):
             index.external_symbols.append(_parse_symbol(value))
     return index

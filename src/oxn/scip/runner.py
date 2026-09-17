@@ -40,6 +40,21 @@ class Indexer:
     #: substituted; `run_indexer` sets the working directory to the tree being indexed, so
     #: an indexer that defaults to `.` needs no root at all.
     template: tuple[str, ...]
+    #: Glob, matched at the tree's root only, for extra positional *projects* to index.
+    #:
+    #: **An indexer is given projects, not files, and one project is rarely the whole tree.**
+    #: `scip-typescript` indexes the `tsconfig.json` it finds and nothing else, so on
+    #: `typescript-nest` it covered 1,020 files of 1,913: every `*.spec.ts` was missing,
+    #: because the tests are declared in a sibling `tsconfig.spec.json` that nothing asked it
+    #: to read. Appending the root's other configs recovers 424 of them.
+    #:
+    #: Root-level and non-recursive on purpose. Walking the tree would pick up the tsconfig
+    #: of every example application under `sample/` and index each as a project in its own
+    #: right, which is not what the repository declares itself to be. An unreadable project
+    #: is safe to pass: `scip-typescript` reports `- <path> (missing tsconfig.json)`, skips
+    #: it, and still writes the index -- verified rather than assumed, since the alternative
+    #: is that one stale config costs a project its entire index.
+    projects: str = ""
 
     def argv(self, root: Path, output: Path, project: Project) -> list[str]:
         values = {
@@ -48,7 +63,21 @@ class Indexer:
             "name": project.name,
             "version": project.version,
         }
-        return [self.command, *(part.format(**values) for part in self.template)]
+        return [
+            self.command,
+            *(part.format(**values) for part in self.template),
+            *self.root_projects(root),
+        ]
+
+    def root_projects(self, root: Path) -> list[str]:
+        """The project files to append, sorted so the same tree gives the same argv.
+
+        Sorted also fixes *which* copy of a doubly-indexed file survives ingest: the parser
+        keeps the first document for a path, and `tsconfig.json` sorts before its siblings.
+        """
+        if not self.projects:
+            return []
+        return sorted(found.name for found in root.glob(self.projects) if found.is_file())
 
 
 #: Every SCIP indexer OXN can actually run, keyed by language. All Apache-2.0, free and
@@ -89,6 +118,7 @@ INDEXERS: dict[str, Indexer] = {
         "scip-typescript",
         "npm install -g @sourcegraph/scip-typescript",
         ("index", "--output", "{output}", "--cwd", "{root}"),
+        projects="tsconfig*.json",
     ),
     "javascript": Indexer(
         "javascript",

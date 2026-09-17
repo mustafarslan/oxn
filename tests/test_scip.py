@@ -217,3 +217,36 @@ def test_coverage_is_reported_even_when_nothing_matches() -> None:
     assert result.definition_coverage == 0.0
     assert result.call_sites > 0
     assert result.call_coverage == 0.0
+
+
+def test_a_file_described_twice_is_one_document() -> None:
+    """A SCIP indexer is given projects, not files, so overlapping projects repeat a file.
+
+    `scip-typescript` over `typescript-nest`'s `tsconfig.json` and `tsconfig.spec.json`
+    emits 1,840 documents for 1,444 paths, because both include `integration/**`. The store
+    replaces by path and would survive it; `IngestReport` accumulates per document and would
+    have counted 396 files' call sites and symbols twice, with the ratios still looking
+    plausible. The duplicate is counted rather than silently dropped: overlapping projects
+    are a fact about the repository, not a fault.
+    """
+    data = delimited(2, document("a.ts", [occurrence("sym", [1, 2, 3])]))
+    data += delimited(2, document("a.ts", [occurrence("sym", [1, 2, 3])]))
+    index = parse_index(data)
+
+    assert len(index.documents) == 1
+    assert index.duplicate_documents == 1
+    assert index.occurrence_count == 1
+
+
+def test_the_first_document_for_a_path_is_the_one_kept() -> None:
+    """Which copy survives must not depend on the order a tool happened to emit them in.
+
+    `Indexer.root_projects` sorts, so `tsconfig.json` is passed before its siblings and its
+    document arrives first. On nest's 396 duplicates both copies carry identical occurrence
+    counts, so this decides nothing there -- it decides that the answer is reproducible.
+    """
+    data = delimited(2, document("a.ts", [occurrence("first", [1, 2, 3])]))
+    data += delimited(2, document("a.ts", [occurrence("second", [4, 5, 6])]))
+    index = parse_index(data)
+
+    assert index.documents[0].occurrences[0].symbol == "first"
