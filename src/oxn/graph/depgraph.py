@@ -179,6 +179,14 @@ def _record_reexport(
 
 def _add_imports(graph: DependencyGraph, scan: _Scan) -> None:
     """Resolve every import in one file into edges, counting what does not resolve."""
+    # **A `.d.ts` emits no JavaScript, so none of its imports is a runtime edge.** The
+    # declaration file describes types for something compiled elsewhere; nothing loads it.
+    # Its imports are written without a `type` keyword because inside a declaration file
+    # there is nothing else they could be, and reading only the keyword calls them value
+    # imports -- three wrong edges on `javascript-eslint`, found by dependency-cruiser, which
+    # omits them. An edge that should not exist is the costlier direction: it is invisible in
+    # every downstream metric, where an unresolved one at least appears in a report.
+    declarations_only = scan.relative.endswith(".d.ts")
     for raw in extract_imports(scan.tree_root, scan.profile):
         graph.import_count += 1
         resolved = resolve_import(scan.relative, raw, scan.context, scan.profile.name)
@@ -187,7 +195,7 @@ def _add_imports(graph: DependencyGraph, scan: _Scan) -> None:
         if not resolved.resolved:
             _record_external(graph, scan.relative, raw, scan)
             continue
-        if raw.kind not in scan.kinds:
+        if declarations_only or raw.kind not in scan.kinds:
             continue
         # A file importing itself is not an edge; everything else lands in `files`, and in
         # `hard_files` too unless the language defers it to call time.

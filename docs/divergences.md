@@ -282,9 +282,39 @@ executes both. OXN modelled one target per import, which silently lost an edge w
 package was not imported anywhere else. It matched by luck on the first corpus. Imports now
 resolve to a *set* of targets.
 
+### JavaScript resolution
+
+**Oracle-compared against dependency-cruiser 18.3.1** (`tests/test_oracle_depcruise.py`),
+2026-09-17, over all 1,487 files of `javascript-eslint`: **1,480 edges agreed** of the 1,489
+OXN records and the 1,486 dependency-cruiser does — **98.997%**. Fifteen edges differ, and
+each tool is more capable than the other on one of the three rules behind them.
+
+| rule | who resolves it | sites |
+|---|---|---|
+| Node `main`, and workspace packages — `require("..")` → `lib/api.js` | dependency-cruiser | 6 |
+| A workspace package name reaching an in-tree file, `require("eslint-config-eslint/cjs")` | OXN | 1 |
+| TypeScript's emitted-name imports, `./helper.js` → `./helper.ts` | OXN | 8 |
+
+OXN declines the first for the reason stated below for `exports` maps: a wrong edge corrupts
+every downstream metric silently, where a missing one is merely absent. dependency-cruiser
+misses the second because it needs the `node_modules` symlink npm would have created, and the
+corpora have no dependencies installed.
+
+**The comparison found one real defect on its first run**: imports inside a `.d.ts` were
+recorded as runtime edges. A declaration file emits no JavaScript, so nothing loads it and
+none of its imports is a runtime dependency — they carry no `type` keyword only because
+inside a `.d.ts` there is nothing else they could be. Three edges on eslint, fixed in
+`depgraph._add_imports`.
+
 ### TypeScript resolution
 
-Not oracle-compared yet (dependency-cruiser wiring is deferred), but characterised on nest:
+**Not oracle-compared, and the blocker has a version number.** The rule below — source imports
+the *emitted* name, so `./x.js` means `./x.ts` — is the one that matters most, and
+dependency-cruiser resolves it only via `enhancedResolveOptions.extensionAlias`, which
+18.3.1's configuration schema does not accept. Every relative import in `typescript-nest` comes
+back `couldNotResolve`, so the tool cannot arbitrate this corpus at all. A tool that cannot
+resolve the corpus is not an oracle; TypeScript stays characterised rather than compared, and
+no second tool was shopped for to get a different answer. Characterised on nest:
 **99.9% of relative imports resolve** (3,600 of 3,603), 83.7% of all imports including
 external packages. The three failures are generated files absent from the tree.
 
