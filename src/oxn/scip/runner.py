@@ -12,14 +12,24 @@ documentation mentions.
 
 from __future__ import annotations
 
+import os
 import shutil
+import signal
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 
-class IndexerNotFound(RuntimeError):
+class IndexerError(RuntimeError):
+    """Anything that stopped a SCIP index being produced."""
+
+
+class IndexerNotFound(IndexerError):
     """Raised when no SCIP indexer is available for a language."""
+
+
+class IndexerTimeout(IndexerError):
+    """Raised when an indexer outran its time budget and was killed."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +77,15 @@ class Indexer:
     #:
     #: Only a file OXN's own run created is removed. One the project already had is its own.
     leaves_behind: tuple[str, ...] = ()
+    #: Seconds this indexer gets before it is killed.
+    #:
+    #: Per language because the spread is two orders of magnitude and it is a property of the
+    #: tool, not of the call site -- every caller used to pass its own number (600, 1,200,
+    #: 1,800, 2,400), which is the same knowledge written down four times and agreeing by
+    #: luck. Go indexes `go-kit` in 1 s and `scip-java` takes 361 s on 4,214 lines, because
+    #: `scip-java` runs Maven and is paying for dependency resolution and compilation rather
+    #: than for indexing.
+    timeout: int = 900
 
     def argv(self, root: Path, output: Path, project: Project) -> list[str]:
         values = {
@@ -199,6 +218,12 @@ INDEXERS: dict[str, Indexer] = {
         # `run_indexer` puts it in front of the user, who has `oxn index --index-file` for
         # an index they built themselves.
         ("index", "--output", "{output}"),
+        # ~6.6x the 361 s measured cold on petclinic's 4,214 lines, and the margin is not a
+        # multiple of the code size: most of that wall clock is Maven resolving dependencies,
+        # which does not scale with LOC, while compilation does. A real repository is larger
+        # in the half that scales, so the budget is generous on purpose -- being killed
+        # halfway through a build wastes everything already spent on it.
+        timeout=2400,
     ),
 }
 
@@ -238,9 +263,13 @@ def run_indexer(
     output: Path,
     project: Project | None = None,
     *,
-    timeout: int = 900,
+    timeout: int | None = None,
 ) -> Path:
-    """Produce a SCIP index for ``root``. Returns the path written."""
+    """Produce a SCIP index for ``root``. Returns the path written.
+
+    ``timeout`` defaults to the indexer's own budget (`Indexer.timeout`), which is where the
+    knowledge of how long a language takes belongs.
+    """
     project = project or Project()
     indexer = INDEXERS.get(language)
     if indexer is None:
@@ -253,22 +282,53 @@ def run_indexer(
     output.parent.mkdir(parents=True, exist_ok=True)
     existing = {name for name in indexer.leaves_behind if (root / name).exists()}
     try:
-        result = subprocess.run(
-            indexer.argv(root, output, project),
-            cwd=str(root),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
+        stderr = _spawn(indexer, indexer.argv(root, output, project), root, timeout)
     finally:
         # In `finally` because a run that failed is exactly when nobody looks, and the file
         # would survive precisely then.
         _remove_artifacts(root, indexer.leaves_behind, existing)
     if not output.exists():
-        raise IndexerNotFound(f"{indexer.command} produced no index: {result.stderr.strip()[:400]}")
-    _reject_empty(indexer, output, result.stderr)
+        raise IndexerNotFound(f"{indexer.command} produced no index: {stderr.strip()[:400]}")
+    _reject_empty(indexer, output, stderr)
     return output
+
+
+def _spawn(indexer: Indexer, argv: list[str], root: Path, timeout: int | None) -> str:
+    """Run the indexer to completion, or kill its whole process tree and say so.
+
+    **`subprocess.run(timeout=...)` kills the child it started and nothing beneath it.** An
+    indexer is rarely one process: `scip-java` is a JVM that runs Maven that runs `javac`, so
+    a timeout left the build running with nobody waiting for it -- measured, two survivors
+    from a two-process fake. Its own session makes the tree one process group, and the group
+    is what gets signalled.
+
+    **And the orphans were the milder half.** Reverting this to `process.kill()` does not
+    merely leak processes: the survivors still hold the inherited `stdout` and `stderr`, so
+    the `communicate()` that follows blocks until they exit on their own. A Java index that
+    outran its budget would hang for as long as the build felt like running, having already
+    been given up on. Killing the group closes the pipes.
+    """
+    budget = timeout or indexer.timeout
+    process = subprocess.Popen(  # noqa: S603 - argv is this module's own data
+        argv,
+        cwd=str(root),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        _, stderr = process.communicate(timeout=budget)
+    except subprocess.TimeoutExpired:
+        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        process.communicate()
+        raise IndexerTimeout(
+            f"{indexer.command} exceeded its {budget}s budget and was stopped. Indexing "
+            f"{indexer.language} can mean running the project's build -- `scip-java` runs "
+            "Maven -- so this is a build's cost rather than an indexer's. Build a SCIP index "
+            "separately and pass it with `oxn index --index-file <path>`."
+        ) from None
+    return stderr
 
 
 def _remove_artifacts(root: Path, named: tuple[str, ...], existing: set[str]) -> None:

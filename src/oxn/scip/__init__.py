@@ -7,10 +7,18 @@ only a fallback.
 """
 
 from oxn.scip.index import ScipDocument, ScipIndex, ScipOccurrence, ScipSymbol, load_index
-from oxn.scip.runner import IndexerNotFound, available_indexers, run_indexer
+from oxn.scip.runner import (
+    IndexerError,
+    IndexerNotFound,
+    IndexerTimeout,
+    available_indexers,
+    run_indexer,
+)
 
 __all__ = [
+    "IndexerError",
     "IndexerNotFound",
+    "IndexerTimeout",
     "ScipDocument",
     "ScipIndex",
     "ScipOccurrence",

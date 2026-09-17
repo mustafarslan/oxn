@@ -46,6 +46,8 @@ def build_index(language: str, corpus: Path, index: Path) -> str | None:
     if index.exists():
         return None
     CACHE.mkdir(parents=True, exist_ok=True)
+    from oxn.scip.runner import INDEXERS, run_indexer
+
     if language == "java":
         # petclinic declares both Maven and Gradle, so `scip-java` refuses to choose and
         # `scip.runner` refuses to choose for it -- guessing there runs the wrong build for ten
@@ -58,12 +60,15 @@ def build_index(language: str, corpus: Path, index: Path) -> str | None:
             cwd=corpus,
             check=True,
             capture_output=True,
-            timeout=2400,
+            # The same budget the registry gives Java; this path calls `scip-java` directly
+            # only because petclinic declares two build tools.
+            timeout=INDEXERS["java"].timeout,
         )
         return None
-    from oxn.scip.runner import run_indexer
 
-    run_indexer(language, corpus, index, timeout=2400)
+    # No timeout here: `Indexer.timeout` carries each language's budget, and a script
+    # repeating it is how four call sites came to hold the same knowledge separately.
+    run_indexer(language, corpus, index)
     return None
 
 

@@ -306,7 +306,7 @@ def test_rust_l2_and_l0_l1_accuracy(tmp_path) -> None:
     from oxn.scip.runner import run_indexer
 
     corpus = RUST_CORPUS.resolve()
-    index = run_indexer("rust", corpus, tmp_path / "ripgrep.scip", timeout=600)
+    index = run_indexer("rust", corpus, tmp_path / "ripgrep.scip")
 
     with Indexer(root=corpus, cache_path=tmp_path / "graph.db") as indexer:
         report = ingest_index(indexer, index)
@@ -383,6 +383,7 @@ def test_java_l2_and_l0_l1_accuracy(tmp_path) -> None:
     from oxn.graph.indexer import Indexer
     from oxn.resolve.measure import measure_corpus
     from oxn.scip.ingest import ingest_index
+    from oxn.scip.runner import INDEXERS
 
     corpus = JAVA_CORPUS.resolve()
     index = tmp_path / "petclinic.scip"
@@ -391,7 +392,9 @@ def test_java_l2_and_l0_l1_accuracy(tmp_path) -> None:
         cwd=str(corpus),
         capture_output=True,
         text=True,
-        timeout=1800,
+        # Matches `INDEXERS['java'].timeout`; this path calls `scip-java` directly because
+        # petclinic declares two builds, but it is paying for the same Maven run.
+        timeout=INDEXERS["java"].timeout,
         check=False,
     )
     # Not `check=True`: this runs a six-minute Maven build, and a `CalledProcessError`
@@ -578,7 +581,7 @@ def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     from oxn.scip.runner import run_indexer
 
     corpus = TS_CORPUS.resolve()
-    index = run_indexer("typescript", corpus, tmp_path / "nest.scip", timeout=600)
+    index = run_indexer("typescript", corpus, tmp_path / "nest.scip")
 
     with Indexer(root=corpus, cache_path=tmp_path / "graph.db") as indexer:
         report = ingest_index(indexer, index)
@@ -719,7 +722,7 @@ def test_javascript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     from oxn.scip.runner import run_indexer
 
     corpus = JS_CORPUS.resolve()
-    index = run_indexer("javascript", corpus, tmp_path / "eslint.scip", timeout=1200)
+    index = run_indexer("javascript", corpus, tmp_path / "eslint.scip")
 
     with Indexer(root=corpus, cache_path=tmp_path / "graph.db") as indexer:
         report = ingest_index(indexer, index)

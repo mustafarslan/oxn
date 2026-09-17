@@ -417,7 +417,7 @@ def run_index(
     from oxn.config import Config
     from oxn.graph.indexer import Indexer
     from oxn.scip.ingest import ingest_index
-    from oxn.scip.runner import IndexerNotFound, Project, run_indexer
+    from oxn.scip.runner import IndexerError, Project, run_indexer
 
     target = Path(paths[0]).resolve()
     if not target.exists():
@@ -444,7 +444,7 @@ def run_index(
                         Path(scratch) / "index.scip",
                         Project(name=target.name),
                     )
-                except IndexerNotFound as error:
+                except IndexerError as error:
                     failure = {"status": "ERROR", "errors": {language: str(error)}}
                     _emit(failure, output)
                     return failure

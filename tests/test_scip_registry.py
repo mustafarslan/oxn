@@ -128,18 +128,21 @@ def test_an_index_with_no_documents_is_a_failure(tmp_path: Path, monkeypatch) ->
     instead of an error -- and every coverage number computed from it would have measured an
     empty set while looking healthy. Found from a 209-byte index, not predicted.
     """
-    import subprocess
-
     from oxn.scip import runner
 
     output = tmp_path / "out.scip"
 
-    def fake_run(argv, **kwargs):
-        output.write_bytes(b"")  # a well-formed index of nothing
-        return subprocess.CompletedProcess(argv, 0, "", "no go.mod file found")
+    class _Indexed:
+        """Enough of `Popen` for the success path: the runner only ever calls `communicate`."""
+
+        def __init__(self, argv, **kwargs) -> None:
+            output.write_bytes(b"")  # a well-formed index of nothing
+
+        def communicate(self, timeout=None):  # noqa: ANN001, ANN202 - a stand-in, not an API
+            return "", "no go.mod file found"
 
     monkeypatch.setattr(runner.shutil, "which", lambda command: f"/usr/bin/{command}")
-    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    monkeypatch.setattr(runner.subprocess, "Popen", _Indexed)
 
     with pytest.raises(IndexerNotFound, match="indexed no files"):
         run_indexer("go", tmp_path, output)
