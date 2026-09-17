@@ -73,10 +73,17 @@ def iter_source_files(
       however the file is reached, named or walked to -- otherwise the hook, which now always
       names the one file the agent edited, would gate the generated code a project just
       declared out of scope.
+
+    The second kind now prunes the walk as well as filtering it, but **only where pruning
+    cannot lose a file**. `fnmatch`'s ``*`` crosses ``/``, so for a pattern ending in ``*`` a
+    directory match guarantees every path beneath it matches too; for ``vendored/*b`` it does
+    not -- ``vendored/xb`` matches and ``vendored/xb/c.py`` does not. So only trailing-``*``
+    patterns are handed to the walk, and everything else is filtered exactly as before.
     """
     project = (base or Path.cwd()).resolve()
+    pruning = tuple(pattern for pattern in exclude if pattern.endswith("*"))
     for root in roots:
-        found = _one_file(root) if root.is_file() else _below(root, excludes)
+        found = _one_file(root) if root.is_file() else _below(root, excludes, project, pruning)
         yield from (path for path in found if not _out_of_scope(path, project, exclude))
 
 
@@ -100,28 +107,54 @@ def _out_of_scope(path: Path, project: Path, patterns: Sequence[str]) -> bool:
     Only projects that declare `exclude` ever paid this, which is why it hid: OXN's own
     configuration declares one and the corpus it was benchmarked against does not.
     """
-    if not patterns:
-        return False
-    relative = None
+    return bool(patterns) and any(
+        fnmatch(_as_written(path, project), pattern) for pattern in patterns
+    )
+
+
+def _as_written(path: Path, project: Path) -> str:
+    """The path the way `oxn.yaml` writes it: relative to the project root, POSIX, no `./`.
+
+    A path outside that root cannot be described by a repo-relative glob, so it is matched
+    absolute and simply will not hit one.
+
+    `resolve()` is a `realpath` syscall and this runs on every candidate the walk produces, so
+    it is skipped for the paths that provably do not need it -- exactly as `Indexer.relative`
+    does, and with the same `..` guard, since `relative_to` does not normalize and a glob must
+    be matched against one spelling of a path rather than two.
+    """
     if ".." not in path.parts:
         try:
-            relative = path.relative_to(project).as_posix()
+            return path.relative_to(project).as_posix()
         except ValueError:
-            relative = None
-    if relative is None:
-        resolved = path.resolve()
-        try:
-            relative = resolved.relative_to(project).as_posix()
-        except ValueError:
-            relative = resolved.as_posix()
-    return any(fnmatch(relative, pattern) for pattern in patterns)
+            pass
+    resolved = path.resolve()
+    try:
+        return resolved.relative_to(project).as_posix()
+    except ValueError:
+        return resolved.as_posix()
 
 
-def _below(root: Path, excludes: frozenset[str]) -> Iterator[Path]:
-    """Every analysable file under a directory, skipping what is not ours to measure."""
+def _below(
+    root: Path, excludes: frozenset[str], project: Path, pruning: Sequence[str] = ()
+) -> Iterator[Path]:
+    """Every analysable file under a directory, skipping what is not ours to measure.
+
+    **A subtree the project excludes entirely is not entered.** `exclude` filters files, and
+    for a long time it filtered them *after* the walk had found them -- so OXN's own hook
+    descended into `benchmarks/corpora`, 5,165 directories and 18,259 files, ran
+    `profile_for_path` on every one and discarded them all by glob. Measured 2026-09-17:
+    131 ms per walk against 1.3 ms once the subtree is pruned, 4,585 directories visited
+    against 33, and `_edge_facts` walks the tree on every hook run.
+    """
     for dirpath, dirnames, filenames in os.walk(root):
         # In place, because `os.walk` reads this list back to decide where to descend.
-        dirnames[:] = [name for name in dirnames if _worth_entering(name, excludes)]
+        dirnames[:] = [
+            name
+            for name in dirnames
+            if _worth_entering(name, excludes)
+            and not _out_of_scope(Path(dirpath) / name, project, pruning)
+        ]
         for filename in filenames:
             candidate = Path(dirpath) / filename
             if profile_for_path(str(candidate)) is not None:

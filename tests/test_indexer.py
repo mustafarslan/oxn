@@ -150,3 +150,80 @@ def test_an_exclusion_glob_matches_the_same_path_spelled_either_way(repo, tmp_pa
     found = iter_source_files([detour], base=repo, exclude=("src/a.py",))
 
     assert "a.py" not in {path.name for path in found}
+
+
+def _visited(root, monkeypatch, **kwargs) -> tuple[set, set]:
+    """Which directories the walk actually entered, and which files it yielded.
+
+    The distinction is the whole point: a subtree filtered *after* being walked produces the
+    same file set as one never entered, and costs the difference.
+    """
+    import os
+
+    from oxn.graph import sources
+
+    entered: set[str] = set()
+    real = os.walk
+
+    def recording(top, *args, **rest):
+        for dirpath, dirnames, filenames in real(top, *args, **rest):
+            entered.add(str(dirpath))
+            yield dirpath, dirnames, filenames
+
+    monkeypatch.setattr(sources.os, "walk", recording)
+    found = {path.name for path in sources.iter_source_files([root], **kwargs)}
+    return entered, found
+
+
+def test_an_excluded_subtree_is_never_entered(repo, monkeypatch) -> None:
+    """`exclude` filtered files after the walk had already found them.
+
+    OXN's own hook descended into `benchmarks/corpora` -- 5,165 directories and 18,259 files
+    -- ran `profile_for_path` on every one and discarded them all by glob, on every edit.
+    Measured 2026-09-17: 131 ms per walk against 1.3 ms pruned, and `_edge_facts` walks the
+    tree on every hook run. The file set was always right; the cost was not.
+    """
+    (repo / "vendored").mkdir()
+    (repo / "vendored" / "deep").mkdir()
+    (repo / "vendored" / "deep" / "huge.py").write_text("x = 1\n")
+
+    entered, found = _visited(repo, monkeypatch, base=repo, exclude=("vendored/*",))
+
+    assert "huge.py" not in found
+    # `vendored` itself is entered and its children are not: `vendored/*` matches
+    # `vendored/deep`, not `vendored`. That is the real shape -- `benchmarks/corpora` is
+    # entered once and its thirteen corpora are pruned, which is the 4,585 -> 33 above.
+    assert not [path for path in entered if "deep" in path], "walked what it then discarded"
+    assert [path for path in entered if path.endswith("vendored")]
+
+
+def test_pruning_only_happens_where_it_cannot_lose_a_file(repo, monkeypatch) -> None:
+    """A directory matching a glob does not mean every file under it matches.
+
+    `fnmatch`'s `*` crosses `/`, so for a pattern ending in `*` a directory match guarantees
+    the subtree matches too. For `vendored/*b` it does not: `vendored/xb` matches and
+    `vendored/xb/c.py` does not -- so that subtree is walked, and the file it holds is kept.
+    Pruning on a bare directory match would silently drop code the project never excluded.
+    """
+    (repo / "vendored").mkdir()
+    (repo / "vendored" / "xb").mkdir()
+    (repo / "vendored" / "xb" / "c.py").write_text("x = 1\n")
+
+    entered, found = _visited(repo, monkeypatch, base=repo, exclude=("vendored/*b",))
+
+    assert "c.py" in found
+    assert [path for path in entered if "xb" in path]
+
+
+def test_a_file_named_inside_an_excluded_subtree_still_resolves(repo) -> None:
+    """Naming a file is asking for it by hand, and pruning is about the walk only.
+
+    The hook names the one file an agent edited, so this is the path it takes; `exclude` still
+    refuses it, which is the behaviour `iter_source_files` already documented.
+    """
+    (repo / "vendored").mkdir()
+    named = repo / "vendored" / "one.py"
+    named.write_text("x = 1\n")
+
+    assert not list(iter_source_files([named], base=repo, exclude=("vendored/*",)))
+    assert [path.name for path in iter_source_files([named], base=repo)] == ["one.py"]

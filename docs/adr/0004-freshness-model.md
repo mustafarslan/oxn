@@ -106,6 +106,24 @@ is what the MCP server delivers by being alive already.
 | the constraint bundle (`get_architectural_context`) | — | 183 ms | **41 ms** |
 | whole tree, gate + contracts, **empty cache** | — | **15,489 ms** | — |
 
+**Amendment, 2026-09-17: the table below measures a narrower operation than the hook runs,
+and the gap was an excluded subtree being walked.** The row is "one file, parse + every Tier-1
+metric"; the hook runs `oxn check --json`, which is the whole gate -- rules engine, layer
+contracts, edge facts, baseline. Measured end to end with a `PostToolUse` payload on stdin,
+that cost **360 ms median against this ADR's 200 ms p95 budget and 400 ms hard ceiling**.
+
+The cause was not the gate. `_edge_facts` walks the tree on every hook run to resolve imports,
+and `exclude` filtered files *after* the walk found them -- so each run descended into
+`benchmarks/corpora`, 5,165 directories and 18,259 files, ran `profile_for_path` on every one
+and threw them all away by glob. The file set was always right; only the cost was wrong, which
+is why it survived: nothing it produced was ever incorrect.
+
+Pruning the subtree instead: **131 ms per walk to 1.3 ms, 4,585 directories visited to 33**,
+and the hook path **360 ms to 140 ms median, 150 ms p95** -- inside the budget rather than on
+the ceiling. In-process, warm, one file: 328 ms to 62 ms. Pruning is applied only for patterns
+ending in `*`, where a directory match guarantees the subtree matches; anything else is
+filtered as before, because a directory matching a glob does not mean every file under it does.
+
 **The hook path does not degrade with repository size.** 76 ms at 60 files, 88 ms at 1,827:
 a 30x larger tree costs 16%, which is measurement noise around a fixed interpreter startup.
 That is mechanism 2 (incremental invalidation) doing exactly what this ADR claims for it,
