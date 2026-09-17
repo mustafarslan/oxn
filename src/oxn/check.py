@@ -324,6 +324,17 @@ def _unparseable_findings(indexer: Any, paths: list[str]) -> list[Finding]:
                 value=1,
                 ceiling=0,
                 detail=f"could not be parsed; first error at line {line}",
+                # The per-finding channel rather than the section trailer, which talks about
+                # ceilings and `shredding` and means nothing here. Both lines earn their
+                # place: the first says why this is not cosmetic, and the second is the way
+                # out for a file that is not the author's to fix -- a vendored bundle blocks
+                # exactly as a broken edit does, because OXN genuinely cannot measure either.
+                explanation=(
+                    "every pass skips a file it cannot parse, so its imports, duplication "
+                    "and call edges are missing from the report rather than zero",
+                    "if it is generated or vendored rather than yours, add it to `exclude` "
+                    "in oxn.yaml",
+                ),
             )
         )
     return findings
@@ -665,17 +676,23 @@ def _repair_section(findings: list[Finding], report: CheckReport) -> str:
     shown = [_describe(finding, report) for finding in findings[:MAX_REPORTED]]
     if len(findings) > MAX_REPORTED:
         shown.append(f"  ...and {len(findings) - MAX_REPORTED} more, not listed.")
-    return "\n".join(
-        [
-            f"OXN: this edit breaks {len(findings)} invariant(s). Fix them before moving on.",
-            "",
-            *shown,
+    lines = [
+        f"OXN: this edit breaks {len(findings)} invariant(s). Fix them before moving on.",
+        "",
+        *shown,
+    ]
+    # The trailer is about *numbers*, and only a ceiling has one. Printed under a lone parse
+    # error it advises against a repair nobody could attempt, and this message is read by an
+    # agent inside a 200 ms budget deciding what to do next -- a sentence that does not apply
+    # is the same cost as a sentence that is wrong.
+    if any(finding.rule != UNPARSEABLE for finding in findings):
+        lines += [
             "",
             "Fix the cause, not the number. Splitting the body into one-line helpers is "
             "detected: rule `shredding` totals a function with the private, trivial helpers "
             "only it calls, so a dedicated helper does not raise the budget.",
         ]
-    )
+    return "\n".join(lines)
 
 
 def _describe(finding: Finding, report: CheckReport) -> str:

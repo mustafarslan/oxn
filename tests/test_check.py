@@ -543,3 +543,35 @@ def test_a_hand_edited_baseline_cannot_forgive_one_either(project) -> None:
     report = run_check(["broken.py"])
     assert report.exit_code == EXIT_VIOLATIONS
     assert not report.baselined
+
+
+def test_the_parse_error_names_its_consequence_and_its_way_out(project) -> None:
+    """A vendored bundle blocks exactly as a broken edit does, because both are unmeasurable.
+
+    That is the right behaviour -- excluding generated files by a heuristic would restore the
+    silence this rule exists to remove -- but only if the message says so. The corpus sweep
+    found three minified `swagger-ui*.js` bundles under a `static/` directory, which is not in
+    `DEFAULT_EXCLUDES` and cannot be, because real projects keep hand-written code there.
+    """
+    from oxn.check import remediation
+
+    (project / "broken.py").write_text(BROKEN)
+    message = remediation(run_check(["broken.py"]))
+
+    assert "missing from the report rather than zero" in message
+    assert "`exclude` in oxn.yaml" in message
+
+
+def test_the_ceiling_advice_is_not_printed_under_a_parse_error(project) -> None:
+    """The trailer is about numbers, and a file that will not parse has none.
+
+    It is kept for the mixed case: an edit can break a ceiling *and* leave another file
+    unparseable, and the advice still applies to the first.
+    """
+    from oxn.check import remediation
+
+    (project / "broken.py").write_text(BROKEN)
+    assert "shredding" not in remediation(run_check(["broken.py"]))
+
+    (project / "tangled.py").write_text(TANGLED)
+    assert "shredding" in remediation(run_check(["."]))
