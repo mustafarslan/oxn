@@ -675,3 +675,29 @@ def test_the_logged_result_carries_the_verdicts_and_not_just_the_scores() -> Non
     assert row["helper_count"] == 4
     assert row["helper_median"] == 1.0
     json.dumps(row), "must survive the JSONL writer, which `skipped` as a set would not"
+
+
+def test_the_go_bed_names_out_the_packages_that_fail_on_their_own_tree() -> None:
+    """A bed that cannot verify its pristine tree cannot verify a repair.
+
+    Two go-kit packages fail before anything is repaired, for different reasons, and the
+    difference is why neither is handled by widening a floor. `sd/eureka`'s *test binary*
+    will not link -- the corpus pins a `golang.org/x/net` whose `internal/socket` still
+    references unexported `syscall.recvmsg`, which Go 1.26's linker rejects -- and
+    `metrics/cloudwatch`'s `TestGauge` is flaky, three pristine runs giving FAIL, FAIL, ok.
+
+    The flake is the worse one. A deterministic failure blocks the bed and is noticed; a
+    coin-flip one is recorded as repairs that sometimes break Go and sometimes do not, which
+    is indistinguishable in the log from a real regression. Pinned here because `./...` is
+    the natural thing to write and silently readmits both.
+    """
+    import sys
+
+    sys.path.insert(0, "scripts")
+    from beds import bed
+
+    packages = bed("go-kit").verify[0]
+    assert not any("eureka" in argument for argument in packages)
+    assert "./metrics/cloudwatch/..." not in packages
+    assert "./..." not in packages, "`./...` readmits both; the list is the exclusion"
+    assert "./metrics/prometheus/..." in packages, "the other nine TestGauge packages stay"
