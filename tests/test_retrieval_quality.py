@@ -171,3 +171,52 @@ def test_the_bundle_stays_under_budget_on_every_labelled_task(pairs) -> None:
         bundle = build_bundle(project, task=task)
         assert len(bundle.constraints) <= thresholds.MAX_BUNDLE_CONSTRAINTS
         assert len(bundle.constraints) + bundle.omitted == total
+
+
+def test_the_calibration_sweep_still_says_what_it_records(ranked, pairs) -> None:
+    """`BM25_K1` and `BM25_B` cite a sweep over this corpus; this is that sweep.
+
+    Only the half that runs without `git` and the external clones. The other hundred pairs are
+    pinned by `test_retrieval_external`'s recorded numbers at the shipped values, and the
+    *direction* there -- P@1 rising with b where it falls here -- is what makes fitting b a
+    statement about a corpus rather than about retrieval.
+    """
+    from oxn import thresholds
+
+    frozen = json.loads(CORPUS.read_text())["documents"]
+    documents = [Document(name, text) for name, text in sorted(frozen.items())]
+
+    def at(k1: float, b: float) -> float:
+        index = BM25(documents, k1=k1, b=b)
+        return _measure(lambda task: [hit.identifier for hit in index.rank(task)], pairs)[0]
+
+    # k1 is flat across Robertson & Zaragoza's band -- one pair either way -- so fitting it
+    # here would be chasing noise, which is what its `fit_when` now says.
+    band = {at(k1, thresholds.BM25_B) for k1 in (1.2, 1.5, 1.8, 2.0)}
+    assert max(band) - min(band) <= 0.02, band
+
+    # b is not flat, and on *this* corpus less normalisation scores better -- the opposite of
+    # the external set. Five decisions is small enough that b=0 merely reproduces the breadth
+    # prior this file already declines to claim BM25 beats.
+    assert at(thresholds.BM25_K1, 0.0) > at(thresholds.BM25_K1, 1.0)
+
+
+def test_both_bm25_parameters_count_the_pairs_they_were_swept_over(labels) -> None:
+    """`oxn calibration` claims 153 observations each; this is where 153 comes from.
+
+    53 pairs from this repository's history and 100 from five other repositories. Pinned
+    because the count is the part that rots: labels get re-extracted -- seventeen times in
+    three days, once -- and a provenance still quoting the old n reads as authoritative.
+    """
+    external = json.loads((ROOT / "benchmarks" / "retrieval-labels-external.json").read_text())
+    pairs = len(labels["pairs"]) + sum(
+        len(corpus["pairs"]) for corpus in external["corpora"].values()
+    )
+
+    from oxn.calibration import parameters
+
+    swept = [p for p in parameters() if p.name in {"BM25_K1", "BM25_B"}]
+    assert len(swept) == 2
+    for parameter in swept:
+        assert parameter.observations == pairs, parameter.name
+        assert parameter.is_provisional

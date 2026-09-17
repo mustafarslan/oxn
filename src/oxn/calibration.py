@@ -91,8 +91,11 @@ class Parameter:
     #: ceiling could not be *measured* without also being *changed*. It can. A judgement with
     #: 10,256 observations behind its cost is still a judgement, and `is_provisional` says so.
     #:
-    #: Still zero where nobody has measured: `BM25_K1` and `BM25_B` have 153 labelled pairs
-    #: (P8) evaluated at their current values and are the obvious next entries to fill.
+    #: Still zero where nobody has measured. `BM25_K1` and `BM25_B` were the entry this note
+    #: named as obvious and are filled in now, at 153 pairs each -- which is what turned the
+    #: pair of them from "waiting for labels" into two different answers: k1 is flat across
+    #: its literature band, and b is load-bearing with the two label sets disagreeing on the
+    #: direction. Neither moved.
     observations: int
     #: Where the number came from, in one line.
     provenance: str
@@ -397,17 +400,44 @@ _RETRIEVAL: tuple[Parameter, ...] = (
         name="BM25_K1",
         value=float(thresholds.BM25_K1),
         evidence=Evidence.LITERATURE,
-        observations=0,
-        provenance="Robertson & Zaragoza (2009) report [1.2, 2.0] as the usual band for k1",
-        fit_when="the labelled task -> ADR pairs of ADR-0006 section 5 exist",
+        observations=153,
+        provenance=(
+            "Robertson & Zaragoza (2009) report [1.2, 2.0] as the usual band for k1. Measured "
+            "2026-09-17 by sweeping all 153 labelled pairs at the current b, and **it barely "
+            "matters here**: across the whole band P@1 moves 0.623-0.642 on OXN's 53 pairs "
+            "and 0.600-0.610 on the external 100, which is one pair either way. Fitting it "
+            "would be chasing noise, and the literature value is already inside the flat part"
+        ),
+        fit_when=(
+            "never, on this evidence. The pairs `fit_when` used to wait for now exist -- 53 "
+            "from this repository's history and 100 from five others -- and they say the "
+            "parameter is not load-bearing at this corpus size. It would take a labelled set "
+            "where k1 separates rankings at all before fitting it could mean anything"
+        ),
     ),
     Parameter(
         name="BM25_B",
         value=float(thresholds.BM25_B),
         evidence=Evidence.LITERATURE,
-        observations=0,
-        provenance="Robertson & Zaragoza (2009); 0.75 is the standard length-normalization",
-        fit_when="the same labelled pairs; ADR length varies 4k-18k chars, so b is load-bearing",
+        observations=153,
+        provenance=(
+            "Robertson & Zaragoza (2009); 0.75 is the standard length-normalization. Measured "
+            "2026-09-17 by sweeping all 153 labelled pairs: **b is load-bearing, and the two label "
+            "sets disagree about which way.** On OXN's own 53 pairs P@1 falls monotonically, "
+            "0.698 at b=0 to 0.547 at b=1; on the external 100 it rises monotonically, 0.560 "
+            "to 0.630. Each set's optimum is the other set's worst value"
+        ),
+        fit_when=(
+            "a labelled set whose optimum is not an artefact of the corpus it came from. "
+            "This is the ceilings argument again and it arrived by the same route: a fitted "
+            "b tracks the label set, and here the two available sets point in opposite "
+            "directions, so either fit would be a statement about one repository. OXN's own "
+            "corpus holds five decisions, small enough that b=0 merely reproduces the "
+            "breadth-prior baseline the retrieval tests already decline to beat; the external "
+            "set is the larger evidence and its best value is 0.63 against 0.61 at the "
+            "current setting, two pairs in a hundred. Neither is worth moving a shipped "
+            "default for"
+        ),
     ),
     Parameter(
         name="MAX_BUNDLE_CONSTRAINTS",
