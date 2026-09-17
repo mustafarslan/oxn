@@ -55,6 +55,18 @@ class Indexer:
     #: it, and still writes the index -- verified rather than assumed, since the alternative
     #: is that one stale config costs a project its entire index.
     projects: str = ""
+    #: Files this indexer writes into the tree that OXN must remove again.
+    #:
+    #: **A tool that measures a repository may not modify it.** `scip-typescript
+    #: --infer-tsconfig` writes a `tsconfig.json` when it finds none, and OXN passes that flag
+    #: for JavaScript because without it the indexer reports "no files got indexed" and writes
+    #: nothing at all. So `oxn index` was leaving a config file behind in every JavaScript
+    #: project it touched -- `javascript-eslint` carried one, untracked, dated to the day the
+    #: entry was fixed, and *every JavaScript figure this project published was measured
+    #: against it* rather than against the repository's own `tsconfig.base.json`.
+    #:
+    #: Only a file OXN's own run created is removed. One the project already had is its own.
+    leaves_behind: tuple[str, ...] = ()
 
     def argv(self, root: Path, output: Path, project: Project) -> list[str]:
         values = {
@@ -130,7 +142,13 @@ INDEXERS: dict[str, Indexer] = {
         # then exits with "no files got indexed" rather than writing an empty index. So
         # JavaScript was wired, listed by `oxn doctor`, and unusable. Measured on a
         # two-file CommonJS package: 0 bytes without the flag, a 2,158-byte index with it.
+        #
+        # The flag stays, and is inert whenever `projects` finds anything: scip-typescript
+        # infers a config only when it was given none. It is still what makes a tree with no
+        # TypeScript configuration at all indexable.
         ("index", "--infer-tsconfig", "--output", "{output}", "--cwd", "{root}"),
+        projects="tsconfig*.json",
+        leaves_behind=("tsconfig.json",),
     ),
     "go": Indexer(
         "go",
@@ -233,18 +251,35 @@ def run_indexer(
         )
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(
-        indexer.argv(root, output, project),
-        cwd=str(root),
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-    )
+    existing = {name for name in indexer.leaves_behind if (root / name).exists()}
+    try:
+        result = subprocess.run(
+            indexer.argv(root, output, project),
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    finally:
+        # In `finally` because a run that failed is exactly when nobody looks, and the file
+        # would survive precisely then.
+        _remove_artifacts(root, indexer.leaves_behind, existing)
     if not output.exists():
         raise IndexerNotFound(f"{indexer.command} produced no index: {result.stderr.strip()[:400]}")
     _reject_empty(indexer, output, result.stderr)
     return output
+
+
+def _remove_artifacts(root: Path, named: tuple[str, ...], existing: set[str]) -> None:
+    """Delete the files this run created in the tree, and only those.
+
+    A config the project already had is the project's, even if the indexer would have written
+    an identical one; `existing` is sampled before the run for exactly that reason.
+    """
+    for name in named:
+        if name not in existing:
+            (root / name).unlink(missing_ok=True)
 
 
 def _reject_empty(indexer: Indexer, output: Path, stderr: str) -> None:

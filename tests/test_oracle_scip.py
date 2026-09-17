@@ -634,10 +634,33 @@ def test_javascript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     """The sixth language, and the one whose oracle was mostly being thrown away.
 
     On `javascript-eslint` (1,451 JavaScript files; the 36 TypeScript ones are graded under
-    TypeScript's row, not this one): L2 coverage **89.0% of declarations and 47.0% of call
-    sites** over the whole corpus, from a 52 MB index built in 20 s. L0/L1 scores **99.8%
-    precision when certain** at 65.7% confident recall, 74.9% overall at 100% recall, over
-    **13,221 graded call sites** -- the largest graded population of the six.
+    TypeScript's row, not this one): L2 coverage **87.6% of declarations and 52.1% of call
+    sites** over the whole corpus, from a 54 MB index built in 22 s. L0/L1 scores **99.8%
+    precision when certain** at 65.4% confident recall, 74.5% overall at 100% recall, over
+    **13,289 graded call sites** -- the largest graded population of the six.
+
+    **Every JavaScript figure published before 2026-09-17 was measured against a config OXN
+    wrote itself.** `--infer-tsconfig` writes a `tsconfig.json` where it finds none, and
+    eslint's was one line -- `{"allowJs": true}` -- sitting untracked in the corpus, dated to
+    the day this entry was fixed. The repository's own `tsconfig.base.json` sets `checkJs`,
+    `strict` and NodeNext resolution, and reading it instead moves call coverage **47.0% ->
+    52.1%**: joined sites 20,754 -> 23,009, resolved CALLS edges 13,317 -> 13,558, and every
+    directory improves -- `lib/` most, **51.9% -> 59.9%**. `Indexer.projects` passes the
+    project's root configs, and `Indexer.leaves_behind` deletes the inferred stub again,
+    because a tool that measures a repository may not modify it.
+
+    **Two costs, both stated rather than smoothed.** Declaration coverage falls 89.0% ->
+    87.6%, 67 fewer joined definitions; `types: ["node"]` cannot resolve without an installed
+    `node_modules`, so some of the base config's intent is unavailable here and the gain is
+    largely `checkJs` alone. REFERENCES edges fall 7,339 -> 5,500, which sounds worse than it
+    is: the dead-code surface reads those for reachability and reports **0 candidates on
+    eslint either way**. The two `tsconfig.types*.json` configs contribute nothing at all; the
+    whole gain is `tsconfig.base.json`.
+
+    **`tests/` is 71% of this corpus's call sites** -- 31,551 of 44,141, joining at 48.7% --
+    so the project-wide figure is mostly a statement about mocha and assert. Unlike nest,
+    though, that is not the whole story: `lib/` at 59.9% is still the lowest source-code row
+    in the table, and that residue belongs to the indexer rather than to the configuration.
 
     **It was 8,185 sites at 38.18% excluded until this run.** 5,036 of the 5,055 exclusions
     were `local N` symbols, which carry no descriptor and so could never satisfy a rule that
@@ -663,8 +686,9 @@ def test_javascript_l2_and_l0_l1_accuracy(tmp_path) -> None:
 
     **JavaScript's denominator, unlike TypeScript's, is nearly the whole tree**: 1,463 of 1,470
     documents matched and only 18 project files are unindexed, holding 126 call sites between
-    them. So 47.0% really is 47% of eslint, and the contrast with nest -- where the same figure
-    covers 18% of the tree -- is why `IngestReport.unindexed_files` exists.
+    them. So 52.1% really is 52% of eslint, and the contrast with nest -- where the same figure
+    covered 18% of the tree until its tests were indexed -- is why `IngestReport.unindexed_files`
+    exists.
 
     The precision figures are the lowest of the six, and are not explained here for the same
     reason TypeScript's high ones are not: one corpus is not a cause.
@@ -701,7 +725,16 @@ def test_javascript_l2_and_l0_l1_accuracy(tmp_path) -> None:
         report = ingest_index(indexer, index)
     assert report.definition_coverage >= 0.80, f"{report.definition_coverage:.1%}"
     assert report.call_coverage >= 0.42, (
-        f"{report.call_coverage:.1%} (below P5's 85%; see the receiver-fallback note above)"
+        f"{report.call_coverage:.1%}, still short of P5's 85%. `tests/` is 71% of this "
+        "corpus's call sites and joins at 48.7%, so the project-wide figure is largely a "
+        "statement about mocha and assert -- but `lib/` at 59.9% is the lowest source-code "
+        "row in the table, and that residue is the indexer's."
+    )
+    # The absolute count, because a ratio cannot tell a reverted config from a worse join:
+    # drop `projects` from the JavaScript entry and this falls back to 20,754.
+    assert report.joined_call_sites >= 22_500, (
+        f"{report.joined_call_sites:,} joined call sites; eslint's own `tsconfig.base.json` "
+        "is what takes this past 22,500, and an inferred stub is what it falls back to"
     )
 
     accuracy = measure_corpus(corpus, index, language="javascript")
