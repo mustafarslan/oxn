@@ -613,3 +613,65 @@ def test_a_reply_with_no_definition_is_left_for_the_define_check(harness) -> Non
     """
     reply = "Let me think.\n\n```python\nx = 1\n```\n\nStill thinking.\n"
     assert not harness._defines(harness._strip_fences(reply, "target"), "target")
+
+
+# ---- labelling the parameter under study -------------------------------------------------
+
+
+def _working_shred() -> object:
+    """A repair that passes everything the bed can check and is a shred by the static rule."""
+    from gauntlet import GauntletResult
+
+    return GauntletResult(
+        tests_pass=True,
+        lint_pass=True,
+        types_pass=True,
+        score_before=30.0,
+        score_after=5.0,
+        ceiling=12.0,
+        new_helpers={"a": 1.0, "b": 1.0, "c": 2.0, "d": 0.0},
+    )
+
+
+def test_a_shred_that_works_is_still_sent_to_the_judge() -> None:
+    """Otherwise the log can only ever confirm the number it was collected under.
+
+    `shredded` is computed from `MANY_HELPERS`, and the judge used to be gated on
+    `gauntlet.passed`, which includes `not shredded`. So every candidate with three or more
+    trivial helpers was refused by the parameter under study and never labelled, every judged
+    row came from below the threshold, and fitting the threshold to them would have recovered
+    the threshold. P10 wants fifty labelled extractions; fifty collected that way are worth
+    nothing, and the cost of finding out would have been the whole campaign.
+    """
+    from attempt import _worth_an_opinion
+
+    assert _worth_an_opinion(_working_shred()), "a working shred must still earn an opinion"
+
+
+def test_the_judge_still_cannot_rescue_a_shred() -> None:
+    """The ordering the harness calls its central claim, unchanged by the above.
+
+    Labelling a candidate and accepting it are different acts. `passed` still says no, so
+    `one_attempt` cannot accept it however the judge votes -- what changed is that there is
+    now an opinion on record next to the refusal, not that the refusal is softer.
+    """
+    assert not _working_shred().passed
+
+
+def test_the_logged_result_carries_the_verdicts_and_not_just_the_scores() -> None:
+    """All 44 rows written before this recorded `shredded: None` and `passed: None`.
+
+    Both are properties, `asdict` sees fields only, and nothing noticed because the numbers
+    beside them looked like a complete record. A log of scores with no verdict cannot answer
+    why a candidate was refused, which is the only question a calibration pass asks of it.
+    """
+    import json
+
+    from attempt import gauntlet_row
+
+    row = gauntlet_row(_working_shred())
+    assert row["shredded"] is True
+    assert row["passed"] is False
+    assert row["helper_count"] == 4
+    assert row["helper_median"] == 1.0
+    json.dumps(row), "must survive the JSONL writer, which `skipped` as a set would not"

@@ -16,6 +16,7 @@ from __future__ import annotations
 import difflib
 import time
 from dataclasses import asdict, dataclass
+from statistics import median
 from typing import TYPE_CHECKING, Any
 
 from actor import Ask, _defines, _feedback, ask_actor, ask_judge
@@ -103,7 +104,7 @@ def one_attempt(run: Run, index: int, feedback: str) -> Attempt | None:
         run.target.path,
         index,
         accepted,
-        asdict(gauntlet),
+        gauntlet_row(gauntlet),
         verdict,
         seconds=attempt.elapsed,
         candidate=candidate,
@@ -166,7 +167,7 @@ def _judge_if_it_earned_one(
     The judge cannot rescue a candidate, only reject one, and that ordering is the harness's
     central claim -- so it is expressed as control flow rather than as a convention.
     """
-    if not gauntlet.passed:
+    if not _worth_an_opinion(gauntlet):
         return {}
     try:
         return ask_judge(
@@ -174,6 +175,55 @@ def _judge_if_it_earned_one(
         )
     except Exception as error:  # noqa: BLE001 - an unavailable judge is a data point too
         return {"verdict": "unavailable", "error": str(error)[:200]}
+
+
+def _worth_an_opinion(gauntlet: GauntletResult) -> bool:
+    """Code that works, whether or not the shredding rule would have it.
+
+    **The shredding refusal is excluded here on purpose, and it is the difference between
+    collecting labels and confirming a constant.** `MANY_HELPERS` is what `shredded` is
+    computed from, so gating the judge on `gauntlet.passed` -- which includes `not shredded`
+    -- means a candidate with three trivial helpers is refused by the parameter under study
+    and never receives an independent opinion about it. Every judged row then comes from
+    below the threshold, and fitting the threshold to those rows recovers the threshold.
+    P10's `fit_when` asks for roughly fifty labelled extractions; fifty of those would have
+    been worth nothing.
+
+    So the judge is asked about anything that passed the bed's toolchain, the gate, the
+    ceiling and the improvement test, and `shredded` is recorded beside its answer rather
+    than standing in front of it. **This does not let a judge rescue a shred**: acceptance
+    still requires `gauntlet.passed`, and the judge can only ever reject. What it buys is the
+    disagreement rate on exactly the candidates the parameter decides, which is the one
+    signal that can move it.
+    """
+    return (
+        gauntlet.toolchain_pass
+        and gauntlet.gate_pass
+        and gauntlet.target_present
+        and gauntlet.improved
+        and gauntlet.under_ceiling
+    )
+
+
+def gauntlet_row(gauntlet: GauntletResult) -> dict[str, Any]:
+    """The result as JSON, **including the verdicts that are properties rather than fields**.
+
+    `asdict` sees fields only, so `passed` and `shredded` -- the two answers a reader of the
+    log actually wants -- were absent from all 44 rows written before this, leaving a record
+    of scores with no verdict attached. `skipped` is a set, which JSON has no spelling for.
+    """
+    row: dict[str, Any] = asdict(gauntlet)
+    row["skipped"] = sorted(gauntlet.skipped)
+    row.update(
+        passed=gauntlet.passed,
+        shredded=gauntlet.shredded,
+        improved=gauntlet.improved,
+        under_ceiling=gauntlet.under_ceiling,
+        toolchain_pass=gauntlet.toolchain_pass,
+        helper_count=len(gauntlet.new_helpers),
+        helper_median=median(gauntlet.new_helpers.values()) if gauntlet.new_helpers else None,
+    )
+    return row
 
 
 def _mark(label: str, gauntlet: GauntletResult) -> str:
