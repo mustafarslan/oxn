@@ -350,19 +350,40 @@ _ANTI_GAMING: tuple[Parameter, ...] = (
             "benchmarks/dogfood-log.jsonl holds ~50 labelled extractions; at that point this "
             "is a grid search over one scalar against judge and human labels. Three known "
             "tripwire edges are its job, not the rule's: helpers written just above the "
-            "threshold, helpers given a public name, and helpers given a second call site"
+            "threshold, helpers given a public name, and helpers given a second call site. "
+            "**It holds one, and the route is costed rather than close.** Counted 2026-09-17: "
+            "44 attempts and 5.1 hours of wall clock produced 4 candidates that extracted any "
+            "helper at all (9.1%) and 1 that also reached the judge (2.3%) -- the other 39 "
+            "never got there, failing tests, lint or types first, and 4 of the 5 accepted "
+            "repairs simplified without extracting anything. At that yield ~50 judged "
+            "extractions is ~2,200 attempts and ~221 hours of cloud-model time. The number to "
+            "move is the yield, not the patience: a harness aimed at functions that invite "
+            "extraction, on corpora rather than on this already-clean tree"
         ),
     ),
     Parameter(
         name="MANY_HELPERS",
         value=float(thresholds.MANY_HELPERS),
         evidence=Evidence.JUDGEMENT,
-        observations=0,
+        # The four extractions `benchmarks/dogfood-log.jsonl` has produced, evaluated at 3.
+        # Cost at the current value, not a fit -- and four is small enough that it is quoted
+        # rather than summarised.
+        observations=4,
         provenance=(
             "the smallest count that can mean 'many'; a three-way dispatch legitimately "
-            "extracts three, so the count alone was never going to be the discriminator"
+            "extracts three, so the count alone was never going to be the discriminator. "
+            "Measured on the four extractions logged so far: helper counts 2, 3, 3 and 6. "
+            "The count gate alone excluded one of the four, and the only cluster the shape "
+            "test flagged was the 6-helper one whose median score was 1.5 -- the 3-helper "
+            "candidates were let through by the *median*, which is the discriminator this "
+            "provenance says the count was never going to be"
         ),
-        fit_when="the same labelled set as TRIVIAL_HELPER",
+        fit_when=(
+            "the same labelled set as TRIVIAL_HELPER, whose entry now carries what that set "
+            "actually costs. This parameter needs less of it than that one: 3 decides whether "
+            "two helpers can be a shred, so the labels that bear on it are candidates "
+            "extracting exactly two. The log holds one such candidate in 44 attempts"
+        ),
     ),
 )
 

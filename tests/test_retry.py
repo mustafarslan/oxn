@@ -410,3 +410,20 @@ def test_no_repair_that_worked_ever_needed_a_third_attempt() -> None:
 
     assert landed == [1, 1, 1, 1, 2]
     assert budget.is_provisional
+
+
+def test_many_helpers_counts_the_extractions_it_was_observed_on() -> None:
+    """An *attempt* is not a labelled extraction, and the gap between them is the finding.
+
+    Most attempts never extract anything: they fail tests, lint or types first, or they
+    simplify the target without introducing a helper. Counting attempts as labels is what made
+    this parameter look close to fittable when it is not -- 44 attempts, 4 extractions, 1 of
+    them judged. This pins the claim to the file so the two cannot drift apart.
+    """
+    from oxn.calibration import parameters
+
+    extractions = [row for row in dogfood_rows() if (row.get("gauntlet") or {}).get("new_helpers")]
+    budget = next(parameter for parameter in parameters() if parameter.name == "MANY_HELPERS")
+
+    assert budget.observations == len(extractions)
+    assert budget.is_provisional
