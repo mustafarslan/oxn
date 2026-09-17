@@ -59,7 +59,7 @@ Anything failing these is **self-implemented**, or demoted to **dev/CI-only** us
   (Apache-2.0) — name resolution. See ADR-0002.
 - stdlib `sqlite3` for Code Graph persistence — zero dependency, transactional, cold-hook friendly.
 - LSP servers via a small client — resolution fallback.
-- `model2vec` (MIT) under `oxn[semantic]` — static embeddings without torch.
+- `model2vec` (MIT) under `oxn[semantic]` — static embeddings without torch. **Declined 2026-09-17, on the measurement this policy asks for.** The extra was sanctioned here and deferred in P8 until it could be compared against BM25 on the labels P8 built; those labels exist now, and `scripts/measure_semantic.py` runs the comparison. `potion-base-8M` scores P@1 0.440 against BM25's 0.610 on the external 100 pairs and 0.509 against 0.623 on OXN's own 53 — and reciprocal-rank fusion of the two is worse than BM25 alone on both, so there is not even a hybrid to recover. Sanctioned is not adopted: the entry stays as the record of a dependency considered and measured, which is what this ADR is for.
 - Joern (Apache-2.0), Z3 (MIT), clingo (MIT), Soufflé — research track only, never on the hook path.
 
 *Self-implemented:*
