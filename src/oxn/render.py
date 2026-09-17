@@ -15,10 +15,31 @@ import json
 import sys
 from collections import Counter
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:  # pragma: no cover
     from rich.console import Console
+
+
+class Warnable(Protocol):
+    """The three fields `warn_before_indexing` reads off a `scip.runner.Indexer`.
+
+    A structural type rather than the import, because this module is `foundation` in
+    `oxn.yaml` and `scip/` is outward of it -- the layer contract would reject the edge, and
+    rightly: presentation knowing the indexer registry is the coupling the split was for.
+
+    Read-only members, because `Indexer` is a frozen dataclass: a protocol that declares
+    plain attributes demands *settable* ones, and would not match it.
+    """
+
+    @property
+    def command(self) -> str: ...
+
+    @property
+    def caveat(self) -> str: ...
+
+    @property
+    def timeout(self) -> int: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -357,6 +378,27 @@ def _arch_unresolved(payload: dict[str, Any], console: Console) -> None:
     console.print(f"\n[bold]Unresolved imports[/bold] ({len(payload['unresolved_imports'])})")
     for item in payload["unresolved_imports"][:10]:
         console.print(f"  {item['source']}:{item['line']} -> [yellow]{item['specifier']}[/yellow]")
+
+
+def warn_before_indexing(indexer: Warnable, output: Output) -> None:
+    """Say what the indexer is about to do to the user's machine, before it does it.
+
+    Console-only by construction: under `--json` there is no console, and stdout has to stay
+    parseable. Silent for every indexer whose `caveat` is empty, which is all but Java.
+
+    The kill time is read off the indexer rather than written here. It was 1,800 s, then
+    2,400 s, and a literal in a warning is a number that goes stale while still looking
+    authoritative -- the same failure this project has already published a correction for.
+    """
+    console = output.console
+    if console is None or not indexer.caveat:
+        return
+    console.print(
+        f"[yellow]note[/yellow]  {indexer.command} {indexer.caveat}. Nothing is printed "
+        f"while it runs, and it is killed after {indexer.timeout}s.\n"
+        f"      [dim]oxn index --index-file <path.scip> ingests an index you built "
+        f"yourself.[/dim]\n"
+    )
 
 
 def _emit_index(payload: dict[str, Any], output: Output) -> None:

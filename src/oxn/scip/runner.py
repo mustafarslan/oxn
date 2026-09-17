@@ -86,6 +86,18 @@ class Indexer:
     #: `scip-java` runs Maven and is paying for dependency resolution and compilation rather
     #: than for indexing.
     timeout: int = 900
+    #: What running this indexer costs the *user's* machine, in one sentence, or empty when
+    #: it costs nothing worth saying.
+    #:
+    #: Only `scip-java` has one, and it is the difference between a tool that indexes and a
+    #: tool that *builds*: `oxn index --language java` runs Maven or Gradle over the user's
+    #: repository, and until this field existed nothing told them. The measured cost is 361 s
+    #: on 4,214 lines, `_spawn` captures the build's output rather than streaming it, and the
+    #: budget above is 2,400 s -- so the observable behaviour was a command that printed
+    #: nothing for up to forty minutes on a first run. Go's 1 s and rust-analyzer's 40 s are
+    #: not caveats and this stays empty for them, because a warning on every language is a
+    #: warning on none.
+    caveat: str = ""
 
     def argv(self, root: Path, output: Path, project: Project) -> list[str]:
         values = {
@@ -224,6 +236,7 @@ INDEXERS: dict[str, Indexer] = {
         # in the half that scales, so the budget is generous on purpose -- being killed
         # halfway through a build wastes everything already spent on it.
         timeout=2400,
+        caveat="runs this project's build (Maven or Gradle), not just an index",
     ),
 }
 
@@ -235,6 +248,29 @@ INDEXERS: dict[str, Indexer] = {
 #: the *distinction* is what `doctor` needs -- "not installed" and "not supported" are
 #: different answers, and only one of them is fixed by running a command.
 UNWIRED: dict[str, str] = {}
+
+
+def resolve_indexer(language: str) -> Indexer:
+    """The indexer for ``language``, or raise -- without running anything.
+
+    Split out of `run_indexer` so a caller can learn *what it is about to start* before it
+    starts. `oxn index --language java` runs the user's build, and the warning saying so may
+    only be printed when it is true: inside `run_indexer` the lookup and the `which` check
+    happened after the point where anyone could have spoken, so a caller printing beforehand
+    would have warned about a Maven build on machines with no `scip-java` installed at all.
+
+    Both failures stay here rather than at the call site, so there is one wording for "no
+    indexer for this language" and one for "not installed", and `run_indexer` keeps raising
+    exactly what it raised before.
+    """
+    indexer = INDEXERS.get(language)
+    if indexer is None:
+        raise IndexerNotFound(f"no SCIP indexer configured for {language!r}")
+    if shutil.which(indexer.command) is None:
+        raise IndexerNotFound(
+            f"{indexer.command} is not installed; get it with: {indexer.install_hint}"
+        )
+    return indexer
 
 
 def available_indexers() -> dict[str, str | None]:
@@ -271,13 +307,7 @@ def run_indexer(
     knowledge of how long a language takes belongs.
     """
     project = project or Project()
-    indexer = INDEXERS.get(language)
-    if indexer is None:
-        raise IndexerNotFound(f"no SCIP indexer configured for {language!r}")
-    if shutil.which(indexer.command) is None:
-        raise IndexerNotFound(
-            f"{indexer.command} is not installed; get it with: {indexer.install_hint}"
-        )
+    indexer = resolve_indexer(language)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     existing = {name for name in indexer.leaves_behind if (root / name).exists()}

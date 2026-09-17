@@ -416,8 +416,9 @@ def run_index(
 
     from oxn.config import Config
     from oxn.graph.indexer import Indexer
+    from oxn.render import warn_before_indexing
     from oxn.scip.ingest import ingest_index
-    from oxn.scip.runner import IndexerError, Project, run_indexer
+    from oxn.scip.runner import IndexerError, Project, resolve_indexer, run_indexer
 
     target = Path(paths[0]).resolve()
     if not target.exists():
@@ -438,6 +439,11 @@ def run_index(
                 scip_path = Path(index_file)
             else:
                 try:
+                    # Resolved first so the warning is printed only once the indexer is
+                    # known to exist: `oxn index --language java` starts the user's build,
+                    # and a machine without `scip-java` should get the install hint, not a
+                    # note about Maven.
+                    warn_before_indexing(resolve_indexer(language), output)
                     scip_path = run_indexer(
                         language,
                         target,

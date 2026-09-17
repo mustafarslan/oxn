@@ -70,6 +70,10 @@ def run_doctor(console: Console) -> None:
         path = found[language]
         if path:
             console.print(f"  [green]ok[/green]    {language:11s} {indexer.command} -> {path}")
+            # A user asking what they have should learn what it costs here, before the run
+            # rather than during it.
+            if indexer.caveat:
+                console.print(f"        [dim]{indexer.caveat}; up to {indexer.timeout}s[/dim]")
         else:
             console.print(
                 f"  [dim]--[/dim]    {language:11s} {indexer.command} not found "

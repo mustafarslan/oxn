@@ -153,3 +153,123 @@ def test_each_language_carries_its_own_budget() -> None:
     """Java's is the outlier and the reason is Maven, not indexing."""
     assert INDEXERS["java"].timeout == 2400
     assert INDEXERS["go"].timeout == 900
+
+
+def _rendered(indexer: Indexer) -> str:
+    """What a person would see on the console before that indexer is started."""
+    import io
+
+    from rich.console import Console
+
+    from oxn.render import Output, warn_before_indexing
+
+    stream = io.StringIO()
+    warn_before_indexing(indexer, Output(console=Console(file=stream, width=100)))
+    return stream.getvalue()
+
+
+def test_the_java_indexer_says_it_will_run_the_build_before_it_runs_it() -> None:
+    """`oxn index --language java` starts Maven, and nothing used to say so.
+
+    The observable behaviour was a command that printed nothing at all for up to its 2,400 s
+    budget while `scip-java` resolved dependencies and compiled -- 361 s measured on
+    petclinic's 4,214 lines. The cost was recorded in a source comment, which is the one
+    audience that did not need it.
+    """
+    text = _rendered(INDEXERS["java"])
+    assert INDEXERS["java"].caveat in text
+    # The kill time is read off the indexer, never written into the sentence: this number has
+    # already been 1,800 and 2,400, and a literal in a warning goes stale while still reading
+    # as authoritative.
+    assert str(INDEXERS["java"].timeout) in text
+    # The escape hatch belongs in the same breath as the warning.
+    assert "--index-file" in text
+
+
+def test_a_language_that_costs_nothing_worth_saying_prints_nothing() -> None:
+    """A warning on every language is a warning on none.
+
+    Go indexes `go-kit` in 1 s and `rust-analyzer` does `ripgrep` in 40. Neither is a caveat,
+    and both stay silent -- which is what makes the Java line worth reading.
+    """
+    assert _rendered(INDEXERS["go"]) == ""
+    assert all(not INDEXERS[language].caveat for language in INDEXERS if language != "java")
+
+
+def test_json_output_carries_no_warning_because_stdout_must_stay_parseable() -> None:
+    from oxn.render import TO_JSON, warn_before_indexing
+
+    # No console means `--json`; the note would corrupt the only thing a machine reads.
+    warn_before_indexing(INDEXERS["java"], TO_JSON)
+
+
+def test_resolving_an_indexer_answers_before_anything_is_started() -> None:
+    """The lookup is split out so a caller can learn what it is about to start.
+
+    Both failures stay inside `resolve_indexer` rather than moving to the call site, so there
+    is one wording for each and `run_indexer` raises exactly what it raised before.
+    """
+    from oxn.scip.runner import IndexerNotFound, resolve_indexer
+
+    with pytest.raises(IndexerNotFound, match="no SCIP indexer configured"):
+        resolve_indexer("cobol")
+
+
+def test_an_uninstalled_indexer_gets_the_install_hint_and_not_the_build_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Warning about a Maven build on a machine that cannot run one is worse than silence.
+
+    This is the reason the lookup had to come out of `run_indexer`: inside it, the `which`
+    check happened after the last point at which anyone could have spoken, so a caller
+    printing beforehand would have warned every user who had no `scip-java` at all.
+    """
+    import io
+
+    from rich.console import Console
+
+    from oxn.render import Output
+    from oxn.report import run_index
+
+    monkeypatch.setattr(runner.shutil, "which", lambda _command: None)
+    stream = io.StringIO()
+    payload = run_index(
+        [str(tmp_path)], Output(console=Console(file=stream, width=100)), language="java"
+    )
+
+    assert payload["status"] == "ERROR"
+    assert "coursier install --contrib scip-java" in payload["errors"]["java"]
+    # The caveat itself, not the word "build": the install hint ends "needs a JDK and the
+    # project's build tool", so a substring check on "build" passes for the wrong reason.
+    assert INDEXERS["java"].caveat not in stream.getvalue()
+
+
+def test_the_warning_is_printed_before_the_indexer_is_started(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Order is the whole point: a warning after a 361 s build is not a warning.
+
+    `run_indexer` is replaced with one that fails immediately, so the note can only be on the
+    console if it was written *before* the call -- which is what this asserts, without waiting
+    for Maven.
+    """
+    import io
+
+    from rich.console import Console
+
+    from oxn import report
+    from oxn.render import Output
+    from oxn.scip.runner import IndexerError
+
+    def _never_runs(*_args: object, **_kwargs: object) -> Path:
+        raise IndexerError("scip-java exploded")
+
+    monkeypatch.setattr(runner.shutil, "which", lambda command: f"/fake/{command}")
+    monkeypatch.setattr(runner, "run_indexer", _never_runs)
+    stream = io.StringIO()
+    payload = report.run_index(
+        [str(tmp_path)], Output(console=Console(file=stream, width=100)), language="java"
+    )
+
+    assert payload["status"] == "ERROR"
+    assert INDEXERS["java"].caveat in stream.getvalue()
