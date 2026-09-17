@@ -567,6 +567,25 @@ class GraphStore:
         self.close()
 
 
+def incomplete_paths(store: GraphStore) -> set[str]:
+    """Paths whose stored tree had an error node.
+
+    `parse_incomplete` was persisted from the first schema and read back by nothing, so a file
+    that failed to parse was reported on the run that parsed it and never again: the second
+    `oxn check` came back clean because the row was a cache hit.
+
+    A module function rather than a method, and the gate is what said so. `GraphStore` is
+    baselined at 26 methods against a ceiling of 12, and the baseline may not grow -- adding a
+    27th made `methods_per_class` and `weighted_methods_per_class` regress on the commit that
+    added it. The rule was right: a read-only query needs nothing from the class but its
+    connection, and hanging it off a type already twice over its ceiling is how that number
+    got there. One statement for the whole tree, not one per file, so a healthy run pays a
+    single query to find a case it almost never has.
+    """
+    rows = store._conn.execute("SELECT path FROM files WHERE parse_incomplete = 1")  # noqa: SLF001
+    return {str(row[0]) for row in rows}
+
+
 def _has_measurements(conn: sqlite3.Connection, path: str) -> bool:
     """Whether anything in this file has been measured at all. Module-level: see `rows.py`."""
     found = conn.execute(

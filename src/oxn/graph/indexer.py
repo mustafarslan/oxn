@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 from oxn.graph.builder import build_file, content_sha
 from oxn.graph.model import Entity, EntityKind, EntityMetrics, MetricValue
 from oxn.graph.sources import iter_source_files
-from oxn.graph.store import DEFAULT_CACHE_PATH, GraphStore
+from oxn.graph.store import DEFAULT_CACHE_PATH, GraphStore, incomplete_paths
 from oxn.profiles import profile_for_path
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -240,6 +240,13 @@ class Indexer:
             rel = self.relative(path)
             seen.add(rel)
             self._record(path, rel, report, force=force)
+
+        # A parse failure is a property of the file, not of this run. `_record` can only see
+        # the files it actually parsed, so a second `oxn check` over an unchanged tree came
+        # back with an empty list and a clean bill of health -- the cache hit hid exactly the
+        # thing the cache had recorded.
+        stored = incomplete_paths(self.store) & seen
+        report.incomplete = sorted(set(report.incomplete) | stored)
 
         if roots is None:
             for stale in self.store.known_paths() - seen:

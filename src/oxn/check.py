@@ -264,6 +264,7 @@ def _rule_findings(
     with _indexer(settings) as indexer:
         index = indexer.index(targets)
         report.errors.update(index.errors)
+        unparseable = _unparseable_findings(indexer, index.incomplete)
         sources = indexer.sources(targets)
         wanted = [indexer.relative(path) for path in sources]
         report.paths = wanted
@@ -278,7 +279,76 @@ def _rule_findings(
         if deep:
             rules.append(unscoped_rule())
 
-    return [_as_finding(found) for found in evaluate(rules, facts)]
+    # Appended rather than evaluated: the rule engine is the gate (ADR-0005), and this is
+    # not a rule -- it is the gate saying it could not measure a file at all. The parity
+    # tests compare `evaluate(...)` against the hand-coded oracle directly and never call
+    # this function, so the two stay byte-identical on everything that *is* a rule.
+    return [_as_finding(found) for found in evaluate(rules, facts)] + unparseable
+
+
+#: The rule name for a file OXN could not parse. Not a ceiling and not a rule-engine finding:
+#: a rule needs facts, and this is the case where the file produced none.
+#:
+#: **It is about syntax, not validity.** A tree-sitter grammar is more permissive than a
+#: compiler -- `foo(bar=1, 2)` parses clean and CPython rejects it -- so this catches a file
+#: the parser cannot read, never a program that will not run. OXN is not a type checker.
+UNPARSEABLE = "unparseable"
+
+
+def _unparseable_findings(indexer: Any, paths: list[str]) -> list[Finding]:
+    """One blocking finding per file whose tree has an error node.
+
+    **Blocking, and it took reading the hook contract to know that is the only option.** The
+    semantically tempting home is `report.errors`, which already means "OXN could not measure
+    this" and already renders. But `errors` exits `EXIT_ERROR`, which is 1, and Claude Code's
+    `PostToolUse` shows stderr to the agent and blocks the edit *only* on exit 2. A syntax
+    error routed there would be reported and not enforced -- worse than the hole it closes,
+    because it looks handled.
+
+    The files are re-parsed here rather than carrying a line number through the cache. There
+    is nowhere to put one without a schema migration, the list is empty on every healthy run,
+    and when it is not empty it holds the file the agent just broke.
+    """
+    from oxn.languages import get_parser
+    from oxn.profiles import profile_for_path
+
+    findings = []
+    for relative in paths:
+        line = _first_error_line(indexer.root / relative, get_parser, profile_for_path)
+        findings.append(
+            Finding(
+                rule=UNPARSEABLE,
+                path=relative,
+                entity=relative,
+                line=line,
+                value=1,
+                ceiling=0,
+                detail=f"could not be parsed; first error at line {line}",
+            )
+        )
+    return findings
+
+
+def _first_error_line(path: Path, get_parser: Any, profile_for_path: Any) -> int:
+    """Line of the first ERROR or MISSING node, or 1 when the file will not open.
+
+    Breadth-first, so the line reported is the outermost failure rather than the deepest one
+    under it -- the place a person would start reading.
+    """
+    profile = profile_for_path(str(path))
+    if profile is None:
+        return 1
+    try:
+        tree = get_parser(profile.grammar).parse(path.read_bytes())
+    except OSError:
+        return 1
+    queue = [tree.root_node]
+    while queue:
+        node = queue.pop(0)
+        if node.type == "ERROR" or node.is_missing:
+            return int(node.start_point[0]) + 1
+        queue.extend(node.children)
+    return 1
 
 
 def _note_ungoverned(
@@ -512,7 +582,9 @@ def _apply_baseline(
     forgiven: list[Finding] = []
     regressed: list[Finding] = []
     for finding in findings:
-        recorded = baseline.get(finding.key)
+        # Belt and braces: `write_baseline` will not record one, but a hand-edited baseline
+        # could still name it, and a forgiven parse error is a permanently unmeasured file.
+        recorded = None if finding.rule == UNPARSEABLE else baseline.get(finding.key)
         if recorded is None:
             failing.append(finding)
         elif finding.value > recorded:
@@ -526,9 +598,15 @@ def write_baseline(report: CheckReport, path: Path) -> int:
     """Record every current violation so only *new* ones fail. Returns how many were recorded."""
     from oxn import __version__
 
+    # `unparseable` is deliberately not recordable. A baseline says "this debt is accepted
+    # and may not grow", which is a coherent thing to say about a function that is too complex
+    # and an incoherent one about a file the parser cannot read: there is no number to ratchet,
+    # and forgiving it would mean every later run measures a tree with that file missing and
+    # calls it clean. `oxn baseline` on a broken tree must leave the breakage failing.
     recorded = {
         finding.key: finding.value
         for finding in [*report.findings, *report.baselined, *report.regressed]
+        if finding.rule != UNPARSEABLE
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(

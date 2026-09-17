@@ -443,3 +443,103 @@ def test_a_project_with_no_contracts_is_not_warned_about_coverage(tmp_path, monk
 
     assert report.ungoverned == []
     assert not any("governed layer" in note for note in report.diagnostics), report.diagnostics
+
+
+# ---- a file the parser cannot read ------------------------------------------------------
+
+#: Unambiguously unparseable: `def broken(:` is not a function signature in any grammar.
+#: The valid line after it is deliberate -- the failure must be reported at the first error,
+#: not at the end of the file.
+BROKEN = "def fine(a):\n    return a\n\n\ndef broken(:\n    return 1\n"
+
+
+def test_a_file_that_cannot_be_parsed_blocks(project) -> None:
+    """Counted as checked and clean until 2026-09-17, which is the wrong answer for a gate.
+
+    The whole job is catching what an agent just wrote, and "0 violations, exit 0" on a file
+    the parser could not read is the one answer that must not be given: every pass drops such
+    a file -- import graph, duplication, symbol index, resolution -- so the clean bill of
+    health is over a tree with the file missing.
+    """
+    (project / "broken.py").write_text(BROKEN)
+    report = run_check(["broken.py"])
+
+    assert not report.passed
+    # Exit 2, not 1. Claude Code's PostToolUse contract blocks the edit and shows stderr to
+    # the agent only on 2; `EXIT_ERROR` would report this and let the edit through.
+    assert report.exit_code == EXIT_VIOLATIONS
+    assert [finding.rule for finding in report.blocking] == ["unparseable"]
+    assert report.blocking[0].path == "broken.py"
+
+
+def test_the_first_error_line_is_named(project) -> None:
+    """`could not be parsed` without a *where* is not remediation an agent can act on."""
+    (project / "broken.py").write_text(BROKEN)
+    report = run_check(["broken.py"])
+
+    assert report.blocking[0].line == 5, BROKEN.splitlines()[report.blocking[0].line - 1]
+    assert "line 5" in str(report.blocking[0])
+
+
+def test_the_second_run_still_fails(project) -> None:
+    """The cache hid exactly what the cache had recorded.
+
+    `parse_incomplete` is persisted and was read back by nothing, and `_record` can only see
+    files it actually parsed -- so the first run reported the breakage and every run after it
+    came back clean, which is the run a person is more likely to be looking at.
+    """
+    (project / "broken.py").write_text(BROKEN)
+    assert run_check(["broken.py"]).exit_code == EXIT_VIOLATIONS
+    assert run_check(["broken.py"]).exit_code == EXIT_VIOLATIONS
+
+
+def test_a_clean_file_beside_a_broken_one_is_unaffected(project) -> None:
+    """One unreadable file must not condemn the tree, nor be hidden by it."""
+    (project / "broken.py").write_text(BROKEN)
+    (project / "calm.py").write_text(CALM)
+    report = run_check(["."])
+
+    assert {finding.path for finding in report.blocking} == {"broken.py"}
+    assert set(report.paths) == {"broken.py", "calm.py"}
+
+
+def test_it_is_about_syntax_and_not_validity(project) -> None:
+    """Tree-sitter is more permissive than a compiler, and the rule says only what it means.
+
+    `f(bar=1, 2)` is a positional argument after a keyword one: CPython rejects it and the
+    grammar accepts it. OXN is not a type checker and must not imply that it is -- claiming
+    this catches broken *programs* rather than broken *syntax* would be a promise it cannot
+    keep on any of the six languages.
+    """
+    (project / "legal_to_parse.py").write_text("def f():\n    return g(bar=1, 2)\n")
+    report = run_check(["legal_to_parse.py"])
+
+    assert not [finding for finding in report.blocking if finding.rule == "unparseable"]
+
+
+def test_a_parse_failure_cannot_be_baselined(project) -> None:
+    """A baseline says "accepted, and may not grow", which this has no coherent reading of.
+
+    There is no number to ratchet, and forgiving it would mean every later run measures a
+    tree with that file missing and calls it clean.
+    """
+    (project / "broken.py").write_text(BROKEN)
+    report = run_check(["broken.py"])
+    recorded = write_baseline(report, project / ".oxn" / "baseline.json")
+
+    assert recorded == 0
+    assert run_check(["broken.py"]).exit_code == EXIT_VIOLATIONS
+
+
+def test_a_hand_edited_baseline_cannot_forgive_one_either(project) -> None:
+    """`write_baseline` will not record it, but a person can still type it in."""
+    (project / "broken.py").write_text(BROKEN)
+    baseline = project / ".oxn" / "baseline.json"
+    baseline.parent.mkdir(parents=True, exist_ok=True)
+    baseline.write_text(
+        json.dumps({"violations": {"unparseable|broken.py|broken.py": 1.0}, "scope": "files"})
+    )
+
+    report = run_check(["broken.py"])
+    assert report.exit_code == EXIT_VIOLATIONS
+    assert not report.baselined

@@ -545,6 +545,33 @@ The acceptance gate for a language profile is **agreement**, not parsing. Identi
 transliterated into all six launch languages must score identically, and that test found
 three bugs here that no single-language test could.
 
+### A file that does not parse is a violation, not a silence
+
+**5 of 5,580 corpus files fail to parse, 0.090%** (`scripts/measure_parse_errors.py`,
+2026-09-17), which is what made it safe to let rule `unparseable` fail the gate. Until then a
+file the parser could not read was counted as checked and clean -- and every pass drops such a
+file without a word, so the clean answer was over a tree with the file missing.
+
+The channel was decided by the hook contract rather than by taste. `report.errors` is the
+semantically obvious home and exits `EXIT_ERROR`, which is 1; Claude Code's `PostToolUse`
+blocks the edit and shows stderr to the agent only on exit **2**. A syntax error routed
+through `errors` would be reported and not enforced, which is worse than the hole it closes
+because it looks handled. So it is a blocking `Finding`, and it cannot be baselined: a
+baseline means "accepted, and may not grow", which has no coherent reading here -- there is no
+number to ratchet, and forgiving it would make every later run measure the tree without it.
+
+**What it is not is a compiler.** Tree-sitter grammars are more permissive than the languages
+they parse: `f(bar=1, 2)` is a positional argument after a keyword one, which CPython rejects
+and the grammar accepts. The rule catches a file the *parser* cannot read, never a program
+that will not run.
+
+The residual 5 are two causes, and the honest caveat is the first:
+
+| files | cause | false positive? |
+|---|---|---|
+| 2 (`typescript-nest`) | `@((...)())`, a parenthesised decorator the pack's TS grammar predates | **yes** |
+| 3 (`adr-tessellation`) | `swagger-ui*.js`, vendored minified bundles, first line 184,623 chars | not source |
+
 ### One language, two grammars: `.tsx`
 
 **Six launch languages, seven grammars.** `tree-sitter-typescript` ships `typescript` and

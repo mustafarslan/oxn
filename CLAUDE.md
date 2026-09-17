@@ -12,6 +12,11 @@ invariant, and the JSON names the entity, the rule and the number.
   helpers to get under a ceiling. That is reported as rule `shredding`, which totals a
   function together with the private, trivial helpers only it calls: dedicated helpers do
   not raise the budget.
+* A file OXN cannot **parse** fails the gate as rule `unparseable`, naming the first error
+  line. This is about *syntax*, not validity: tree-sitter is more permissive than a compiler,
+  so `f(bar=1, 2)` parses clean and only CPython objects. It blocks because every other pass
+  silently drops a file whose tree has an error node, so the alternative is a clean bill of
+  health over a tree with that file missing. It cannot be baselined.
 * `.oxn/baseline.json` records pre-existing debt. It may not grow: a baselined violation
   that gets worse fails the build exactly as a new one does.
 * The loop is bounded. After `retry_budget` failed repairs of the *same* violation, the
