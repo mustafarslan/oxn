@@ -15,8 +15,8 @@ import pytest
 from oxn.graph.algos import (
     condensation,
     cycles,
-    minimum_feedback_arcs,
     levels,
+    minimum_feedback_arcs,
     modularity,
     shortest_path,
     strongly_connected_components,

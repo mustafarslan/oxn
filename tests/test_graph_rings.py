@@ -12,7 +12,6 @@ import pytest
 
 from oxn.graph.algos import minimum_feedback_arcs
 from oxn.graph.rings import rings_and_cuts
-
 from test_graph_algos import random_graph
 
 #: clingo is an optional extra, never a runtime dependency (ADR-0001, `oxn[asp]`).
