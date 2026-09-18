@@ -123,13 +123,18 @@ def test_every_bed_is_pinned_and_every_eval_pin_is_a_bed(harness) -> None:
     The five OSS beds are pinned `use: threshold`, because they are the same repositories
     the ceilings were calibrated against. That is a feature: P11 asks for "real layered OSS
     repos" as a bed, and these are already chosen, already argued for, and already on disk.
+
+    Keyed on `Bed.corpus`, not on the bed's name. They agreed for as long as every bed was
+    named after the repository it fetched, and the first bed to draw on a pin of its own --
+    `typescript-nest`, which fetches `typescript-nest-bed` so its pin can move without
+    moving the threshold corpus's -- made the two names different and this test wrong.
     """
     import re
     from pathlib import Path
 
     manifest = (Path(harness.ROOT) / "benchmarks" / "manifest.yaml").read_text()
     blocks = dict(re.findall(r"- name: (\S+)\n(.*?)(?=\n  - name:|\Z)", manifest, re.S))
-    declared = {name for name, found in harness.BEDS.items() if found.corpus}
+    declared = {found.corpus for found in harness.BEDS.values() if found.corpus}
 
     assert declared <= set(blocks), f"unpinned beds: {sorted(declared - set(blocks))}"
     eval_pins = {name for name, block in blocks.items() if "use: eval" in block}

@@ -281,7 +281,7 @@ _OSS: dict[str, Bed] = {
     ),
     "typescript-nest": Bed(
         name="typescript-nest",
-        corpus="typescript-nest",
+        corpus="typescript-nest-bed",
         sources=("packages",),
         # **`npm test` cannot run without an install, and this bed declared no `prepare`** --
         # the same family of defect as httpx's, which installed nothing and scored `tests
@@ -291,20 +291,23 @@ _OSS: dict[str, Bed] = {
         # pin it cannot succeed -- see `blocked_on`.
         verify=(("tests", "npm", "test"), ("lint", "npm", "run", "lint")),
         blocked_on=(
-            "this pin's dependency tree cannot be installed, by either command, and neither "
-            "failure is something a repair here causes or fixes. `npm ci` refuses outright: "
-            "the committed `package-lock.json` is out of sync with `package.json`, pinning "
-            "`@nestjs/apollo` and `@nestjs/graphql` at 13.4.5 where the manifest asks for "
-            "14.0.0 -- upstream bumped the manifest without regenerating the lock. Falling "
-            "back to `npm install` abandons the pin, and then hits a genuine conflict: "
-            "`@apollo/server@5.5.1` requires `graphql@^16.11.0` while `@nestjs/apollo@14` "
-            "admits `^17.0.0`, which is what resolves. `--legacy-peer-deps` would install a "
-            "tree npm itself calls invalid, and a bed whose dependencies are wrong reports "
-            "`tests FAIL` for reasons that have nothing to do with the repair -- which is "
-            "the failure this file exists to stop repeating. The fix is a corpus re-pin to "
-            "a commit whose lock is in sync, and that is not free: `benchmarks/lock.json` "
-            "is the same checkout the ceiling, duplication and retrieval numbers were "
-            "measured against, so moving it moves them"
+            "nest's dependency tree does not install under `npm ci`, and this is upstream "
+            "rather than a pin chosen badly. Three releases were tried on 2026-09-19 and "
+            "each failed differently: v12.0.3 on graphql 17.0.2 against "
+            "`@apollo/cache-control-types`' peer range of 14.x-16.x, v11.1.27 on "
+            "`@typescript-eslint/eslint-plugin@8.60.0` wanting parser `^8.60.0` where the "
+            "lock holds 8.59.3, and v11.1.20 on EUSAGE -- the workspace versions of "
+            "`@nestjs/common` and `@nestjs/core` are simply absent from its lock. At every "
+            "tag checked all 109-110 *direct* dependencies match the lock exactly, so the "
+            "fault is in transitive peers and nothing short of running the resolver finds "
+            "it. `--legacy-peer-deps` is not the answer: it installs a tree npm itself "
+            "calls invalid, and a bed whose dependencies are wrong reports `tests FAIL` "
+            "for reasons no repair caused -- the failure this file exists to stop "
+            "repeating. **What changed is the price of the fix, not the verdict.** The bed "
+            "now draws on `typescript-nest-bed`, a separate manifest entry from the "
+            "`typescript-nest` threshold corpus, so adopting a release that does install "
+            "is one line here and moves no recorded number. It used to mean re-pinning the "
+            "checkout the ceiling, duplication and retrieval numbers were measured against"
         ),
         why="TypeScript, and a framework whose whole subject is layering.",
     ),

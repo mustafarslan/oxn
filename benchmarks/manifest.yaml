@@ -36,6 +36,31 @@ corpora:
       (arXiv:2605.06445) to layer architectural constraints L0..L3. Gives OXN a directly
       comparable setup for the constraint-budgeting arm of P11.
 
+  # A gauntlet bed only, and deliberately a *different pin* from the `typescript-nest`
+  # threshold corpus below. The bed needs a tree whose dependencies install, because a bed
+  # that cannot build reports `tests FAIL` for reasons no repair caused or could fix; the
+  # threshold corpus needs a tree that never moves, because the ceiling, duplication and
+  # retrieval numbers were all measured against it. Those are different requirements, and
+  # for a year they were served by one entry -- which is why the bed sat blocked rather
+  # than re-pinned: the only fix on offer moved every recorded number.
+  #
+  # Pinned to a release tag rather than `master`: `--pin` re-resolves a branch, and a bed
+  # whose checkout moves underneath a recorded result is the thing this file exists to stop.
+  - name: typescript-nest-bed
+    use: eval
+    language: typescript
+    url: https://github.com/nestjs/nest
+    ref: v11.1.27
+    why: >
+      The gauntlet's TypeScript bed, and currently a pin that does not install -- kept
+      because the entry is what makes the fix free when one does. Measured 2026-09-19:
+      `npm ci` fails at v12.0.3 (graphql 17.0.2 against @apollo/cache-control-types'
+      peer of 14.x-16.x), at v11.1.27 (@typescript-eslint/eslint-plugin 8.60.0 wanting
+      parser ^8.60.0 where the lock has 8.59.3), and at v11.1.20 (EUSAGE: the workspace
+      versions @nestjs/common and @nestjs/core 11.2.5 are absent from the lock). All 109
+      to 110 *direct* dependencies match the lock at every tag checked, so the fault is
+      transitive peers and no static check predicts it -- only the resolver finds it.
+
   # ---- threshold calibration + robustness ------------------------------------------
   # Chosen for layered or explicitly modular architectures, since layer-conformance is
   # what OXN gates on. Kept deliberately small in number; breadth matters more than size.
