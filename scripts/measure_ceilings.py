@@ -116,6 +116,12 @@ BEDS: tuple[Bed, ...] = (
     Bed("python-airflow", "python"),
     Bed("go-kit", "go"),
     Bed("rust-ripgrep", "rust"),
+    # The second Rust repository, and the reason `MAX_FILE_SLOC` asked for one. ripgrep
+    # exceeds the file ceiling at 20.91%, five times the next language, and one repository
+    # cannot separate "Rust is written this way" from "ripgrep is written this way". tokio is
+    # chosen to disagree if the answer is house style: a many-contributor async runtime
+    # library against a single-author CLI tool, 799 files against 110.
+    Bed("rust-tokio", "rust"),
     Bed("java-spring-petclinic", "java"),
     Bed("typescript-nest", "typescript"),
     Bed("javascript-eslint", "javascript", ("docs/", "tests/bench/", "tests/performance/")),

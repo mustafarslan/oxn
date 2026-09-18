@@ -134,11 +134,11 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_COGNITIVE_COMPLEXITY",
         value=float(thresholds.MAX_COGNITIVE_COMPLEXITY),
         evidence=Evidence.JUDGEMENT,
-        observations=76805,
+        observations=84323,
         provenance=(
             "12, between idea.md's proposed 8 and SonarSource's default 15. Neither endpoint "
             "is measured either: 15 is a product default, not a finding. Measured cost: it "
-            "rejects 0.53% (java) to 10.57% (javascript) of named callables across the seven corpora."
+            "rejects 0.53% (java) to 10.57% (javascript) of named callables across the eight corpora."
         ),
         fit_when=(
             "not an unweighted percentile -- p95 of these distributions is 2 in TypeScript and 9 "
@@ -152,7 +152,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_CYCLOMATIC_COMPLEXITY",
         value=float(thresholds.MAX_CYCLOMATIC_COMPLEXITY),
         evidence=Evidence.LITERATURE,
-        observations=76805,
+        observations=84323,
         provenance=(
             "McCabe (1976); NIST SP 500-235 discusses 10 and 15 as the usual band. Measured "
             "cost: rejects 0.48% (typescript) to 5.11% (javascript) of named callables."
@@ -163,7 +163,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_PARAMETERS",
         value=float(thresholds.MAX_PARAMETERS),
         evidence=Evidence.LITERATURE,
-        observations=76805,
+        observations=84323,
         provenance=(
             "Fowler, Refactoring (Long Parameter List); the 4-5 band from Clean Code. "
             "Measured cost: rejects 0.00% (java) to 3.62% (python) of named callables -- the "
@@ -175,7 +175,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_NESTING_DEPTH",
         value=float(thresholds.MAX_NESTING_DEPTH),
         evidence=Evidence.JUDGEMENT,
-        observations=76805,
+        observations=84323,
         provenance=(
             "conventional; nesting is what cognitive complexity already charges for. Measured "
             "cost: rejects 0.00% (go, java) to 0.46% (javascript) of named callables -- the least "
@@ -209,7 +209,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_FUNCTION_SLOC",
         value=float(thresholds.MAX_FUNCTION_SLOC),
         evidence=Evidence.JUDGEMENT,
-        observations=76805,
+        observations=84323,
         provenance=(
             "conventional rather than derived. Measured cost: rejects 0.53% (java) to 8.16% "
             "(javascript) of named callables."
@@ -220,41 +220,46 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_FILE_SLOC",
         value=float(thresholds.MAX_FILE_SLOC),
         evidence=Evidence.JUDGEMENT,
-        observations=11609,
+        observations=12408,
         provenance=(
-            "conventional rather than derived, and the one ceiling the measurement argues "
-            "with. Measured cost across 11,609 files: 0.00% (java), 0.39% (go), 1.58% "
-            "(typescript), 6.26% (python-airflow), 8.33% (python-httpx), 14.96% "
-            "(javascript), **20.91% (rust)** -- a spread where every other ceiling holds "
-            "inside 20x. The Rust files above it are hand-written core, not generated: "
-            "ripgrep's flag table (6,916), its printer (3,220), its directory walker "
-            "(1,899). **The second Python repository is in, and the two Python numbers "
-            "disagree by a third**: 8.33% on httpx's 60 files against 6.26% on airflow's "
-            "7,813. That is the answer to half of what `fit_when` asked -- a per-language "
-            "rate is not a property of the language, it is a property of the repository, and "
-            "airflow is 130x the sample. Held at 500, and now for a better reason than "
-            "before: the evidence for a per-language ceiling got weaker, not stronger."
+            "conventional rather than derived, and the one ceiling the measurement argued "
+            "with until the argument was settled. Measured cost across 12,408 files: 0.00% "
+            "(java), 0.39% (go), 1.58% (typescript), **4.51% (rust-tokio)**, 6.26% "
+            "(python-airflow), 8.33% (python-httpx), 14.96% (javascript), **20.91% "
+            "(rust-ripgrep)**.\n\n"
+            "**Read that list for what it now contains: the two Rust repositories are at "
+            "opposite ends of it.** ripgrep is the highest rate of any corpus and tokio is "
+            "the fourth lowest, a 4.6x gap inside one language, with tokio carrying seven "
+            "times the files. Python does the same thing more quietly, 8.33% against 6.26%. "
+            "Two repositories in the same language disagree by more than most languages "
+            "disagree with each other, and that is the whole answer: file length is a "
+            "property of a repository, not of a language. ripgrep's flag table (6,916 "
+            "lines), printer (3,220) and directory walker (1,899) are hand-written core "
+            "rather than generated -- they are how ripgrep is written, and tokio is the "
+            "control that says so. Held at 500, and `oxn.yaml` is how a project that writes "
+            "like ripgrep raises it."
         ),
         fit_when=(
-            "a second Rust repository, and it is now the only half left. Python's two "
-            "repositories differ by a third at the same ceiling, so if Rust's 20.91% also "
-            "moves under a second repository then 'per-language' is the wrong shape for this "
-            "number and the honest conclusion is that file length is a house style rather "
-            "than a language property. The second repository has to be unlike ripgrep -- "
-            "another single-author CLI tool would restate the same house style and read as "
-            "confirmation"
+            "**answered, and the answer is that per-language is the wrong shape.** This "
+            "asked for a second Rust and a second Python repository and said the spread "
+            "surviving them would make it a language property. It did not survive either: "
+            "Rust moved 20.91% -> 4.51% and Python 8.33% -> 6.26%. What would reopen it is "
+            "not another corpus but a different claim -- that the *cost* of 500 differs by "
+            "language once repository style is controlled for, which needs several "
+            "repositories per language rather than two, and would be answering a question "
+            "nobody has yet had a reason to ask"
         ),
     ),
     Parameter(
         name="MAX_METHODS_PER_CLASS",
         value=float(thresholds.MAX_METHODS_PER_CLASS),
         evidence=Evidence.JUDGEMENT,
-        observations=13523,
+        observations=14931,
         provenance=(
             "12, a round number inside a window a control defines rather than a percentile. "
             "The two shred shapes `shredding` cannot see -- public helper names, and helpers "
             "given a second caller -- score NOM 14, while the legitimate decomposition of the "
-            "same work scores 4, so anything in 5..13 separates them. Measured across 13,523 "
+            "same work scores 4, so anything in 5..13 separates them. Measured across 14,931 "
             "classes: rejects 0.00% (go-kit, whose largest type has 9 methods) to 7.48% "
             "(httpx), and 0.7% of OXN's own 149. "
             "Higher than the per-function ceilings because the evasions sit inside the "
@@ -286,10 +291,10 @@ _CEILINGS: tuple[Parameter, ...] = (
         fit_when=(
             "a second evasion pair. Both this and the WMC ceiling are positioned by a single "
             "authored control, which is why neither sits at its window's edge. The other "
-            "half of the evidence is not authored: across the seven corpora the two ceilings "
-            "reject 1,425 classes, 108 of them by NOM alone and 541 by WMC alone, so neither "
-            "is a restatement of the other. **867 of the 1,425 are test classes** -- 8 of "
-            "129 over six corpora and 867 of 1,425 over seven, because `python-airflow` "
+            "half of the evidence is not authored: across the eight corpora the two ceilings "
+            "reject 1,512 classes, 141 of them by NOM alone and 552 by WMC alone, so neither "
+            "is a restatement of the other. **872 of the 1,512 are test classes** -- 8 of "
+            "129 over six corpora and 872 of 1,512 over eight, because `python-airflow` "
             "carries a test suite proportional to its size. The known false positive is "
             "not small; it is most of this ceiling's cost, and "
             "`oxn.yaml`'s advisory paths are the answer rather than a looser ceiling. A "
@@ -315,7 +320,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_WEIGHTED_METHODS_PER_CLASS",
         value=float(thresholds.MAX_WEIGHTED_METHODS_PER_CLASS),
         evidence=Evidence.JUDGEMENT,
-        observations=13523,
+        observations=14931,
         provenance=(
             "25, positioned like its sibling: the escapes score WMC 27 and the legitimate "
             "decomposition 17, so 18..26 separates them. Weighted by *cyclomatic* complexity "
@@ -477,15 +482,30 @@ _RETRIEVAL: tuple[Parameter, ...] = (
         name="MAX_BUNDLE_CONSTRAINTS",
         value=float(thresholds.MAX_BUNDLE_CONSTRAINTS),
         evidence=Evidence.JUDGEMENT,
-        observations=0,
+        observations=53,
         provenance=(
             "constraint decay (arXiv 2605.06445) shows the full set is harmful and says "
             "nothing about where the knee is; 7 is small enough to read and large enough to "
-            "carry a file's ceilings plus the decisions scoping it"
+            "carry a file's ceilings plus the decisions scoping it. **Measured 2026-09-18, "
+            "and it was the last parameter here still at zero observations.** What was "
+            "missing was never the measurement -- `observations` counts a parameter's cost at "
+            "its current value, which needs no experiment -- it was that `fit_when` named an "
+            "experiment and nobody separated fitting the number from pricing it. Across the "
+            "53 labelled tasks in `benchmarks/retrieval-labels-oxn.json` the cap binds on "
+            "**every one of them**, hiding a median 9 of this project's 16 constraints, 56%. "
+            "And the toll is not fixed: it is 2 of 9 on httpx and on elsa-core (22%) against "
+            "25 of 32 on tessellation (78%), because what a cap costs depends on how many "
+            "constraints a project declares. A project with nine sees a budget; one with "
+            "thirty-two sees a filter"
         ),
         fit_when=(
-            "P11 runs the arms; the bundle size is a factor there, so this is the one "
-            "parameter here with an experiment already designed to fit it"
+            "**not P11, which is cancelled.** That was the whole of this entry's plan and it "
+            "is no longer running, so the honest statement is that nothing currently "
+            "scheduled will fit this number. What would is a task-level outcome -- whether an "
+            "agent shown seven constraints complies more often than one shown sixteen -- and "
+            "the measurement above is what makes that worth arranging rather than assuming: a "
+            "cap that binds on 100% of tasks and hides more than half the set is doing "
+            "something, and 7 is still a judgement about where the knee is"
         ),
     ),
 )
@@ -505,7 +525,7 @@ _ENFORCEMENT: tuple[Parameter, ...] = (
         # seven row shapes and `run`/`arm`/`repeat` are absent from 35 of its 44 rows --
         # keying on them silently collapsed unlike rows into one trajectory and undercounted
         # these as 16.
-        observations=38,
+        observations=39,
         provenance=(
             "3, the smallest count that lets an agent fail, read the increment trail and "
             "try a different shape. arXiv 2508.11958 establishes that the loop needs a "

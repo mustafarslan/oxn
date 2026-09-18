@@ -220,3 +220,24 @@ def test_both_bm25_parameters_count_the_pairs_they_were_swept_over(labels) -> No
     for parameter in swept:
         assert parameter.observations == pairs, parameter.name
         assert parameter.is_provisional
+
+
+def test_the_bundle_cap_counts_the_tasks_it_was_priced_over(pairs) -> None:
+    """`MAX_BUNDLE_CONSTRAINTS` was the last parameter at zero observations, and it was not
+    blocked by the experiment its `fit_when` named.
+
+    `observations` counts a parameter's cost at its current value, not what it was fitted to,
+    and a cost needs no experiment -- P11's cancellation blocked the fit and nothing else.
+    Priced over these 53 tasks the cap binds on **every one**, hiding a median 9 of this
+    project's 16 constraints.
+
+    Pinned against the label file rather than restated, so a change to the labels moves the
+    two together or fails here.
+    """
+    from oxn.calibration import parameters
+
+    cap = next(p for p in parameters() if p.name == "MAX_BUNDLE_CONSTRAINTS")
+    assert cap.observations == len(pairs), (
+        f"the cap claims {cap.observations} observations against {len(pairs)} labelled tasks"
+    )
+    assert cap.is_provisional, "priced is not fitted; this stays a judgement"

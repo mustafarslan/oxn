@@ -1360,9 +1360,10 @@ rating via calibrated boundaries. Report the profile alongside the rating so the
   genuinely useful open artifact.
 
   **Measured, re-run 2026-09-18** (`scripts/measure_ceilings.py`, all seven `use: threshold`
-  corpora). `python-airflow` was declared and unfetched for long enough that three different
-  corpus counts were in circulation; it is fetched and measured, and the figures below are
-  over seven repositories, 76,805 named callables, 11,609 files and 13,523 classes. The LOC
+  corpora). The figures below are over eight repositories, 84,323 named callables, 12,408
+  files and 14,931 classes -- `python-airflow` and `rust-tokio` were both added on
+  2026-09-18, the second of them to answer whether `file_sloc`'s spread is a language
+  property. It is not: ripgrep reads 20.91% and tokio 4.51%. The LOC
   weighting is load-bearing and not a detail: *un*weighted, these distributions have median 0 —
   69.4% of nest's callables are anonymous arrow functions and 92.7% of those score 0 — so an
   unweighted p95 for cognitive complexity is 2 in TypeScript against 9 in Go. Weighted as Alves
@@ -1630,9 +1631,9 @@ ceiling instead, which is the division of labour the pairing intends.
 
 **Both ceilings earn their place, and that half of the evidence is not authored.** Positioned
 by a single control, they would be exactly the circularity §10.3 warns about. So the ceilings
-were also run as a census over the seven corpora — code nobody wrote to be caught. They reject
-**1,425 classes**: 776 by both, **108 by NOM alone** (many small methods, WMC under 25) and
-**541 by WMC alone** (few heavy ones), so neither ceiling is a restatement of the other. And of the 98
+were also run as a census over the eight corpora — code nobody wrote to be caught. They reject
+**1,512 classes**: 819 by both, **141 by NOM alone** (many small methods, WMC under 25) and
+**552 by WMC alone** (few heavy ones), so neither ceiling is a restatement of the other. And of the 98
 rejected by WMC, **81 contain no method over the per-function cyclomatic ceiling** — every
 method individually fine, the accumulation the whole problem. That is the God Class by
 definition and it is invisible to every other gate OXN has; `GraphStore` is the local example
@@ -1647,7 +1648,7 @@ looser ceiling. 9 more are interfaces, where a large method count is an interfac
 smell rather than a God Class — a similar count, a different argument.
 
 **The cost is where the decision is.** As shipped these reject 0.00–7.48% (NOM) and 0.27–10.28%
-(WMC) of classes across the seven corpora, against 0.00–10.57% for the per-function ceilings; a
+(WMC) of classes across the eight corpora, against 0.00–10.57% for the per-function ceilings; a
 class ceiling low enough to catch the escapes (NOM ≥ 8, WMC ≥ 18) fires on 7.4% of
 OXN's own 176 classes and 6.5–19.2% across the corpora — because the escapes at NOM 14 sit
 *inside* the legitimate distribution (p95–p99), not outside it. So this is a ratchet before it is

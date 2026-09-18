@@ -45,6 +45,7 @@ BEDS = (
     ("python-airflow", "python"),
     ("go-kit", "go"),
     ("rust-ripgrep", "rust"),
+    ("rust-tokio", "rust"),
     ("java-spring-petclinic", "java"),
     ("typescript-nest", "typescript"),
     ("javascript-eslint", "javascript"),

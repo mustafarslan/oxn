@@ -184,7 +184,7 @@ def test_the_weighted_ceiling_sees_what_no_per_function_gate_can(audit: dict[str
 #: What the number means has not changed: many small test methods is a legitimate shape, and
 #: `oxn.yaml`'s `exclude` and advisory paths are how a project opts its tests out. What has
 #: changed is how much that answer matters -- it is now most of the ceiling's cost.
-RECORDED_TEST_FILE_REJECTIONS = (867, 1425)
+RECORDED_TEST_FILE_REJECTIONS = (872, 1512)
 
 
 def test_the_known_false_positive_shape_is_recorded(audit: dict[str, int]) -> None:
@@ -284,7 +284,7 @@ def test_the_frozen_measurement_covers_every_threshold_corpus_or_names_the_gap()
         "a `use: threshold` corpus is missing from the frozen measurement without a reason; "
         f"add it to UNMEASURED or measure it: {sorted((declared - frozen) - set(UNMEASURED))}"
     )
-    assert len(frozen) == 7, "the figures in metrics.md and measure_ceilings.py say seven"
+    assert len(frozen) == 8, "the figures in metrics.md and measure_ceilings.py say eight"
 
 
 def _weighted_by_rule() -> dict[str, list[float | None]]:

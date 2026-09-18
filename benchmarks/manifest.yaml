@@ -95,6 +95,22 @@ corpora:
     ref: master
     why: Multi-crate Rust workspace; exercises the `mod` tree and cross-crate resolution.
 
+  - name: rust-tokio
+    use: threshold
+    language: rust
+    url: https://github.com/tokio-rs/tokio
+    ref: master
+    why: >
+      The second Rust repository `MAX_FILE_SLOC` asks for, and chosen to be unlike ripgrep
+      rather than to agree with it. ripgrep exceeds the 500-line file ceiling at 20.91%, five
+      times the next language, and one repository cannot separate "Rust is written this way"
+      from "ripgrep is written this way" -- so a second single-author CLI tool would restate
+      the same house style and read as confirmation. tokio is a many-contributor async
+      runtime library: different authorship, different shape, same language. If its rate is
+      also ~20% the spread is a language property; if it is not, file length is a house style
+      and the per-language ceiling is the wrong idea. Either answer is worth having, which is
+      what makes it the right corpus.
+
   - name: java-spring-petclinic
     use: threshold
     language: java
