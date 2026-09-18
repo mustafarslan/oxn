@@ -88,13 +88,37 @@ def _target_line(name: str, group: list[dict[str, Any]]) -> str:
     """One target's trajectory: where it started, the best working result, and the verdict."""
     scored = [row for row in group if row["gauntlet"]]
     best = _best_working_score(scored)
-    # The first attempt may have died before measuring anything, so take the first row that
-    # has a measurement rather than the first row.
-    first = scored[0]["gauntlet"].get("score_before") if scored else None
+    first = _first_measured(scored)
     status = f"{GREEN}accepted{RESET}" if any(r["accepted"] for r in group) else f"{RED}no{RESET}"
     errors = sum(1 for row in group if row.get("error"))
     note = f"  ({errors} failed to run)" if errors else ""
     return f"  {name:32} {_num(first)} -> {_num(best)}  attempts={len(group)}  {status}{note}"
+
+
+def _first_measured(scored: list[dict[str, Any]]) -> float | None:
+    """Where this target started, from the first row that actually measured it.
+
+    **`UNMEASURABLE` is a sentinel, not a score**, and reading it as one made `urlparse` print
+    `999 -> 58` for a function that scores 63. This comment used to say "take the first row
+    that has a measurement rather than the first row" while taking the first row's number
+    whatever it was -- the intent was right and the sentinel was not recognised as the
+    absence it stands for.
+
+    Those rows are in the log because they were honestly recorded before the bug behind them
+    was found: `measure` was resolving an external bed's path against this repository, so the
+    before-state of every corpus target came back unmeasurable. The rows stay. What changes
+    is that a reader is no longer told 999 was a complexity score.
+    """
+    from gauntlet import UNMEASURABLE
+
+    return next(
+        (
+            row["gauntlet"]["score_before"]
+            for row in scored
+            if row["gauntlet"].get("score_before") not in (None, UNMEASURABLE)
+        ),
+        None,
+    )
 
 
 def _best_working_score(scored: list[dict[str, Any]]) -> float | None:
@@ -109,7 +133,16 @@ def _best_working_score(scored: list[dict[str, Any]]) -> float | None:
         for row in scored
         if row["gauntlet"].get("tests_pass") and row["gauntlet"].get("target_present", True)
     ]
-    return min((row["gauntlet"]["score_after"] for row in valid), default=None)
+    from gauntlet import UNMEASURABLE
+
+    return min(
+        (
+            row["gauntlet"]["score_after"]
+            for row in valid
+            if row["gauntlet"].get("score_after") != UNMEASURABLE
+        ),
+        default=None,
+    )
 
 
 def _judge_agreement(rows: list[dict[str, Any]]) -> str:

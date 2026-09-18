@@ -929,3 +929,32 @@ def test_the_harness_names_the_actor_it_actually_defaults_to() -> None:
 
     # And the prose at the top of the file has to agree with them.
     assert DEFAULT_MODEL.split(":")[0].split("-")[0] in dogfood.__doc__
+
+
+def test_the_report_does_not_read_the_unmeasurable_sentinel_as_a_score() -> None:
+    """`urlparse` printed `999 -> 58` for a function that scores 63.
+
+    `UNMEASURABLE` is 999 and deliberately enormous so that a file nobody could measure never
+    wins a comparison that treats lower as better. Printing it as the starting complexity is
+    the one place that largeness misleads instead of protecting, and the report did exactly
+    that for every row written while `measure` was resolving an external bed's paths against
+    this repository.
+
+    Those rows stay in the log -- they were recorded honestly and the bug behind them is
+    fixed. What changes is that a reader is no longer shown 999 as a complexity score.
+    """
+    import sys
+
+    sys.path.insert(0, "scripts")
+    from gauntlet import UNMEASURABLE
+    from summary import _first_measured
+
+    rows = [
+        {"gauntlet": {"score_before": UNMEASURABLE, "score_after": 58.0}},
+        {"gauntlet": {"score_before": 63.0, "score_after": 58.0}},
+    ]
+    assert _first_measured(rows) == 63.0
+
+    # And a target that was never measured at all still reports nothing rather than 999.
+    assert _first_measured([{"gauntlet": {"score_before": UNMEASURABLE}}]) is None
+    assert _first_measured([]) is None
