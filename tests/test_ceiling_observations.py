@@ -168,15 +168,33 @@ def test_the_weighted_ceiling_sees_what_no_per_function_gate_can(audit: dict[str
     )
 
 
-def test_the_known_false_positive_shape_is_small_and_recorded(audit: dict[str, int]) -> None:
-    """A test class with many small test methods is a legitimate shape, and NOM rejects it.
+#: Rejections in test files, and rejections in total. Measured over seven corpora.
+#:
+#: **This was an inequality -- `in_test_files <= rejected // 10` -- and a seventh corpus
+#: refuted it.** Over six it read 8 of 129, six percent, and "small" was a fair description.
+#: Adding `python-airflow`, 130x the Python sample and carrying a test suite to match, took
+#: it to 867 of 1,425: the class ceilings reject *mostly test code* at real-repository scale.
+#:
+#: The inequality is gone rather than loosened, because a bound chosen when the true value
+#: was 6% says nothing once the true value is 61% -- raising it to fit would be fitting the
+#: threshold to the observation and calling it a check. A pinned pair asserts the same thing
+#: the inequality was for, which is that a change in this cost is visible in a diff, and
+#: asserts it without claiming a size the evidence contradicts.
+#:
+#: What the number means has not changed: many small test methods is a legitimate shape, and
+#: `oxn.yaml`'s `exclude` and advisory paths are how a project opts its tests out. What has
+#: changed is how much that answer matters -- it is now most of the ceiling's cost.
+RECORDED_TEST_FILE_REJECTIONS = (867, 1425)
 
-    Seven of the rejections live in test files. That is the honest cost of the ceiling rather
-    than a defect to hide: `oxn.yaml`'s `exclude` and advisory paths are how a project opts
-    its tests out, and the number is pinned here so growth in it is visible.
-    """
-    assert audit["in_test_files"] <= audit["rejected"] // 10, (
-        f"{audit['in_test_files']} of {audit['rejected']} rejections are in test files"
+
+def test_the_known_false_positive_shape_is_recorded(audit: dict[str, int]) -> None:
+    """A test class with many small test methods is a legitimate shape, and NOM rejects it."""
+    measured = (audit["in_test_files"], audit["rejected"])
+    assert measured == RECORDED_TEST_FILE_REJECTIONS, (
+        f"{measured[0]} of {measured[1]} rejections are in test files, against a record of "
+        f"{RECORDED_TEST_FILE_REJECTIONS[0]} of {RECORDED_TEST_FILE_REJECTIONS[1]}. If a "
+        "corpus moved or a ceiling changed, update the record in the same commit and say "
+        "which -- this is the ceiling's cost, not an incidental count."
     )
 
 
@@ -233,9 +251,11 @@ def test_a_cache_holding_part_of_the_tree_is_not_a_measurement(tmp_path: Path) -
 
 #: Declared `use: threshold` in the manifest and absent from the frozen measurement, with the
 #: reason. An entry here is a claim that the gap is known, not that it does not matter.
-UNMEASURED = {
-    "python-airflow": "declared in the manifest and never fetched by scripts/fetch_corpora.py"
-}
+UNMEASURED: dict[str, str] = {}
+#: Empty since 2026-09-18, when `python-airflow` was fetched and measured -- it was the one
+#: entry, and it had been a silent absence for long enough that three different corpus counts
+#: were in circulation. An entry here is a claim that a gap is known, not that it is
+#: acceptable, so the right end state is this dictionary staying empty.
 
 
 def test_the_frozen_measurement_covers_every_threshold_corpus_or_names_the_gap() -> None:
@@ -264,7 +284,7 @@ def test_the_frozen_measurement_covers_every_threshold_corpus_or_names_the_gap()
         "a `use: threshold` corpus is missing from the frozen measurement without a reason; "
         f"add it to UNMEASURED or measure it: {sorted((declared - frozen) - set(UNMEASURED))}"
     )
-    assert len(frozen) == 6, "the figures in metrics.md and measure_ceilings.py say six"
+    assert len(frozen) == 7, "the figures in metrics.md and measure_ceilings.py say seven"
 
 
 def _weighted_by_rule() -> dict[str, list[float | None]]:

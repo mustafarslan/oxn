@@ -134,11 +134,11 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_COGNITIVE_COMPLEXITY",
         value=float(thresholds.MAX_COGNITIVE_COMPLEXITY),
         evidence=Evidence.JUDGEMENT,
-        observations=14291,
+        observations=76805,
         provenance=(
             "12, between idea.md's proposed 8 and SonarSource's default 15. Neither endpoint "
             "is measured either: 15 is a product default, not a finding. Measured cost: it "
-            "rejects 0.53% (java) to 10.57% (javascript) of named callables across the six corpora."
+            "rejects 0.53% (java) to 10.57% (javascript) of named callables across the seven corpora."
         ),
         fit_when=(
             "not an unweighted percentile -- p95 of these distributions is 2 in TypeScript and 9 "
@@ -152,7 +152,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_CYCLOMATIC_COMPLEXITY",
         value=float(thresholds.MAX_CYCLOMATIC_COMPLEXITY),
         evidence=Evidence.LITERATURE,
-        observations=14291,
+        observations=76805,
         provenance=(
             "McCabe (1976); NIST SP 500-235 discusses 10 and 15 as the usual band. Measured "
             "cost: rejects 0.48% (typescript) to 5.11% (javascript) of named callables."
@@ -163,7 +163,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_PARAMETERS",
         value=float(thresholds.MAX_PARAMETERS),
         evidence=Evidence.LITERATURE,
-        observations=14291,
+        observations=76805,
         provenance=(
             "Fowler, Refactoring (Long Parameter List); the 4-5 band from Clean Code. "
             "Measured cost: rejects 0.00% (java) to 3.62% (python) of named callables -- the "
@@ -175,7 +175,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_NESTING_DEPTH",
         value=float(thresholds.MAX_NESTING_DEPTH),
         evidence=Evidence.JUDGEMENT,
-        observations=14291,
+        observations=76805,
         provenance=(
             "conventional; nesting is what cognitive complexity already charges for. Measured "
             "cost: rejects 0.00% (go, java) to 0.46% (javascript) of named callables -- the least "
@@ -186,17 +186,20 @@ _CEILINGS: tuple[Parameter, ...] = (
             "at 0.96% against Python's 0.35% for the same shape. Cognitive complexity had the "
             "rule right all along; this metric reused its node set and re-derived its rule. "
             "**The question `fit_when` asked has been answered, and the answer is no.** "
-            "Across the six corpora at default ceilings this rule flags 25 entities and "
-            "**every one of them is already flagged by another rule** -- all 25 by "
-            "`cognitive_complexity`, 18 also by `cyclomatic_complexity`. It is the only "
-            "gated rule with no catch of its own: the next lowest, `shredding`, has 1 of 3, "
-            "and `cyclomatic_complexity` -- the one the literature calls redundant -- keeps "
-            "98 of 351. As a *gate* it spends a constraint to repeat a finding; as a line in "
+            "Across the seven corpora at default ceilings this rule flags 144 entities and "
+            "**every one of them is already flagged by another rule** -- all 144 by "
+            "`cognitive_complexity`, 103 also by `cyclomatic_complexity`. Adding a "
+            "seventh corpus with 63,870 callables of its own moved the count from 25 to "
+            "144 and left the unique catches at zero, which is a far stronger answer "
+            "than the one this entry used to give. It is the only gated rule with no "
+            "catch of its own: the next lowest, `shredding`, has 4 of 25, and "
+            "`cyclomatic_complexity` -- the one the literature calls redundant -- keeps "
+            "552 of 1,844. As a *gate* it spends a constraint to repeat a finding; as a line in "
             "the remediation it is the most actionable thing the cognitive trail says, which "
             "is why it stays measured and reported."
         ),
         fit_when=(
-            "answered rather than open: 0 unique catches of 25 over six corpora. What would "
+            "answered rather than open: 0 unique catches of 144 over seven corpora. What would "
             "reopen it is a fix-rate -- whether an agent shown `max_nesting_depth 6` repairs "
             "more often than one shown only `cognitive_complexity 21` -- which is a P11 "
             "measurement and not a corpus one."
@@ -206,7 +209,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_FUNCTION_SLOC",
         value=float(thresholds.MAX_FUNCTION_SLOC),
         evidence=Evidence.JUDGEMENT,
-        observations=14291,
+        observations=76805,
         provenance=(
             "conventional rather than derived. Measured cost: rejects 0.53% (java) to 8.16% "
             "(javascript) of named callables."
@@ -217,33 +220,41 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_FILE_SLOC",
         value=float(thresholds.MAX_FILE_SLOC),
         evidence=Evidence.JUDGEMENT,
-        observations=3796,
+        observations=11609,
         provenance=(
             "conventional rather than derived, and the one ceiling the measurement argues "
-            "with. Measured cost across 3,796 files: 0.00% (java), 0.39% (go), 1.58% "
-            "(typescript), 10.00% (python), 14.96% (javascript), **20.91% (rust)** -- a 50x "
-            "spread where every other ceiling holds inside 20x. The Rust files above it are "
-            "hand-written core, "
-            "not generated: ripgrep's flag table (6,916), its printer (3,220), its directory "
-            "walker (1,899). Held at 500 anyway, because one repository per language cannot "
-            "distinguish 'Rust is written this way' from 'ripgrep is written this way', and "
-            "because `oxn.yaml` already lets a project raise it without moving the default."
+            "with. Measured cost across 11,609 files: 0.00% (java), 0.39% (go), 1.58% "
+            "(typescript), 6.26% (python-airflow), 8.33% (python-httpx), 14.96% "
+            "(javascript), **20.91% (rust)** -- a spread where every other ceiling holds "
+            "inside 20x. The Rust files above it are hand-written core, not generated: "
+            "ripgrep's flag table (6,916), its printer (3,220), its directory walker "
+            "(1,899). **The second Python repository is in, and the two Python numbers "
+            "disagree by a third**: 8.33% on httpx's 60 files against 6.26% on airflow's "
+            "7,813. That is the answer to half of what `fit_when` asked -- a per-language "
+            "rate is not a property of the language, it is a property of the repository, and "
+            "airflow is 130x the sample. Held at 500, and now for a better reason than "
+            "before: the evidence for a per-language ceiling got weaker, not stronger."
         ),
         fit_when=(
-            "a second Rust and a second Python repository. If the spread survives them it is "
-            "a language property, and this is the ceiling that should become per-language"
+            "a second Rust repository, and it is now the only half left. Python's two "
+            "repositories differ by a third at the same ceiling, so if Rust's 20.91% also "
+            "moves under a second repository then 'per-language' is the wrong shape for this "
+            "number and the honest conclusion is that file length is a house style rather "
+            "than a language property. The second repository has to be unlike ripgrep -- "
+            "another single-author CLI tool would restate the same house style and read as "
+            "confirmation"
         ),
     ),
     Parameter(
         name="MAX_METHODS_PER_CLASS",
         value=float(thresholds.MAX_METHODS_PER_CLASS),
         evidence=Evidence.JUDGEMENT,
-        observations=3501,
+        observations=13523,
         provenance=(
             "12, a round number inside a window a control defines rather than a percentile. "
             "The two shred shapes `shredding` cannot see -- public helper names, and helpers "
             "given a second caller -- score NOM 14, while the legitimate decomposition of the "
-            "same work scores 4, so anything in 5..13 separates them. Measured across 3,501 "
+            "same work scores 4, so anything in 5..13 separates them. Measured across 13,523 "
             "classes: rejects 0.00% (go-kit, whose largest type has 9 methods) to 7.48% "
             "(httpx), and 0.7% of OXN's own 149. "
             "Higher than the per-function ceilings because the evasions sit inside the "
@@ -275,10 +286,12 @@ _CEILINGS: tuple[Parameter, ...] = (
         fit_when=(
             "a second evasion pair. Both this and the WMC ceiling are positioned by a single "
             "authored control, which is why neither sits at its window's edge. The other "
-            "half of the evidence is not authored: across the six corpora the two ceilings "
-            "reject 129 classes, 31 of them by NOM alone and 26 by WMC alone, so neither is "
-            "a restatement of the other. Eight of the 129 are test classes, which is the "
-            "known false positive -- many small test methods is a legitimate shape, and "
+            "half of the evidence is not authored: across the seven corpora the two ceilings "
+            "reject 1,425 classes, 108 of them by NOM alone and 541 by WMC alone, so neither "
+            "is a restatement of the other. **867 of the 1,425 are test classes** -- 8 of "
+            "129 over six corpora and 867 of 1,425 over seven, because `python-airflow` "
+            "carries a test suite proportional to its size. The known false positive is "
+            "not small; it is most of this ceiling's cost, and "
             "`oxn.yaml`'s advisory paths are the answer rather than a looser ceiling. A "
             "second false positive was found by measuring rather than by argument: the "
             "**wide repository**, a class whose method count is a query catalogue over one "
@@ -302,7 +315,7 @@ _CEILINGS: tuple[Parameter, ...] = (
         name="MAX_WEIGHTED_METHODS_PER_CLASS",
         value=float(thresholds.MAX_WEIGHTED_METHODS_PER_CLASS),
         evidence=Evidence.JUDGEMENT,
-        observations=3501,
+        observations=13523,
         provenance=(
             "25, positioned like its sibling: the escapes score WMC 27 and the legitimate "
             "decomposition 17, so 18..26 separates them. Weighted by *cyclomatic* complexity "

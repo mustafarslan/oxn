@@ -238,7 +238,20 @@ _OSS: dict[str, Bed] = {
         name="rust-ripgrep",
         corpus="rust-ripgrep",
         sources=(".",),
-        verify=(("tests", "cargo", "test"), ("lint", "cargo", "clippy", "--", "-D", "warnings")),
+        # **`-D warnings` fails on the untouched tree**, and unlike go-kit's two named
+        # packages the cause is not localised: clippy 1.98 against ripgrep's pinned code
+        # reports at least a dozen distinct style lints -- `unnecessary_map_or` (7),
+        # `new_without_default` (6), `collapsible_if` (6), `needless_borrow` (5),
+        # `needless_lifetimes` (4) and more -- spread across crates. Every one is a
+        # suggestion a later clippy added, not a defect a repair here introduced, and naming
+        # them out would be a list that grows with clippy's release cadence rather than with
+        # anything about this corpus.
+        #
+        # So the promotion to errors goes and `clippy` itself stays: it still fails the bed
+        # on a genuine compile error, which is what "did the repair break this" asks. A check
+        # that fails identically before and after a repair says nothing about the repair --
+        # the same reason httpx deselects one test by name and go-kit names out two packages.
+        verify=(("tests", "cargo", "test"), ("lint", "cargo", "clippy")),
         why="Rust, a workspace of crates with real boundaries between them.",
     ),
     "python-httpx": Bed(

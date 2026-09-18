@@ -246,3 +246,128 @@ def test_targets_are_ordered_worst_first_then_by_name(harness) -> None:
     picked = harness.select_targets(6, 8, skip=set())
     scored = [(-target.score, target.qualified_name) for target in picked]
     assert scored == sorted(scored), f"not worst-first with a stable tie-break: {scored}"
+
+
+# ---- beds that could not verify their own untouched trees ---------------------------
+#
+# Every external bed failed this way before 2026-09-18, each differently and none of them
+# for anything a repair does: httpx installed nothing into its venv, go-kit could not link
+# `sd/eureka` and had a flaky `metrics` subtree, nest's pinned dependencies do not install,
+# and ripgrep's `-D warnings` promoted a newer clippy's style lints into failures. A bed in
+# that state scores `tests FAIL` on every attempt of every arm and renders as a table.
+
+
+def test_the_go_bed_names_out_the_packages_that_fail_on_their_own_tree() -> None:
+    """A bed that cannot verify its pristine tree cannot verify a repair.
+
+    Three go-kit packages fail before anything is repaired, for two different reasons.
+    `sd/eureka`'s *test binary* will not link -- the corpus pins a `golang.org/x/net` whose
+    `internal/socket` still references unexported `syscall.recvmsg`, which Go 1.26's linker
+    rejects. And the whole of `metrics` is flaky: four runs of `./metrics/...` on the
+    untouched tree failed in `cloudwatch`, `prometheus` and `dogstatsd`, three runs out of
+    four, a different subset each time.
+
+    The flake is the worse one. A deterministic failure blocks the bed and is noticed; a
+    coin-flip one is recorded as repairs that sometimes break Go and sometimes do not, which
+    is indistinguishable in the log from a real regression.
+    """
+    import sys
+
+    sys.path.insert(0, "scripts")
+    from beds import bed
+
+    packages = bed("go-kit").verify[0]
+    assert not any("eureka" in argument for argument in packages)
+    assert not any("metrics" in argument for argument in packages)
+    assert "./..." not in packages, "`./...` readmits them; the list is the exclusion"
+
+
+def test_the_go_bed_stops_selecting_targets_in_packages_it_stopped_testing() -> None:
+    """The exclusions have to move together, and this is the one that is not tidiness.
+
+    Dropping `metrics` from the test command while still selecting targets inside it would
+    verify a repair with a suite that no longer covers it -- a green gauntlet over code
+    nothing ran. That is worse than leaving those seven targets unrepaired, which is what
+    dropping `metrics` from `sources` does instead.
+    """
+    import sys
+
+    sys.path.insert(0, "scripts")
+    from beds import bed
+    from dogfood import select_targets
+
+    go_kit = bed("go-kit")
+    assert not any(source.startswith("metrics") for source in go_kit.sources)
+    chosen = select_targets(12, 500, skip=set(), where=go_kit)
+    assert chosen, "the bed should still offer targets outside metrics"
+    assert not any(target.path.startswith("metrics/") for target in chosen)
+
+
+def test_the_go_vet_command_was_narrowed_when_the_test_command_was() -> None:
+    """Narrowing one verification command and leaving the other at `./...` is the easy miss.
+
+    `go vet ./...` fails on the untouched tree for a third reason: eight diagnostics, all in
+    `_test.go` files -- `t.Fatal` from a non-test goroutine in `transport/nats` and
+    `sd/consul`, `t.Errorf` copying a protobuf lock value in `transport/http/proto`. Newer
+    vet checks meeting older test code, and `go vet -tests=false` does not suppress them.
+    """
+    import sys
+
+    sys.path.insert(0, "scripts")
+    from beds import bed
+
+    lint = bed("go-kit").verify[1]
+    assert "./..." not in lint
+    for excluded in ("./transport/nats/...", "./sd/consul/...", "./transport/http/proto/..."):
+        assert excluded not in lint, f"{excluded} fails vet on the pristine tree"
+
+
+def test_a_bed_that_declares_verification_it_cannot_run_is_still_refused() -> None:
+    """"No verification declared" and "declared but unrunnable here" used to be one state.
+
+    typescript-nest's `verify` commands are correct -- `npm test`, `npm run lint` -- and the
+    bed still cannot run, because the pinned checkout's dependencies do not install: the
+    committed lock file is out of sync with `package.json`, so `npm ci` refuses, and `npm
+    install` abandons the pin only to hit a real peer conflict between `@apollo/server` and
+    the `graphql` major `@nestjs/apollo` admits. The refusal keyed on empty `verify`, which
+    this bed does not have, so it would have been handed 60 targets and failed all of them
+    on a missing `vitest`.
+    """
+    import sys
+
+    import pytest
+
+    sys.path.insert(0, "scripts")
+    from beds import bed
+
+    with pytest.raises(SystemExit, match="cannot run it here"):
+        bed("typescript-nest")
+
+    for still_fine in ("go-kit", "python-httpx"):
+        bed(still_fine)
+
+
+def test_the_rust_bed_does_not_promote_a_newer_clippy_into_a_failure() -> None:
+    """`cargo clippy -- -D warnings` failed on ripgrep's untouched tree, so the bed was inert.
+
+    Unlike go-kit's two named packages, the cause is not localised: clippy 1.98 against
+    ripgrep's pinned code reports a dozen distinct *style* lints across crates --
+    `unnecessary_map_or`, `new_without_default`, `collapsible_if`, `needless_borrow`,
+    `needless_lifetimes` and more. Each is a suggestion a later clippy added, none is a defect
+    a repair introduced, and naming them out would be a list that grows with clippy's release
+    cadence rather than with this corpus.
+
+    Dropping the promotion keeps the check and loses the hostage: `cargo clippy` still fails
+    on a real compile error, which is what "did the repair break this" asks. Pinned because
+    `-D warnings` is the reflexive thing to write and it makes this bed unusable.
+    """
+    import sys
+
+    sys.path.insert(0, "scripts")
+    from beds import bed
+
+    lint = bed("rust-ripgrep").verify[1]
+    assert lint[:3] == ("lint", "cargo", "clippy")
+    assert "-D" not in lint and "warnings" not in lint, (
+        "`-D warnings` fails on the pristine tree; see this test's docstring"
+    )

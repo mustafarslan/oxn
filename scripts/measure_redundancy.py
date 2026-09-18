@@ -38,6 +38,11 @@ from oxn.config import GATED_METRICS
 CORPORA = Path("benchmarks/corpora")
 BEDS = (
     ("python-httpx", "python"),
+    # Added 2026-09-18 with `measure_ceilings.py`'s copy of this list. The two scripts keep
+    # separate bed tuples and a corpus added to one was silently absent from the other, so
+    # `calibration.py` would have cited "seven corpora" for a ceiling's cost and "six" for
+    # whether that ceiling catches anything unique -- two populations behind one argument.
+    ("python-airflow", "python"),
     ("go-kit", "go"),
     ("rust-ripgrep", "rust"),
     ("java-spring-petclinic", "java"),
