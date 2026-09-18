@@ -9,6 +9,7 @@ script is where correctness is actually established. It runs the same lanes:
     python scripts/check.py --oracle      # differential tests vs third-party tools
     python scripts/check.py --corpus      # phase exit criteria on real repositories
     python scripts/check.py --llm         # tests that call a model through Ollama
+    python scripts/check.py --e2e         # install the wheel and drive the `oxn` script
     python scripts/check.py --all         # everything
 
 Standard library only, and it never installs anything without saying so first.
@@ -71,8 +72,9 @@ def fast_lane() -> bool:
     lane.run(PYTHON, "-m", "ruff", "format", "--check", ".")
     lane.run(PYTHON, "-m", "mypy")
     # `llm` is excluded as well as `oracle`: the fast lane must never depend on a model
-    # being reachable, which is exactly what "not oracle" alone failed to guarantee.
-    lane.run(PYTHON, "-m", "pytest", "-m", "not oracle and not llm", "-q")
+    # being reachable, which is exactly what "not oracle" alone failed to guarantee. `e2e`
+    # is excluded because it builds a wheel and a virtualenv, which is not a fast lane.
+    lane.run(PYTHON, "-m", "pytest", "-m", "not oracle and not llm and not e2e", "-q")
     # OXN gates OXN. The hook catches an edit as it happens; this catches everything the
     # hook did not see -- a rebase, a merge, an edit made outside the agent. Without it
     # "OXN gates its own development" would mean only "when an agent is driving".
@@ -100,7 +102,7 @@ def matrix_lane() -> bool:
             lane.run("uv", "venv", "--python", version, "-q", str(env_dir))
         interpreter = env_dir / "bin" / "python"
         lane.run("uv", "pip", "install", "--python", str(interpreter), "-q", "-e", ".[dev]")
-        lane.run(interpreter, "-m", "pytest", "-m", "not oracle and not llm", "-q")
+        lane.run(interpreter, "-m", "pytest", "-m", "not oracle and not llm and not e2e", "-q")
     return lane.finish()
 
 
@@ -183,6 +185,20 @@ def llm_lane() -> bool:
     return lane.finish()
 
 
+def e2e_lane() -> bool:
+    """Install OXN the way a user does, and drive the `oxn` script against a codebase.
+
+    Every other lane imports from the working tree, where the whole repository is on the
+    path -- so a module the wheel does not ship, a dependency that is imported but never
+    declared, or a console script that does not resolve all pass. `OXN_E2E` is set here
+    rather than left to the environment because the tests self-skip without it, and a lane
+    that passes by running nothing is worse than no lane.
+    """
+    lane = Lane("e2e (install, use, remove)")
+    lane.run(PYTHON, "-m", "pytest", "-m", "e2e", "-q", env={"OXN_E2E": "1"})
+    return lane.finish()
+
+
 def corpus_lane(*, fetch: bool) -> bool:
     """Phase exit criteria, measured on real repositories.
 
@@ -215,6 +231,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--corpus", action="store_true", help="exit criteria on real repositories")
     parser.add_argument("--llm", action="store_true", help="tests that call a model via Ollama")
+    parser.add_argument(
+        "--e2e", action="store_true", help="install the wheel and drive the `oxn` script"
+    )
     parser.add_argument("--all", action="store_true", help="every lane")
     parser.add_argument(
         "--install", action="store_true", help="fetch oracle tools and corpora as needed"
@@ -247,6 +266,7 @@ _OPTIONAL_LANES: tuple[tuple[str, Callable[[argparse.Namespace], bool]], ...] = 
     ("oracle", lambda args: oracle_lane(install=args.install or args.all)),
     ("corpus", lambda args: corpus_lane(fetch=args.install)),
     ("llm", lambda args: llm_lane()),  # noqa: ARG005 - uniform lane signature
+    ("e2e", lambda args: e2e_lane()),  # noqa: ARG005 - uniform lane signature
 )
 
 

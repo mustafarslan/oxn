@@ -76,6 +76,7 @@ markers = [
     "oracle: differential tests against third-party tools (radon, lizard, ...). CI-only lane; these tools are never runtime dependencies.",
     "slow: tests that clone or scan large corpora.",
     "llm: tests that call a language model through Ollama. Opt-in; skipped when the host is unreachable.",
+    "e2e: end-to-end lane -- builds a wheel, installs it into a fresh venv and drives the `oxn` script. Opt-in via OXN_E2E=1; it costs a build and an install.",
 ]
 
 [tool.ruff]

@@ -1,0 +1,49 @@
+def _get_users(request, path):
+    if path.endswith("/profile"):
+        return "user-profile"
+    return "user-search" if "?" in path else "user-list"
+
+
+def _get_orders(request):
+    return "all-orders" if request.get("admin") else "own-orders"
+
+
+def _get(request, path):
+    if path.startswith("/users"):
+        return _get_users(request, path)
+    if path.startswith("/orders"):
+        return _get_orders(request)
+    return "get-other"
+
+
+def _post_users(request):
+    return "create-user" if request.get("body") else "bad-request"
+
+
+def _post_orders(request):
+    return "conflict" if request.get("locked") else "create-order"
+
+
+def _post(request, path):
+    if path.startswith("/users"):
+        return _post_users(request)
+    if path.startswith("/orders"):
+        return _post_orders(request)
+    return "post-other"
+
+
+def _delete(request):
+    return "delete" if request.get("admin") else "forbidden"
+
+
+def route(request):
+    """Dispatch a request."""
+    method = request.get("method")
+    path = request.get("path", "")
+    if method == "GET":
+        return _get(request, path)
+    if method == "POST":
+        return _post(request, path)
+    if method == "DELETE":
+        return _delete(request)
+    return "unknown"

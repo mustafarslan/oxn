@@ -1,0 +1,23 @@
+def classify(items, limit):
+    total = 0
+    for item in items:
+        if item > limit:
+            if item > limit * 2:
+                total = total + item
+            else:
+                total = total + limit
+    while total > 100:
+        total = total - 10
+    if total < 0:
+        return 0
+    for item in items:
+        if item == limit:
+            return item
+    if limit < 0:
+        return -1
+    if limit > 1000:
+        return 1000
+    for item in items:
+        if item < 0:
+            return item
+    return total

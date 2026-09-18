@@ -1,0 +1,19 @@
+function classify(items, limit) {
+  let total = 0;
+  for (const item of items) {
+    if (item > limit) {
+      if (item > limit * 2) {
+        total = total + item;
+      } else {
+        total = total + limit;
+      }
+    }
+  }
+  while (total > 100) {
+    total = total - 10;
+  }
+  if (total < 0) {
+    return 0;
+  }
+  return total;
+}

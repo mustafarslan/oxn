@@ -16,6 +16,36 @@ no paid tooling.
 > being built. See **[ROADMAP.md](ROADMAP.md)** for the phase plan and
 > **[docs/metrics.md](docs/metrics.md)** for the metric specifications.
 
+## Install, and the first five minutes
+
+```sh
+python -m pip install oxn        # or: pipx install oxn
+cd your-project
+oxn init                         # writes oxn.yaml, the hook, the MCP entry, a CLAUDE.md section
+oxn check                        # where you stand today
+oxn baseline                     # accept today's debt; new violations still fail
+```
+
+`oxn init` is additive and idempotent: it writes `oxn.yaml` only when absent, keeps its
+`CLAUDE.md` section between markers, and merges `.claude/settings.json` and `.mcp.json`
+rather than replacing them. Running it twice produces no diff.
+
+What each of those commands leaves behind, and how to take it back out:
+
+| path | written by | removing it |
+|---|---|---|
+| `oxn.yaml` | `init` | delete |
+| `.mcp.json` | `init` | delete, or drop the `oxn` entry if you have others |
+| `.gitignore` | `init` | delete if `init` created it; otherwise drop the lines it appended |
+| `.claude/settings.json` | `init` | drop OXN's `PostToolUse` entry; other hooks are untouched |
+| `CLAUDE.md` | `init` | delete the block between `<!-- oxn:begin -->` and `<!-- oxn:end -->` |
+| `.oxn/` | the first `check` | delete -- it holds the cache, the baseline and the retry ledger |
+
+There is deliberately no `oxn uninstall`: the list is short, every entry is inspectable, and
+a command that deletes files from a repository to undo a setup step is a worse trade than a
+table. `pip uninstall oxn` removes the tool itself; the hook in `.claude/settings.json` then
+names a command that no longer resolves, so remove that entry too.
+
 ## Why it computes its own metrics
 
 Every tool that does *architecture* metrics well — Sonargraph, Structure101, NDepend,
@@ -69,6 +99,16 @@ Lanes, in increasing cost:
 | `--oracle` | differential tests against the third-party tools OXN deliberately does not depend on; needs Node, a JDK and Go |
 | `--corpus` | phase exit criteria measured on real repositories |
 | `--llm` | the few tests that need a language model, via Ollama |
+| `--e2e` | builds a wheel, installs it into a fresh virtualenv and drives the `oxn` script |
+
+The `e2e` lane is the one that does not trust the working tree. Every other lane imports
+`oxn` from the repository, where everything is on the path and `pyproject.toml` is barely
+consulted -- so a module the wheel does not ship, a dependency that is imported but never
+declared, or a console script that does not resolve would pass all of them and fail on the
+first machine that ran `pip install oxn`. This lane builds the wheel, installs it into a
+fresh virtualenv, and drives the `oxn` script through install, `init`, `check`, `baseline`
+and removal against fixtures whose numbers are known before OXN is asked -- including one
+shape written in all six launch languages, which must measure identically in each.
 
 GitHub Actions is manual-only by design -- `scripts/check.py` is this project's CI.
 
