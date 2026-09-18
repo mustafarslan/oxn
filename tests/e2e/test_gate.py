@@ -95,3 +95,27 @@ def test_a_declared_ceiling_governs_every_language(
     assert [v["rule"] for v in violations] == ["cognitive_complexity"]
     assert violations[0]["value"] == 9.0
     assert violations[0]["ceiling"] == 8.0
+
+
+def test_a_class_aggregate_gates_as_well_as_the_per_function_ceilings(
+    installed: Installed, project: Path
+) -> None:
+    """The anti-gaming pair: a ceiling per function invites spreading the work over methods.
+
+    Thirteen trivial methods break nothing per-function -- each is cognitive 0 -- so only the
+    class aggregate can see it. P10 pairs every per-function ceiling with one of these for
+    exactly that reason, and nothing drove it through the installed binary until now.
+    """
+    (project / "oxn.yaml").write_text(
+        "ceilings:\n  methods_per_class: 12\n  weighted_methods_per_class: 25\n"
+    )
+    body = "class Big:\n" + "".join(f"    def m{n}(self):\n        return {n}\n" for n in range(13))
+    (project / "src" / "big.py").write_text(body)
+
+    result = installed.run("check", "--json", cwd=project)
+
+    assert result.returncode == 2, "thirteen methods passed a ceiling of twelve"
+    violations = _json(result)["violations"]
+    assert [v["rule"] for v in violations] == ["methods_per_class"]
+    assert violations[0]["value"] == 13.0
+    assert violations[0]["entity"].endswith(".Big")
