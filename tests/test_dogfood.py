@@ -848,3 +848,59 @@ def test_the_before_state_is_measured_in_the_bed_and_not_in_this_repository(tmp_
     assert measure(None, target, root=Path(__file__).resolve().parent.parent).target == (
         UNMEASURABLE
     )
+
+
+# ---- keeping what a run produced ---------------------------------------------------------
+
+
+def test_a_rate_limited_endpoint_stops_the_run_instead_of_being_asked_again() -> None:
+    """39 of 44 attempts in one run were the same rate-limit refusal, across twelve targets.
+
+    A 429 is a cloud endpoint saying "retry later" in as many words. Asking it again with the
+    next target gets the same answer, so the run produced twelve targets' worth of identical
+    rows and nothing else -- and a log full of those is not a record of a model that cannot
+    refactor, which is what it looks like to anything reading it afterwards.
+
+    Typed, not text-matched: the message in a 429 is prose from someone else's server.
+    """
+    import sys
+
+    sys.path.insert(0, "scripts")
+    from attempt import _was_refused
+    from oxn.llm import OllamaError, OllamaUnavailable
+
+    assert _was_refused(OllamaUnavailable("HTTP 429 -- rate limited, retry later"))
+    assert _was_refused(OllamaUnavailable("unreachable: timed out"))
+
+    # A model that answered something unusable is a defect and must still be retried.
+    assert not _was_refused(OllamaError("returned an empty completion"))
+    assert not _was_refused(ValueError("something else entirely"))
+
+
+def test_an_attempt_is_written_before_the_next_target_starts(tmp_path, monkeypatch) -> None:
+    """The log was written once, after every target, and an interrupted run recorded nothing.
+
+    Two interruptions on one afternoon -- an out-of-memory kill and a deliberate stop once
+    the endpoint began refusing -- cost 44 attempts between them. The second threw away the
+    only accepted repair an external bed had ever produced, `urlparse` 63 -> 6, which had sat
+    in a list for forty minutes with nothing but the end of the loop between it and disk.
+
+    Attempts are independent records. Nothing about one depends on the run finishing.
+    """
+    import json
+    import sys
+
+    sys.path.insert(0, "scripts")
+    import runlog
+    from runlog import Attempt, _append_log
+
+    log = tmp_path / "log.jsonl"
+    monkeypatch.setattr(runlog, "LOG", log)
+
+    _append_log([Attempt("first", "a.py", 1, False, {})], announce=False)
+    assert log.exists(), "the first target's row must be on disk before the second runs"
+
+    _append_log([Attempt("second", "b.py", 1, True, {})], announce=False)
+    rows = [json.loads(line) for line in log.read_text().splitlines()]
+    assert [row["target"] for row in rows] == ["first", "second"]
+    assert rows[0]["endpoint_unavailable"] is False

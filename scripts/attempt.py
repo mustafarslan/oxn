@@ -272,12 +272,26 @@ def _ask_for_a_candidate(
             attempt,
             error=str(error)[:200],
             next_feedback=feedback,
-            last=_was_cut_off(error),
+            last=_was_cut_off(error) or _was_refused(error),
+            endpoint_unavailable=_was_refused(error),
             # A truncated ask is the most expensive attempt there is, and it was logged as
             # free: 608 seconds and 124,567 characters generated, `prompt_chars` 0.
             prompt_chars=getattr(error, "prompt_chars", 0),
             reply_chars=getattr(error, "written", 0),
         )
+
+
+def _was_refused(error: BaseException) -> bool:
+    """Did the endpoint decline to serve this at all?
+
+    Asked by type, like `_was_cut_off`, and for the sharper version of its reason: the text
+    of a 429 is prose from someone else's server. `OllamaUnavailable` covers unreachable,
+    timed out, and any HTTP status -- all of them cases where another attempt asks a host
+    that has already said no, so the retry buys nothing and the run should stop.
+    """
+    from oxn.llm import OllamaUnavailable
+
+    return isinstance(error, OllamaUnavailable)
 
 
 def _was_cut_off(error: BaseException) -> bool:

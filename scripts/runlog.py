@@ -43,6 +43,13 @@ class Attempt:
     gauntlet: dict[str, Any]
     judge: dict[str, Any] = field(default_factory=dict)
     error: str = ""
+    #: The endpoint refused to serve this, rather than serving something unusable. 429 above
+    #: all, which is a cloud model throttling and says "retry later" in as many words. It
+    #: stops the run rather than annotating it: every remaining target would ask the same
+    #: endpoint the same question and get the same refusal, and one run did exactly that --
+    #: 39 of 44 attempts were identical rate-limit rows against twelve targets nobody looked
+    #: at. A log full of those is not a record of a model that cannot refactor.
+    endpoint_unavailable: bool = False
     seconds: float = 0.0
     #: The extracted candidate and the raw reply it came from. A few KB each, and the only
     #: way to diagnose a bug in extraction after the fact -- which is precisely the analysis
@@ -95,7 +102,19 @@ def _jsonable(value: Any) -> Any:
     raise TypeError(f"cannot log a {type(value).__name__}")
 
 
-def _append_log(attempts: list[Attempt]) -> None:
+def _append_log(attempts: list[Attempt], *, announce: bool = True) -> None:
+    """Append these attempts to the log, flushed before returning.
+
+    **Called per target rather than per run, because a run that does not finish used to
+    record nothing.** Two interruptions on one afternoon cost 44 attempts between them --
+    an out-of-memory kill and a deliberate stop after the endpoint started returning 429 --
+    and the second of those threw away the only accepted repair an external bed had ever
+    produced, `urlparse` 63 -> 6. The rows existed in memory for forty minutes with nothing
+    but the end of the loop standing between them and disk.
+
+    Attempts are independent records; nothing about one depends on the run completing, so
+    nothing about writing one should either.
+    """
     if not attempts:
         return
     LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -103,7 +122,9 @@ def _append_log(attempts: list[Attempt]) -> None:
         for attempt in attempts:
             row = {"timestamp": time.time(), **asdict(attempt)}
             handle.write(json.dumps(row, default=_jsonable) + "\n")
-    say(f"\n{DIM}logged {len(attempts)} attempt(s) to {LOG.relative_to(ROOT)}{RESET}")
+        handle.flush()
+    if announce:
+        say(f"\n{DIM}logged {len(attempts)} attempt(s) to {LOG.relative_to(ROOT)}{RESET}")
 
 
 # ---- P11's measures ------------------------------------------------------------------------

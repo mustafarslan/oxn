@@ -116,18 +116,47 @@ def repair(targets: list[Target], session: Session, where: Bed = SELF) -> list[A
     DIFFS.mkdir(parents=True, exist_ok=True)
     attempts: list[Attempt] = []
     for sample in range(max(1, session.repeats)):
-        for target in targets:
-            of = f" {DIM}[{sample + 1}/{session.repeats}]{RESET}" if session.repeats > 1 else ""
-            where_at = f"{DIM}{target.path} scores {target.score:.0f}{RESET}"
-            say(f"\n{BOLD}{target.leaf}{RESET} {where_at}{of}")
-            attempts.extend(_repair_one(target, session, crew, where, sample))
+        for index, target in enumerate(targets):
+            made = _one_target(target, session, crew, where, sample)
+            attempts.extend(made)
+            if any(attempt.endpoint_unavailable for attempt in made):
+                remaining = len(targets) - index - 1
+                say(
+                    f"\n{RED}the model endpoint refused the request; stopping rather than "
+                    f"asking it {remaining} more times{RESET}"
+                )
+                return _finish(attempts, session)
 
+    return _finish(attempts, session)
+
+
+def _one_target(
+    target: Target, session: Session, crew: Crew, where: Bed, sample: int
+) -> list[Attempt]:
+    """One target announced, repaired, and written to the log before the next one starts.
+
+    The write is here rather than after the loop because a run that does not finish used to
+    record nothing: two interruptions in one afternoon cost 44 attempts, including the only
+    accepted repair an external bed had produced. Announcing, repairing and recording are one
+    unit of work per target, and splitting the recording out of it is what made them
+    separable enough to lose.
+    """
+    of = f" {DIM}[{sample + 1}/{session.repeats}]{RESET}" if session.repeats > 1 else ""
+    say(f"\n{BOLD}{target.leaf}{RESET} {DIM}{target.path} scores {target.score:.0f}{RESET}{of}")
+    made = _repair_one(target, session, crew, where, sample)
+    if not session.is_fake:
+        _append_log(made, announce=False)
+    return made
+
+
+def _finish(attempts: list[Attempt], session: Session) -> list[Attempt]:
+    """Say what was written. The writing itself already happened, per target."""
     if session.is_fake:
         # The fake client emits fixed junk, so these rows would be indistinguishable from
         # real attempts in a benchmark record that exists to be read later.
         say(f"\n{DIM}dry run -- not logged{RESET}")
-    else:
-        _append_log(attempts)
+    elif attempts:
+        say(f"\n{DIM}logged {len(attempts)} attempt(s) to benchmarks/dogfood-log.jsonl{RESET}")
     return attempts
 
 
