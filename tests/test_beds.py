@@ -323,7 +323,7 @@ def test_the_go_vet_command_was_narrowed_when_the_test_command_was() -> None:
 
 
 def test_a_bed_that_declares_verification_it_cannot_run_is_still_refused() -> None:
-    """"No verification declared" and "declared but unrunnable here" used to be one state.
+    """ "No verification declared" and "declared but unrunnable here" used to be one state.
 
     typescript-nest's `verify` commands are correct -- `npm test`, `npm run lint` -- and the
     bed still cannot run, because the pinned checkout's dependencies do not install: the

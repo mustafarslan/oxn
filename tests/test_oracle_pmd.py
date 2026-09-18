@@ -41,7 +41,9 @@ FLOORS = {
     "typescript-nest": 0.80,
 }
 
-requires_pmd = pytest.mark.skipif(not PMD.exists(), reason="PMD not installed; scripts/check.py --oracle --install")
+requires_pmd = pytest.mark.skipif(
+    not PMD.exists(), reason="PMD not installed; scripts/check.py --oracle --install"
+)
 
 
 def _measure() -> object:

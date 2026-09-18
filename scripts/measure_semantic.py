@@ -177,10 +177,14 @@ def _complement(rows: list[dict[str, Any]]) -> tuple[int, int]:
     is what turns "it scores lower" into "it knows nothing the other does not".
     """
     rescued = sum(
-        1 for row in rows if _gold_rank(row["semantic"], row["gold"]) + 2 <= _gold_rank(row["bm25"], row["gold"])
+        1
+        for row in rows
+        if _gold_rank(row["semantic"], row["gold"]) + 2 <= _gold_rank(row["bm25"], row["gold"])
     )
     damaged = sum(
-        1 for row in rows if _gold_rank(row["bm25"], row["gold"]) + 2 <= _gold_rank(row["semantic"], row["gold"])
+        1
+        for row in rows
+        if _gold_rank(row["bm25"], row["gold"]) + 2 <= _gold_rank(row["semantic"], row["gold"])
     )
     return rescued, damaged
 

@@ -123,7 +123,9 @@ def test_the_same_tree_measures_the_same_twice(installed: Installed, project: Pa
     second = installed.run("check", "--json", cwd=project).stdout
     assert first == second, "two runs over one tree disagreed"
 
-    subprocess.run(["rm", "-rf", str(project / ".oxn" / "cache")], check=True)
+    cache = project / ".oxn" / "cache"
+    assert (cache / "graph.db").exists(), "no cache was written, so clearing it proves nothing"
+    subprocess.run(["rm", "-rf", str(cache)], check=True)
     assert installed.run("check", "--json", cwd=project).stdout == first, "the cache went stale"
 
 

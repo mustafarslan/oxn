@@ -55,11 +55,12 @@ from arms import arm
 from attempt import Run, one_attempt
 from beds import SELF, Bed, bed, bed_names
 from console import BOLD, DIM, RED, RESET, say
-from oxn.llm import DEFAULT_JUDGE_MODEL, DEFAULT_MODEL
 from gauntlet import SCRATCH, Sandbox, measure, verify_bed
 from runlog import Attempt, _append_log
 from summary import summarise
 from targets import Target, plan, select_targets
+
+from oxn.llm import DEFAULT_JUDGE_MODEL, DEFAULT_MODEL
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "benchmarks" / "dogfood-log.jsonl"

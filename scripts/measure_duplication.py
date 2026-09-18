@@ -112,8 +112,18 @@ def pmd_clone_lines(
     listing.write_text("\n".join(str(directory / path) for path in paths))
     try:
         result = subprocess.run(
-            [str(PMD), "cpd", "--minimum-tokens", str(min_tokens), "--language", language,
-             "--file-list", str(listing), "--format", "csv"],
+            [
+                str(PMD),
+                "cpd",
+                "--minimum-tokens",
+                str(min_tokens),
+                "--language",
+                language,
+                "--file-list",
+                str(listing),
+                "--format",
+                "csv",
+            ],
             capture_output=True,
             text=True,
         )
@@ -188,7 +198,10 @@ def load(name: str) -> Corpus:
 
 
 def main() -> int:
-    header = f"{'corpus':<24}{'files':>6}{'tok':>5}{'PMD':>8}{'OXN':>8}{'recall':>8}{'lineJ':>7}{'fileJ':>7}"
+    header = (
+        f"{'corpus':<24}{'files':>6}{'tok':>5}{'PMD':>8}"
+        f"{'OXN':>8}{'recall':>8}{'lineJ':>7}{'fileJ':>7}"
+    )
     print(header)
     print("-" * len(header))
     for name in CORPUS_LANGUAGES:

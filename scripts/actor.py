@@ -338,7 +338,9 @@ def _defines(source: str, name: str, profile: Any = None) -> bool:
     else. The regex remains for a caller with no profile, which is the tests.
     """
     if profile is None:
-        return re.search(rf"^\s*(?:async\s+)?def\s+{re.escape(name)}\s*\(", source, re.M) is not None
+        return (
+            re.search(rf"^\s*(?:async\s+)?def\s+{re.escape(name)}\s*\(", source, re.M) is not None
+        )
 
     from oxn.graph.builder import build_file
     from oxn.languages import get_parser

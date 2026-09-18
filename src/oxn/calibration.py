@@ -138,7 +138,8 @@ _CEILINGS: tuple[Parameter, ...] = (
         provenance=(
             "12, between idea.md's proposed 8 and SonarSource's default 15. Neither endpoint "
             "is measured either: 15 is a product default, not a finding. Measured cost: it "
-            "rejects 0.53% (java) to 10.57% (javascript) of named callables across the eight corpora."
+            "rejects 0.53% (java) to 10.57% (javascript) of named callables across the eight "
+            "corpora."
         ),
         fit_when=(
             "not an unweighted percentile -- p95 of these distributions is 2 in TypeScript and 9 "

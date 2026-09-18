@@ -632,6 +632,7 @@ def _working_shred() -> object:
         new_helpers={"a": 1.0, "b": 1.0, "c": 2.0, "d": 0.0},
     )
 
+
 def test_a_target_is_measurable_with_an_interpreter_that_has_no_oxn(tmp_path) -> None:
     """Every external bed scored `999 -> 999`, and the model was never the reason.
 
@@ -732,6 +733,7 @@ def test_a_rate_limited_endpoint_stops_the_run_instead_of_being_asked_again() ->
 
     sys.path.insert(0, "scripts")
     from attempt import _was_refused
+
     from oxn.llm import OllamaError, OllamaUnavailable
 
     assert _was_refused(OllamaUnavailable("HTTP 429 -- rate limited, retry later"))
@@ -786,6 +788,7 @@ def test_the_harness_names_the_actor_it_actually_defaults_to() -> None:
 
     sys.path.insert(0, "scripts")
     import dogfood
+
     from oxn.llm import DEFAULT_JUDGE_MODEL, DEFAULT_MODEL
 
     help_text = dogfood._parser().format_help()
@@ -843,12 +846,16 @@ def test_a_repair_is_recognised_in_every_language_the_harness_declares_a_bed_for
 
     sys.path.insert(0, "scripts")
     from actor import _defines
+
     from oxn.profiles import get_profile
 
     written = {
         "go": ("func TraceEndpoint(name string) error {\n\treturn nil\n}\n", "TraceEndpoint"),
         "rust": ("fn try_find_iter_at(&self, x: u8) -> bool {\n    true\n}\n", "try_find_iter_at"),
-        "typescript": ("function handleRequest(a: string): void {\n  return;\n}\n", "handleRequest"),
+        "typescript": (
+            "function handleRequest(a: string): void {\n  return;\n}\n",
+            "handleRequest",
+        ),
         "java": ("public class C {\n  void doWork(int a) { }\n}\n", "doWork"),
         "python": ("def repair(x):\n    return x\n", "repair"),
     }

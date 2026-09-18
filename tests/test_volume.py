@@ -70,8 +70,7 @@ def test_a_clone_class_keeps_the_occurrences_a_longer_class_did_not_claim() -> N
     affected = report.duplicate_lines_by_file()
 
     assert {"c.py", "d.py"} <= set(affected), (
-        "two identical files report no duplication between them; reported: "
-        f"{sorted(affected)}"
+        f"two identical files report no duplication between them; reported: {sorted(affected)}"
     )
     assert {"a.py", "b.py"} <= set(affected), "the longer class must still be reported"
 

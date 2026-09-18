@@ -8,6 +8,7 @@ path and a virtualenv has only what the wheel asked for.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import zipfile
 from pathlib import Path
@@ -75,9 +76,44 @@ def test_uninstall_removes_the_script(installed: Installed, tmp_path: Path) -> N
             != 0
         ), "the package is importable after uninstall"
     finally:
+        # `check=True`: the session fixture is shared, so a failed reinstall would surface as
+        # an unrelated error in whichever module happened to run next.
         subprocess.run(
             [str(installed.python), "-m", "pip", "install", "--quiet", str(installed.wheel)],
             capture_output=True,
             text=True,
-            check=False,
+            check=True,
         )
+
+
+def test_the_hook_fast_path_stays_lean_in_an_installed_environment(
+    installed: Installed, tmp_path: Path
+) -> None:
+    """`oxn check --json` must not load typer or rich -- measured on the wheel, not the tree.
+
+    `tests/test_import_guard.py` pins this in the repository. It is asserted again here
+    because the thing that would break it is a packaging change: an entry point rewired, or
+    an eager import added to `oxn/__init__.py`, is invisible to a test that imports from a
+    source checkout with everything already on the path.
+    """
+    probe = tmp_path / "probe.py"
+    probe.write_text(
+        "import json, sys\n"
+        "import oxn.cli\n"
+        "try:\n"
+        "    oxn.cli.main(['check', '--json', '.'])\n"
+        "except SystemExit:\n"
+        "    pass\n"
+        "sys.stderr.write(json.dumps(sorted(sys.modules)))\n"
+    )
+    result = subprocess.run(
+        [str(installed.python), str(probe)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    loaded = set(json.loads(result.stderr[result.stderr.rindex("[") :]))
+
+    offenders = {name for name in loaded if name.split(".")[0] in {"typer", "rich", "click"}}
+    assert not offenders, f"the installed fast path loaded {sorted(offenders)}"

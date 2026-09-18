@@ -119,6 +119,8 @@ def test_the_repair_loop_is_bounded_per_session(installed: Installed, project: P
 
     assert "retry budget spent" in result.stderr.lower(), result.stderr
     assert counts[0] != counts[-1], "the ledger never counted anything"
+    ledger = project / ".oxn" / "cache" / "attempts" / "session-a.json"
+    assert ledger.exists(), "the budget was enforced without a ledger to enforce it from"
 
 
 def test_a_different_session_starts_with_a_fresh_budget(
@@ -133,3 +135,28 @@ def test_a_different_session_starts_with_a_fresh_budget(
 
     assert result.returncode == 2
     assert "retry budget spent" not in result.stderr.lower()
+
+
+def test_repairing_a_violation_forgets_its_attempts(installed: Installed, project: Path) -> None:
+    """The count is per violation, and clearing one forgets it.
+
+    Without this, an agent that spends its budget, fixes the function, and later breaks it
+    again is refused a repair it has never actually been asked for. Exhaustion and
+    per-session freshness both pass whether or not the ledger can forget, so this is the
+    only leg that pins it.
+    """
+    edited = plant(FIXTURES / "over_ceiling.py.txt", project / "src")
+    for _ in range(4):
+        installed.run("check", "--json", stdin=_payload(edited, "session-c"), cwd=project)
+
+    plant(FIXTURES / "same_shape" / "sample.py.txt", project / "src", name="over_ceiling.py")
+    repaired = installed.run("check", "--json", stdin=_payload(edited, "session-c"), cwd=project)
+    assert repaired.returncode == 0, repaired.stdout
+
+    plant(FIXTURES / "over_ceiling.py.txt", project / "src")
+    again = installed.run("check", "--json", stdin=_payload(edited, "session-c"), cwd=project)
+
+    assert again.returncode == 2
+    assert "retry budget spent" not in again.stderr.lower(), (
+        "a repaired violation kept the attempts it was repaired after"
+    )

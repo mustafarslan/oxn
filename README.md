@@ -18,13 +18,22 @@ no paid tooling.
 
 ## Install, and the first five minutes
 
+OXN is **not on PyPI yet** -- it is pre-alpha and the repository is private, so
+`pip install oxn` will not find it. Install from a checkout:
+
 ```sh
-python -m pip install oxn        # or: pipx install oxn
-cd your-project
+git clone https://github.com/mustafarslan/oxn && cd oxn
+python -m pip install .          # `pipx install .` to keep it off your project's path
+
+cd ../your-project
 oxn init                         # writes oxn.yaml, the hook, the MCP entry, a CLAUDE.md section
 oxn check                        # where you stand today
 oxn baseline                     # accept today's debt; new violations still fail
 ```
+
+If `oxn` is not on your `PATH` afterwards -- an unactivated virtualenv, or a `pipx` whose
+bin directory is not exported -- `python -m oxn` is the same program by another name, and
+`oxn init` says so rather than wiring a hook to a command that will not resolve.
 
 `oxn init` is additive and idempotent: it writes `oxn.yaml` only when absent, keeps its
 `CLAUDE.md` section between markers, and merges `.claude/settings.json` and `.mcp.json`
