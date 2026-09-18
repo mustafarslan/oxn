@@ -61,6 +61,22 @@ corpora:
       to 110 *direct* dependencies match the lock at every tag checked, so the fault is
       transitive peers and no static check predicts it -- only the resolver finds it.
 
+  # TypeScript's runnable gauntlet bed. nest is the better architectural subject and cannot
+  # be installed (see `typescript-nest-bed` above); this one verifies, which is the property
+  # a bed cannot do without. Decorator-based controllers, middlewares and interceptors, so
+  # the layered contract OXN checks is still what the repository is about.
+  - name: typescript-routing-controllers
+    use: eval
+    language: typescript
+    url: https://github.com/typestack/routing-controllers
+    ref: v0.11.3
+    why: >
+      Verified pristine on 2026-09-19: `npm ci` installs 716 packages in 2s, `npm test`
+      passes 187 tests across 28 suites, and `npm run lint:check` is clean at
+      --max-warnings 0. Declares no `engines` floor, so it does not need a Node newer
+      than the one on the machine -- which is what ruled out adonisjs/core v7.5.0, whose
+      install and typecheck pass but whose test runner requires Node >= 24.
+
   # ---- threshold calibration + robustness ------------------------------------------
   # Chosen for layered or explicitly modular architectures, since layer-conformance is
   # what OXN gates on. Kept deliberately small in number; breadth matters more than size.

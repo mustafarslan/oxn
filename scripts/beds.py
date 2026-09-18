@@ -311,6 +311,26 @@ _OSS: dict[str, Bed] = {
         ),
         why="TypeScript, and a framework whose whole subject is layering.",
     ),
+    # **TypeScript's bed is not its best repository, and that is the trade.** nest is the
+    # better architectural subject -- a framework whose whole subject is layering -- and
+    # three of its releases cannot be installed at all (see `typescript-nest` below). A bed
+    # exists to say whether a repair broke something, so one that verifies beats one that
+    # reads better and cannot run. routing-controllers is still decorator-driven controllers,
+    # middlewares and interceptors, which is the layered shape OXN checks by name.
+    #
+    # `npm ci`, not `npm install`, for the reason every bed here uses it: the corpus ships a
+    # lock and a bed that re-resolves versions per sandbox is not verifying the tree it was
+    # pinned to verify. Unlike nest's, this lock installs.
+    "typescript-routing-controllers": Bed(
+        name="typescript-routing-controllers",
+        corpus="typescript-routing-controllers",
+        sources=("src",),
+        prepare=(("npm", "ci", "--no-audit", "--no-fund"),),
+        # `lint:check` rather than `lint`, which is the fixing variant: a bed that repairs
+        # the thing it is measuring reports a pass it created.
+        verify=(("tests", "npm", "test"), ("lint", "npm", "run", "lint:check")),
+        why="TypeScript, and the one TS corpus here whose pristine tree verifies.",
+    ),
     "java-spring-petclinic": Bed(
         name="java-spring-petclinic",
         corpus="java-spring-petclinic",

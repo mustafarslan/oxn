@@ -152,11 +152,12 @@ def test_there_is_a_runnable_bed_for_every_supported_language(harness) -> None:
     assert {"self", "go-kit", "rust-ripgrep", "python-httpx"} <= runnable
     assert "java-spring-petclinic" in runnable
 
-    # **TypeScript has no runnable bed, and that is recorded rather than asserted away.**
-    # The pin's `package-lock.json` is out of sync with its `package.json`, so `npm ci`
-    # refuses and `npm install` abandons the pin only to hit a real peer conflict. The bed's
-    # `verify` commands are right; nothing can install what they run against. Until the
-    # corpus is re-pinned, five of the six languages have a bed and the sixth does not.
+    # **TypeScript has one from 2026-09-19, and it is not the repository anyone would pick
+    # for the subject.** nest is the better architectural case and cannot be installed at
+    # all: three releases, three different `npm ci` failures, all in transitive peers. A bed
+    # exists to say whether a repair broke something, so the one that verifies wins over the
+    # one that reads better. nest stays declared and blocked, with the reason on it.
+    assert "typescript-routing-controllers" in runnable
     assert not harness.BEDS["typescript-nest"].runnable
     assert harness.BEDS["typescript-nest"].blocked_on, "and it must say why"
 
