@@ -42,11 +42,28 @@ thing OXN already does properly and a skill cannot do at all.
 
 **OXN consumes runtime profiles. It never produces them.**
 
-The input contract is one public format: folded stacks, `frame;frame;leaf <count>`, one path per
-line. Not pprof, not JFR, not `.cpuprofile`. Those are a protobuf parser, a JDK tool invocation and
-a V8 implementation detail respectively, and each is either a dependency ADR-0001 refuses or a
-shell-out to a toolchain that may not exist. Whatever produced the profile owns the conversion;
-every profiler in common use can emit folded stacks or has a one-command converter. OXN reads text.
+The input contract is folded stacks, `frame;frame;leaf <count>`, one path per line — **and every
+frame must carry `file:line` where its producer knows it.** Not pprof, not JFR, not `.cpuprofile`:
+those are a protobuf parser, a JDK tool invocation and a V8 implementation detail respectively, and
+each is either a dependency ADR-0001 refuses or a shell-out to a toolchain that may not exist.
+Whatever produced the profile owns the conversion; OXN reads text.
+
+**The `file:line` half of that contract was added after measuring, and the first draft of this
+document was wrong without it.** Symbol names alone do not join. Measured on go-kit's `sd`
+benchmark, 3,819 samples, 79 distinct frames of which 6 are in project code: joining on symbol name
+resolved **4 of 6**, joining on the file and line the profile already carries resolved **6 of 6**.
+
+The two misses are one failure and it is systematic rather than unlucky. Go names an anonymous
+function `BenchmarkEndpoints.func2`; OXN names the same function `<func_literal@26>`. Neither
+spelling is wrong and no normalisation reconciles them, because the number in each is counting a
+different thing — Go counts closures within the enclosing function, OXN records the line. Python
+lambdas and JavaScript arrow functions are the same shape, and closures are not a rare inhabitant
+of hot paths: callbacks, handlers and deferred work are most of what an event-driven program does.
+
+So a symbol-only profile is accepted and its resolution rate is reported, but it is the degraded
+mode, and the report must say which mode it ran in. Every producer worth reading already carries
+the richer form: `go tool pprof -raw` prints file and line per frame, py-spy's raw format writes
+`func (file.py:42)`, and async-profiler can be asked for line numbers.
 
 This is not a compromise reached for want of effort. A gatekeeper that runs a profiler acquires the
 right to install one, to ask for `sudo`, to need `perf_event_open`, and to behave differently on
@@ -101,10 +118,33 @@ radius, and OXN takes no actions.
 
 ## Verification
 
-One language first, and a measured resolution rate before the feature is described as existing. Go
-is the candidate: the toolchain is installed, `go test -bench -cpuprofile` needs no privileges and
-no attach, `go tool pprof -raw` folds without a library, and `go-kit` is already fetched and
-verified as a bed. The number that decides whether this is worth building is *of N distinct leaf
-symbols in a real profile, how many map to an OXN entity* — and it is a number, not a judgement.
+**First measurement, 2026-09-18, Go.** `go test -bench=. -benchtime=3s -cpuprofile` on go-kit's
+`sd` package — the corpus's only benchmark — then `go tool pprof -raw`, against
+`oxn metrics --json` over the same tree (1,938 entities, 218 files).
+
+| | |
+|---|---|
+| samples | 3,819 |
+| distinct frames, all stacks | 79 |
+| in project code | 6 (8%) |
+| runtime and stdlib | 73 (92%) |
+| resolved by symbol name | 4 / 6 |
+| resolved by file and line | 6 / 6 |
+
+Three things follow, and only the third is a judgement.
+
+**The contract needed `file:line`,** as recorded above. This is the measurement that found it.
+
+**A digest must collapse runtime frames, and 92% is the reason.** Not a token-saving nicety: a
+ranking that lists `runtime.findRunnable` and `sync.(*RWMutex).RLock` above the two functions the
+program is actually made of is not a worse ranking, it is a different one about the Go scheduler.
+
+**The sample is too small to decide the feature and is not presented as deciding it.** Six project
+frames from one microbenchmark is an existence proof that the join works and a demonstration of one
+systematic failure in it. It is not a resolution rate for Go, let alone for anything else. What it
+justifies is a second measurement on a profile with real application code in it — the httpx bed
+under load would do, since `load-test`'s own fixture is a slow HTTP service — and what it does not
+justify is writing the feature.
 
 Below some rate this is a worse `grep` and should be abandoned rather than shipped with a caveat.
+That rate is still unmeasured; 6 of 6 on six frames does not establish it.
