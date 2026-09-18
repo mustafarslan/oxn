@@ -904,3 +904,28 @@ def test_an_attempt_is_written_before_the_next_target_starts(tmp_path, monkeypat
     rows = [json.loads(line) for line in log.read_text().splitlines()]
     assert [row["target"] for row in rows] == ["first", "second"]
     assert rows[0]["endpoint_unavailable"] is False
+
+
+def test_the_harness_names_the_actor_it_actually_defaults_to() -> None:
+    """The docstring said `glm` writes and the default had been `kimi` since 2026-09-11.
+
+    `--model`'s help text said `glm-5.3:cloud` too, while `oxn.llm.DEFAULT_MODEL` said
+    otherwise. A file's own documentation arguing against its own default is worse than none:
+    it gets believed. On 2026-09-18 it cost a six-target run to find out that glm fills
+    whatever output budget it is given and is cut off mid-answer every time.
+
+    The help text is built from the constants now, so this asserts they cannot disagree
+    again rather than asserting today's model names.
+    """
+    import sys
+
+    sys.path.insert(0, "scripts")
+    import dogfood
+    from oxn.llm import DEFAULT_JUDGE_MODEL, DEFAULT_MODEL
+
+    help_text = dogfood._parser().format_help()
+    assert DEFAULT_MODEL in help_text, "--model must name the default it actually uses"
+    assert DEFAULT_JUDGE_MODEL in help_text
+
+    # And the prose at the top of the file has to agree with them.
+    assert DEFAULT_MODEL.split(":")[0].split("-")[0] in dogfood.__doc__

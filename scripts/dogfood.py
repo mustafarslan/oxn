@@ -8,9 +8,16 @@ Rather than hand-refactor, this drove the loop OXN exists to create, on OXN:
 
     select a violation -> ask a model to repair it -> verify deterministically -> judge
 
-Two models, deliberately different. **glm** writes (the actor); **deepseek** assesses (the
+Two models, deliberately different. **kimi** writes (the actor); **deepseek** assesses (the
 judge). A model grading its own output is not an independent check, and the agreement rate
 between judge and gauntlet is itself worth measuring.
+
+This paragraph said *glm* writes until 2026-09-18, describing the design rather than the
+measurement that replaced it on 2026-09-11: `glm-5.3:cloud` fills whatever output budget it
+is given and is cut off mid-answer every time -- 6 targets, 6 failures, 120,000-134,000
+characters each on the httpx bed. `oxn.llm.DEFAULT_MODEL` had already moved to `kimi-k3:cloud`
+and this text had not, which is worse than no text: it is the file's own docstring arguing
+against its own default, and following it costs a run to find out.
 
 **The judge never overrules the gauntlet.** A candidate that fails tests, types, lint or the
 shredding detector is rejected before a judge sees it. The judge only chooses among
@@ -48,6 +55,7 @@ from arms import arm
 from attempt import Run, one_attempt
 from beds import SELF, Bed, bed, bed_names
 from console import BOLD, DIM, RED, RESET, say
+from oxn.llm import DEFAULT_JUDGE_MODEL, DEFAULT_MODEL
 from gauntlet import SCRATCH, Sandbox, measure, verify_bed
 from runlog import Attempt, _append_log
 from summary import summarise
@@ -325,12 +333,14 @@ def _parser() -> argparse.ArgumentParser:
         help="what drives the loop. `claude-code` is the arm P11 says the result depends on",
     )
     parser.add_argument(
-        "--model", default="", help="actor model (default: $OXN_OLLAMA_MODEL, else glm-5.3:cloud)"
+        "--model",
+        default="",
+        help=f"actor model (default: $OXN_OLLAMA_MODEL, else {DEFAULT_MODEL})",
     )
     parser.add_argument(
         "--judge-model",
         default="",
-        help="judge model (default: $OXN_OLLAMA_JUDGE_MODEL, else deepseek-v4-pro:cloud)",
+        help=f"judge model (default: $OXN_OLLAMA_JUDGE_MODEL, else {DEFAULT_JUDGE_MODEL})",
     )
     parser.add_argument("--host", default="", help="Ollama host (default: $OXN_OLLAMA_HOST)")
     parser.add_argument("--skip", action="append", default=[], help="qualified name to skip")
