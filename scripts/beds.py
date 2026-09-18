@@ -83,7 +83,7 @@ class Bed:
 #: The one httpx test that does not pass on its own untouched tree here. See the bed below.
 _TRIO_TIMEOUT = "tests/test_timeouts.py::test_write_timeout[trio]"
 
-#: go-kit's packages, minus `sd/eureka`. See the bed below for why that one is named out.
+#: go-kit's packages, minus `sd/eureka` and the whole of `metrics`. See the bed below.
 #:
 #: Go has no `--deselect`, so an exclusion has to be spelled as an inclusion. Written as the
 #: eight groups that have no exclusion plus `sd` expanded, rather than as `./...`, because
@@ -94,31 +94,20 @@ _GO_KIT_PACKAGES = (
     "./circuitbreaker/...",
     "./endpoint/...",
     "./log/...",
-    "./metrics",
-    # `metrics/cloudwatch` is left out for a different reason than `sd/eureka`, and the
-    # difference matters: `TestGauge` there is **flaky**, not broken. Three runs on the
-    # pristine tree gave FAIL, FAIL, ok, and the failures are lost values -- the test writes
-    # gauges concurrently and compares against what it meant to write. A deterministic
-    # failure merely blocks a bed; a coin-flip one makes every `tests` verdict noise and
-    # would have been read as repairs that sometimes break Go and sometimes do not.
+    # **The whole of `metrics` is left out, for a different reason than `sd/eureka` and a
+    # worse one: those tests are flaky, not broken.** `TestGauge` in `metrics/cloudwatch` was
+    # the first one found -- three pristine runs giving FAIL, FAIL, ok -- and excluding that
+    # single package was not enough: four runs of `./metrics/...` on the untouched tree
+    # failed in `cloudwatch`, `prometheus` and `dogstatsd`, three runs out of four, with a
+    # different subset each time.
     #
-    # Excluded as a package rather than with `go test -skip TestGauge`, because `TestGauge`
-    # is defined in ten of these packages and the other nine are fine.
-    "./metrics/cloudwatch2/...",
-    "./metrics/discard/...",
-    "./metrics/dogstatsd/...",
-    "./metrics/expvar/...",
-    "./metrics/generic/...",
-    "./metrics/graphite/...",
-    "./metrics/influx/...",
-    "./metrics/influxstatsd/...",
-    "./metrics/internal/...",
-    "./metrics/multi/...",
-    "./metrics/pcp/...",
-    "./metrics/prometheus/...",
-    "./metrics/provider/...",
-    "./metrics/statsd/...",
-    "./metrics/teststat/...",
+    # A deterministic failure blocks a bed and gets noticed. A coin-flip one makes every
+    # `tests` verdict noise and lands in the log as repairs that sometimes break Go and
+    # sometimes do not, which nothing reading it afterwards can tell from a real regression.
+    #
+    # `sources` below drops `metrics` as well, and that pairing is the point: excluding a
+    # package from the tests while still selecting targets inside it would verify a repair
+    # with a suite that no longer covers it, which is worse than not repairing it at all.
     "./ratelimit/...",
     "./tracing/...",
     "./transport/...",
@@ -128,6 +117,41 @@ _GO_KIT_PACKAGES = (
     "./sd/dnssrv/...",
     "./sd/etcd/...",
     "./sd/etcdv3/...",
+    "./sd/internal/...",
+    "./sd/lb/...",
+    "./sd/zk/...",
+)
+
+#: The same list for `vet`, minus three more packages. **`vet` was left at `./...` when
+#: `test` was narrowed, and it fails on the untouched tree too** -- eight diagnostics, every
+#: one of them in a `_test.go` file and none of them anything a repair here introduces:
+#: `t.Fatal` called from a non-test goroutine in `transport/nats` and `sd/consul`, and
+#: `t.Errorf` copying a protobuf lock value in `transport/http/proto`. Newer vet checks
+#: meeting older test code.
+#:
+#: `go vet -tests=false` does not help -- it still reports them -- so the exclusion is again
+#: spelled as an inclusion, which is why `./transport/...` is expanded here and not above.
+_GO_KIT_VET_PACKAGES = (
+    "./auth/...",
+    "./circuitbreaker/...",
+    "./endpoint/...",
+    "./log/...",
+    "./metrics/...",
+    "./ratelimit/...",
+    "./tracing/...",
+    "./transport",
+    "./transport/amqp/...",
+    "./transport/awslambda/...",
+    "./transport/grpc/...",
+    "./transport/http",
+    "./transport/http/jsonrpc/...",
+    "./transport/httprp/...",
+    "./util/...",
+    "./sd",
+    "./sd/dnssrv/...",
+    "./sd/etcd/...",
+    "./sd/etcdv3/...",
+    "./sd/eureka/...",
     "./sd/internal/...",
     "./sd/lb/...",
     "./sd/zk/...",
@@ -174,7 +198,17 @@ _OSS: dict[str, Bed] = {
     "go-kit": Bed(
         name="go-kit",
         corpus="go-kit",
-        sources=(".",),
+        sources=(
+            "auth",
+            "circuitbreaker",
+            "endpoint",
+            "log",
+            "ratelimit",
+            "sd",
+            "tracing",
+            "transport",
+            "util",
+        ),
         # `sd/eureka`'s *test binary* does not link on this toolchain: go-kit pins a
         # `golang.org/x/net` old enough that `internal/socket` still makes an unexported
         # reference to `syscall.recvmsg`, which Go 1.26's linker rejects. The package itself
@@ -189,7 +223,7 @@ _OSS: dict[str, Bed] = {
         # never links.
         verify=(
             ("tests", "go", "test", *_GO_KIT_PACKAGES),
-            ("lint", "go", "vet", "./..."),
+            ("lint", "go", "vet", *_GO_KIT_VET_PACKAGES),
         ),
         why="Go, explicitly modular: one package per concern, and the ceilings' Go corpus.",
     ),

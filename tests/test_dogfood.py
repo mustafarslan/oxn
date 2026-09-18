@@ -680,16 +680,16 @@ def test_the_logged_result_carries_the_verdicts_and_not_just_the_scores() -> Non
 def test_the_go_bed_names_out_the_packages_that_fail_on_their_own_tree() -> None:
     """A bed that cannot verify its pristine tree cannot verify a repair.
 
-    Two go-kit packages fail before anything is repaired, for different reasons, and the
-    difference is why neither is handled by widening a floor. `sd/eureka`'s *test binary*
-    will not link -- the corpus pins a `golang.org/x/net` whose `internal/socket` still
-    references unexported `syscall.recvmsg`, which Go 1.26's linker rejects -- and
-    `metrics/cloudwatch`'s `TestGauge` is flaky, three pristine runs giving FAIL, FAIL, ok.
+    Three go-kit packages fail before anything is repaired, for two different reasons.
+    `sd/eureka`'s *test binary* will not link -- the corpus pins a `golang.org/x/net` whose
+    `internal/socket` still references unexported `syscall.recvmsg`, which Go 1.26's linker
+    rejects. And the whole of `metrics` is flaky: four runs of `./metrics/...` on the
+    untouched tree failed in `cloudwatch`, `prometheus` and `dogstatsd`, three runs out of
+    four, a different subset each time.
 
     The flake is the worse one. A deterministic failure blocks the bed and is noticed; a
     coin-flip one is recorded as repairs that sometimes break Go and sometimes do not, which
-    is indistinguishable in the log from a real regression. Pinned here because `./...` is
-    the natural thing to write and silently readmits both.
+    is indistinguishable in the log from a real regression.
     """
     import sys
 
@@ -698,9 +698,48 @@ def test_the_go_bed_names_out_the_packages_that_fail_on_their_own_tree() -> None
 
     packages = bed("go-kit").verify[0]
     assert not any("eureka" in argument for argument in packages)
-    assert "./metrics/cloudwatch/..." not in packages
-    assert "./..." not in packages, "`./...` readmits both; the list is the exclusion"
-    assert "./metrics/prometheus/..." in packages, "the other nine TestGauge packages stay"
+    assert not any("metrics" in argument for argument in packages)
+    assert "./..." not in packages, "`./...` readmits them; the list is the exclusion"
+
+
+def test_the_go_bed_stops_selecting_targets_in_packages_it_stopped_testing() -> None:
+    """The exclusions have to move together, and this is the one that is not tidiness.
+
+    Dropping `metrics` from the test command while still selecting targets inside it would
+    verify a repair with a suite that no longer covers it -- a green gauntlet over code
+    nothing ran. That is worse than leaving those seven targets unrepaired, which is what
+    dropping `metrics` from `sources` does instead.
+    """
+    import sys
+
+    sys.path.insert(0, "scripts")
+    from beds import bed
+    from dogfood import select_targets
+
+    go_kit = bed("go-kit")
+    assert not any(source.startswith("metrics") for source in go_kit.sources)
+    chosen = select_targets(12, 500, skip=set(), where=go_kit)
+    assert chosen, "the bed should still offer targets outside metrics"
+    assert not any(target.path.startswith("metrics/") for target in chosen)
+
+
+def test_the_go_vet_command_was_narrowed_when_the_test_command_was() -> None:
+    """Narrowing one verification command and leaving the other at `./...` is the easy miss.
+
+    `go vet ./...` fails on the untouched tree for a third reason: eight diagnostics, all in
+    `_test.go` files -- `t.Fatal` from a non-test goroutine in `transport/nats` and
+    `sd/consul`, `t.Errorf` copying a protobuf lock value in `transport/http/proto`. Newer
+    vet checks meeting older test code, and `go vet -tests=false` does not suppress them.
+    """
+    import sys
+
+    sys.path.insert(0, "scripts")
+    from beds import bed
+
+    lint = bed("go-kit").verify[1]
+    assert "./..." not in lint
+    for excluded in ("./transport/nats/...", "./sd/consul/...", "./transport/http/proto/..."):
+        assert excluded not in lint, f"{excluded} fails vet on the pristine tree"
 
 
 def test_a_bed_that_declares_verification_it_cannot_run_is_still_refused() -> None:
