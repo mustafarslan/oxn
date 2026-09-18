@@ -338,7 +338,13 @@ def test_the_calibration_surface_lists_the_budget() -> None:
     assert budget.value == float(thresholds.RETRY_BUDGET)
     # Repair trajectories back its *cost*, not its value: `observations` counts what
     # has been seen at the current setting, and `evidence` carries whether it was fitted.
-    assert budget.observations == 24
+    #
+    # The count itself is pinned by `test_the_retry_budget_counts_the_trajectories_it_was
+    # _observed_on`, against the log rather than against a literal. It was written here too,
+    # and both had to be edited whenever the harness ran -- so the second copy was a number
+    # that could disagree with the log while still passing, which is the failure this whole
+    # surface exists to prevent.
+    assert budget.observations > 0
     assert budget.evidence is Evidence.JUDGEMENT
 
 

@@ -77,7 +77,14 @@ class Bed:
 
     @property
     def runnable(self) -> bool:
-        return self.fetched and bool(self.verify)
+        """Fetched, declaring verification, and not known to be unable to run it.
+
+        `blocked_on` is part of this and was not: a bed whose `verify` is correct and whose
+        corpus cannot be prepared answered True here while `bed()` refused it, so the two
+        disagreed about the same bed. `runnable` is what a caller asks before offering a bed;
+        it has to mean what the refusal means.
+        """
+        return self.fetched and bool(self.verify) and not self.blocked_on
 
 
 #: The one httpx test that does not pass on its own untouched tree here. See the bed below.

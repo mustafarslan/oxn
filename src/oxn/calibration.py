@@ -382,24 +382,31 @@ _ANTI_GAMING: tuple[Parameter, ...] = (
         name="MANY_HELPERS",
         value=float(thresholds.MANY_HELPERS),
         evidence=Evidence.JUDGEMENT,
-        # The four extractions `benchmarks/dogfood-log.jsonl` has produced, evaluated at 3.
-        # Cost at the current value, not a fit -- and four is small enough that it is quoted
-        # rather than summarised.
-        observations=4,
+        # The seven extractions `benchmarks/dogfood-log.jsonl` has produced, evaluated at 3.
+        # Cost at the current value, not a fit -- and seven is small enough to quote rather
+        # than summarise.
+        observations=7,
         provenance=(
             "the smallest count that can mean 'many'; a three-way dispatch legitimately "
             "extracts three, so the count alone was never going to be the discriminator. "
-            "Measured on the four extractions logged so far: helper counts 2, 3, 3 and 6. "
-            "The count gate alone excluded one of the four, and the only cluster the shape "
-            "test flagged was the 6-helper one whose median score was 1.5 -- the 3-helper "
-            "candidates were let through by the *median*, which is the discriminator this "
-            "provenance says the count was never going to be"
+            "Measured on the seven extractions logged so far: helper counts 2, 3, 3, 3, 4, 5 "
+            "and 6. The count gate alone excludes exactly one of them, the 2-helper "
+            "candidate, and everything else is decided by the *median* -- which is what this "
+            "provenance means by the count not being the discriminator. The three logged "
+            "2026-09-18 are the first with the verdict recorded beside them rather than "
+            "recomputed afterwards, and they are what makes the point concrete: at three "
+            "helpers the log now holds both a shred (medians 2.0) and a clean extraction "
+            "(median 11.0), so the count separates them not at all and the median separates "
+            "them completely"
         ),
         fit_when=(
             "the same labelled set as TRIVIAL_HELPER, whose entry now carries what that set "
             "actually costs. This parameter needs less of it than that one: 3 decides whether "
             "two helpers can be a shred, so the labels that bear on it are candidates "
-            "extracting exactly two. The log holds one such candidate in 44 attempts"
+            "extracting exactly two. The log holds one such candidate in 61 rows, and the "
+            "collection path that would produce more was itself the blocker until 2026-09-18 "
+            "-- the judge was gated on `shredded`, which is computed from this parameter, so "
+            "every labelled row came from below the threshold by construction"
         ),
     ),
 )
@@ -485,7 +492,7 @@ _ENFORCEMENT: tuple[Parameter, ...] = (
         # seven row shapes and `run`/`arm`/`repeat` are absent from 35 of its 44 rows --
         # keying on them silently collapsed unlike rows into one trajectory and undercounted
         # these as 16.
-        observations=24,
+        observations=35,
         provenance=(
             "3, the smallest count that lets an agent fail, read the increment trail and "
             "try a different shape. arXiv 2508.11958 establishes that the loop needs a "
