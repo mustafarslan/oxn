@@ -319,13 +319,37 @@ def _last_usable(drafts: list[str]) -> str:
     return drafts[-1]
 
 
-def _defines(source: str, name: str) -> bool:
+def _defines(source: str, name: str, profile: Any = None) -> bool:
     """Does this candidate actually define the function it is replacing?
 
     Checked before the gauntlet runs, because a candidate that omits the target deletes it
     on splice -- and finding that out costs a full test, lint and type run first.
+
+    **This was `def {name}(` and nothing else, so it rejected every non-Python reply.** The
+    system prompt above carries a note about having once said "Python" for all six beds; that
+    was fixed and this was not, which left the harness asking a Go model for Go and then
+    refusing the answer because it did not look like Python. Go's `func`, Rust's `fn`, Java's
+    and TypeScript's method syntax never match, so four of the six declared beds could not
+    accept a repair no matter what the model wrote -- measured on go-kit, six attempts across
+    two targets, every one rejected here before the gauntlet ran.
+
+    Parsed rather than pattern-matched, using the same `build_file` the graph builder uses, so
+    "does this define X" is answered by the thing that decides what an entity is everywhere
+    else. The regex remains for a caller with no profile, which is the tests.
     """
-    return re.search(rf"^\s*(?:async\s+)?def\s+{re.escape(name)}\s*\(", source, re.M) is not None
+    if profile is None:
+        return re.search(rf"^\s*(?:async\s+)?def\s+{re.escape(name)}\s*\(", source, re.M) is not None
+
+    from oxn.graph.builder import build_file
+    from oxn.languages import get_parser
+
+    raw = source.encode()
+    root = get_parser(profile.grammar).parse(raw).root_node
+    parsed = build_file(f"candidate{next(iter(sorted(profile.extensions)))}", raw, profile, root)
+    return any(
+        entity.name == name and entity.kind.value in {"function", "method"}
+        for entity in parsed.entities
+    )
 
 
 # ---- the judge ----------------------------------------------------------------------------
@@ -338,12 +362,12 @@ JUDGE_PROMPT = """A function was refactored to reduce cognitive complexity from 
 Judge whether this is a real simplification or merely a rearrangement.
 
 BEFORE:
-```python
+```{language}
 {original}
 ```
 
 AFTER:
-```python
+```{language}
 {candidate}
 ```
 
@@ -356,12 +380,32 @@ Reply with exactly this JSON object and nothing else:
 """
 
 
-def ask_judge(
-    client: Any, original: str, candidate: str, before: float, after: float
-) -> dict[str, Any]:
+@dataclass(frozen=True, slots=True)
+class Review:
+    """One refactoring put to the judge: both versions, the scores, and the language.
+
+    A record for the same reason `Ask` is one -- these travel together and `language` was the
+    sixth. It arrived because the judge's fence said ```python for every bed, the way the
+    actor's system prompt once did: that was fixed and this was not, so a Go refactoring was
+    shown to the judge labelled as Python. The same half-fix left `_defines` matching `def`
+    only, which rejected every non-Python reply before the gauntlet ever ran.
+    """
+
+    original: str
+    candidate: str
+    before: float
+    after: float
+    language: str = "python"
+
+
+def ask_judge(client: Any, review: Review) -> dict[str, Any]:
     verdict: dict[str, Any] = client.generate_json(
         JUDGE_PROMPT.format(
-            before=int(before), after=int(after), original=original, candidate=candidate
+            before=int(review.before),
+            after=int(review.after),
+            original=review.original,
+            candidate=review.candidate,
+            language=review.language,
         ),
         system=JUDGE_SYSTEM,
     )

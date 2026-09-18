@@ -505,7 +505,7 @@ _ENFORCEMENT: tuple[Parameter, ...] = (
         # seven row shapes and `run`/`arm`/`repeat` are absent from 35 of its 44 rows --
         # keying on them silently collapsed unlike rows into one trajectory and undercounted
         # these as 16.
-        observations=35,
+        observations=38,
         provenance=(
             "3, the smallest count that lets an agent fail, read the increment trail and "
             "try a different shape. arXiv 2508.11958 establishes that the loop needs a "

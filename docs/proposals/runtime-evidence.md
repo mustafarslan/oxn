@@ -146,5 +146,36 @@ justifies is a second measurement on a profile with real application code in it 
 under load would do, since `load-test`'s own fixture is a slow HTTP service — and what it does not
 justify is writing the feature.
 
-Below some rate this is a worse `grep` and should be abandoned rather than shipped with a caveat.
-That rate is still unmeasured; 6 of 6 on six frames does not establish it.
+**Second measurement, 2026-09-18, Python, and this one is large enough to decide.** The first
+left six project frames from one Go microbenchmark, which proved the join runs and proved
+nothing about how often it lands. So: `cProfile` over OXN running `oxn metrics` on the httpx
+corpus, joined against `oxn metrics --json` over OXN's own source (958 entities, 72 files).
+
+| | |
+|---|---|
+| distinct frames | 1,434 |
+| in OXN's own source | 149 |
+| stdlib and dependencies | 1,285 (90%) |
+| of the 149, real named functions | 92 |
+| of the 149, not source functions at all | 57 |
+| **resolved by symbol name** | **44 / 92 (47.8%)** |
+| **resolved by file and line** | **85 / 92 (92.4%)** |
+
+**The contract's `file:line` requirement is now settled rather than argued.** Symbol names
+resolve under half of real Python frames against 92% for file and line -- a two-fold gap where
+Go showed 4 of 6 against 6 of 6, which was suggestive and too small to rest on. The Python
+failures are also different in kind from Go's closures: `<module>`, `__annotate__`,
+`<listcomp>`, `<genexpr>` and dataclass-generated `__init__` frames carry names no source
+function has, and 57 of the 149 are of that sort. A symbol-keyed join does not merely miss
+them, it has nothing to miss them *with*.
+
+**90% of frames are not the program's own code**, against Go's 92%, in a different language
+with a different runtime. Collapsing them is a property of profiling rather than of a
+particular toolchain, which is the strongest available argument for the digest step.
+
+The seven real functions left unresolved by file and line are all dataclass `__init__`s that
+`cProfile` labels with the class name, so the honest reading of 92.4% is that it understates:
+the join misses almost nothing it should catch, and what it misses is not source.
+
+Below some rate this would be a worse `grep`. **At 92.4% it is not**, and the remaining work
+is the feature rather than another measurement to justify it.

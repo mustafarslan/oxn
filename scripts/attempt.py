@@ -19,7 +19,7 @@ from dataclasses import asdict, dataclass
 from statistics import median
 from typing import TYPE_CHECKING, Any
 
-from actor import Ask, _defines, _feedback, ask_actor, ask_judge
+from actor import Ask, Review, _defines, _feedback, ask_actor, ask_judge
 from console import DIM, GREEN, RED, RESET, YELLOW, say
 from gauntlet import SCRATCH, GauntletResult, Sandbox, run_gauntlet
 from runlog import Attempt
@@ -75,7 +75,7 @@ def one_attempt(run: Run, index: int, feedback: str) -> Attempt | None:
         return asked
     candidate, reply, prompt = asked
 
-    if not _defines(candidate, run.target.leaf):
+    if not _defines(candidate, run.target.leaf, run.profile):
         # Splicing this would delete the function. Reject now rather than after a full test,
         # lint and type run -- five minutes to learn what the reply already showed.
         say(f"{RED}  attempt {index}: reply did not define {run.target.leaf}{RESET}")
@@ -171,7 +171,14 @@ def _judge_if_it_earned_one(
         return {}
     try:
         return ask_judge(
-            run.judge, original, candidate, gauntlet.score_before, gauntlet.score_after
+            run.judge,
+            Review(
+                original=original,
+                candidate=candidate,
+                before=gauntlet.score_before,
+                after=gauntlet.score_after,
+                language=run.profile.name if run.profile else "python",
+            ),
         )
     except Exception as error:  # noqa: BLE001 - an unavailable judge is a data point too
         return {"verdict": "unavailable", "error": str(error)[:200]}

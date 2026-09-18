@@ -99,7 +99,9 @@ def _trail_for(target: Target, where: Bed = SELF) -> list[str]:
     if profile is None:
         return []
     source = (where.root / target.path).read_bytes()
-    tree = get_parser(profile.name).parse(source)
+    # `profile.name` is the language; `profile.grammar` is the grammar, and they
+    # differ for TSX. Stale here since that split.
+    tree = get_parser(profile.grammar).parse(source)
     for node, name in _iter_functions(tree.root_node, profile):
         if name == target.leaf:
             return cognitive_complexity(node, profile, function_name=name).explain()
@@ -130,7 +132,9 @@ def function_span(path: Path, leaf: str, profile: Any) -> tuple[int, int] | None
     from oxn.languages import get_parser
 
     source = path.read_bytes()
-    tree = get_parser(profile.name).parse(source)
+    # `profile.name` is the language; `profile.grammar` is the grammar, and they
+    # differ for TSX. Stale here since that split.
+    tree = get_parser(profile.grammar).parse(source)
     parsed = build_file(path.name, source, profile, tree.root_node)
     for entity in parsed.entities:
         if entity.name == leaf and entity.kind.value in {"function", "method"}:

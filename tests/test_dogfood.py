@@ -823,3 +823,53 @@ def test_the_report_does_not_read_the_unmeasurable_sentinel_as_a_score() -> None
     # And a target that was never measured at all still reports nothing rather than 999.
     assert _first_measured([{"gauntlet": {"score_before": UNMEASURABLE}}]) is None
     assert _first_measured([]) is None
+
+
+def test_a_repair_is_recognised_in_every_language_the_harness_declares_a_bed_for() -> None:
+    """`_defines` was `def {name}(` and nothing else, so four of six beds could not accept
+    a repair however good it was.
+
+    The system prompt above `ACTOR_SYSTEM` carries a note about having once said "Python" for
+    all six beds. That was fixed; this check was not, so the harness asked a Go model for Go
+    and then refused the answer for not looking like Python. Measured on go-kit before the
+    fix: six attempts across two targets, every one rejected here before the gauntlet ran,
+    which reads in the log as a model that cannot refactor Go.
+
+    Parsed rather than pattern-matched now, through the same `build_file` the graph builder
+    uses, so "does this define X" is answered by whatever decides what an entity is
+    everywhere else.
+    """
+    import sys
+
+    sys.path.insert(0, "scripts")
+    from actor import _defines
+    from oxn.profiles import get_profile
+
+    written = {
+        "go": ("func TraceEndpoint(name string) error {\n\treturn nil\n}\n", "TraceEndpoint"),
+        "rust": ("fn try_find_iter_at(&self, x: u8) -> bool {\n    true\n}\n", "try_find_iter_at"),
+        "typescript": ("function handleRequest(a: string): void {\n  return;\n}\n", "handleRequest"),
+        "java": ("public class C {\n  void doWork(int a) { }\n}\n", "doWork"),
+        "python": ("def repair(x):\n    return x\n", "repair"),
+    }
+    for language, (source, name) in written.items():
+        profile = get_profile(language)
+        assert _defines(source, name, profile), f"{language}: a real definition was refused"
+        assert not _defines(source, "absent", profile), f"{language}: accepted a missing name"
+
+
+def test_the_judge_is_shown_the_language_it_is_judging() -> None:
+    """The judge's fence said ```python for every bed -- the actor's prompt's old bug, left
+    in place one function below it. A Go refactoring was labelled Python to the model asked
+    whether it was a real simplification."""
+    import sys
+
+    sys.path.insert(0, "scripts")
+    from actor import JUDGE_PROMPT, Review
+
+    filled = JUDGE_PROMPT.format(
+        before=44, after=12, original="func a() {}", candidate="func a() { b() }", language="go"
+    )
+    assert "```go" in filled
+    assert "```python" not in filled
+    assert Review("x", "y", 1.0, 2.0).language == "python", "the default stays python"
