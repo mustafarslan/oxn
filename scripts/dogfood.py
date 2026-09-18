@@ -174,7 +174,7 @@ def _repair_one(
     if profile is None:
         return []
 
-    before = measure(None, target)
+    before = measure(None, target, root=where.root)
     sandbox = Sandbox(target.leaf, root=where.root, venv=where.venv, prepare=where.prepare)
     attempts: list[Attempt] = []
     try:

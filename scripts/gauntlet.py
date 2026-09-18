@@ -447,7 +447,7 @@ def _record(result: GauntletResult, label: str, *, passed: bool, detail: str) ->
         result.failures.append(_tail(detail))
 
 
-def measure(sandbox: Sandbox | None, target: Target) -> Measurement:
+def measure(sandbox: Sandbox | None, target: Target, *, root: Path = ROOT) -> Measurement:
     """Per-entity cognitive complexity for the target's file.
 
     Per-entity rather than aggregate because the shredding test needs to know *which*
@@ -463,8 +463,17 @@ def measure(sandbox: Sandbox | None, target: Target) -> Measurement:
     bed where this worked was `self`, whose venv has `oxn` in it because `oxn` is what it is.
     Measuring is static analysis over source text; it needs a tree-sitter parse and no import
     of the code at all, so the bed's environment was never relevant to it.
+
+    **`root` is which repository, and defaulting it to this one was the other half of the
+    same 999.** The before-state is measured with no sandbox yet in existence, and `base`
+    then fell back to `ROOT` -- so an external bed's target path, which is relative to *its*
+    corpus, was resolved against this project, found nothing, and returned `UNMEASURABLE`.
+    That made `score_before` 999 while `score_after` was real, which does not merely lose a
+    number: `improved` is `after < before`, so every candidate counted as an improvement over
+    a file nobody could measure, and the trail printed `999 -> 58` for a function that scores
+    63. The caller passes the bed's root; `self` is the default and is why this held.
     """
-    base = sandbox.path if sandbox else ROOT
+    base = sandbox.path if sandbox else root
     interpreter = sys.executable
     result = subprocess.run(
         [interpreter, "-m", "oxn", "metrics", "--json", "--limit", "400", target.path],

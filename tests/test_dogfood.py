@@ -768,3 +768,44 @@ def test_a_target_is_measurable_with_an_interpreter_that_has_no_oxn(tmp_path) ->
     assert got.present, "the target was not found, so the bed's interpreter is back"
     assert got.target != UNMEASURABLE
     assert got.target > 0
+
+
+def test_the_before_state_is_measured_in_the_bed_and_not_in_this_repository(tmp_path) -> None:
+    """`score_before` was 999 while `score_after` was real, and that is worse than losing one.
+
+    The before-state is taken before any sandbox exists, and `measure` then fell back to this
+    project's root -- so an external bed's target path, which is relative to *its* corpus, was
+    resolved here, matched nothing, and came back `UNMEASURABLE`. `improved` is `after <
+    before`, so every candidate scored as an improvement over a file nobody had measured, and
+    a run printed `999 -> 58` for a function that scores 63.
+
+    Directional, not incidental: the broken value is the large one, so it cannot fail safe.
+    """
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, "scripts")
+    from gauntlet import UNMEASURABLE, measure
+    from targets import Target
+
+    corpus = tmp_path / "elsewhere"
+    corpus.mkdir()
+    (corpus / "mod.py").write_text(
+        "def tangled(items):\n"
+        "    out = 0\n"
+        "    for item in items:\n"
+        "        if item:\n"
+        "            for part in item:\n"
+        "                if part:\n"
+        "                    out += 1\n"
+        "    return out\n"
+    )
+    target = Target(qualified_name="mod.tangled", path="mod.py", score=0.0)
+
+    in_bed = measure(None, target, root=corpus)
+    assert in_bed.present and in_bed.target != UNMEASURABLE
+
+    # The same call without a root looks in this repository, where `mod.py` does not exist.
+    assert measure(None, target, root=Path(__file__).resolve().parent.parent).target == (
+        UNMEASURABLE
+    )
