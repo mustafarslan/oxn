@@ -13,6 +13,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-09-19
+
 ### Fixed
 
 - `scripts/check.py --release` refused to run when the version being released was already
@@ -39,6 +41,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Phase labels no longer appear in anything the installed tool prints. `oxn calibration` in
   particular reported the provenance of a threshold using labels a reader had no way to
   resolve.
+- `GraphStore.transaction()` is public. Two callers outside the class were already using it
+  through `# noqa: SLF001`; handing out a scoped transaction is part of what a repository
+  does, so the surface is declared rather than leaked. No behaviour changed.
 
 ## [0.1.0] — 2026-09-19
 
@@ -75,5 +80,6 @@ First public release.
 - No calibration parameter is fitted to labelled data yet; `oxn calibration` says so per
   parameter rather than presenting judgement as measurement.
 
-[Unreleased]: https://github.com/mustafarslan/oxn/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/mustafarslan/oxn/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/mustafarslan/oxn/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/mustafarslan/oxn/releases/tag/v0.1.0
