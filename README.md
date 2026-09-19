@@ -12,9 +12,13 @@ declared architectural invariants. Semantic context goes *in* over MCP; determin
 enforcement comes *out* over hooks. One `pip install`, one `oxn init`, no cloud, no daemon,
 no paid tooling.
 
-> **Status: pre-alpha.** The scaffold and the design are in place; the analysis engine is
-> being built. See **[ROADMAP.md](ROADMAP.md)** for the phase plan and
-> **[docs/metrics.md](docs/metrics.md)** for the metric specifications.
+> **Status: alpha.** The analysis engine is built and gating: OXN has gated its own
+> development since 2026-08-30, across six languages, on the hook path and in CI. P0-P9 are
+> complete, P10 has one criterion open on a data problem, and P11's review surface ships.
+> What that leaves is breadth rather than scaffolding -- more corpora behind the ceilings,
+> more languages past the launch six. See **[ROADMAP.md](ROADMAP.md)** for the phase plan
+> and where each claim was measured, and **[docs/metrics.md](docs/metrics.md)** for the
+> metric specifications.
 
 ## Install, and the first five minutes
 
