@@ -1,5 +1,9 @@
 # Oxygen
 
+[![PyPI](https://img.shields.io/pypi/v/oxn.svg)](https://pypi.org/project/oxn/)
+[![Python](https://img.shields.io/pypi/pyversions/oxn.svg)](https://pypi.org/project/oxn/)
+[![License](https://img.shields.io/pypi/l/oxn.svg)](https://github.com/mustafarslan/oxn/blob/master/LICENSE)
+
 A local architecture and quality gatekeeper for LLM coding agents.
 
 The project is **Oxygen**; `oxn` is what you type — the command, the package and the import
@@ -16,8 +20,8 @@ no paid tooling.
 > **Status: alpha.** The analysis engine is built and gating: OXN has gated its own
 > development since 2026-08-30, across six languages, on the hook path and in CI. What that
 > leaves is breadth rather than scaffolding -- more corpora behind the ceilings, more
-> languages past the launch six. See **[docs/metrics.md](docs/metrics.md)** for the metric
-> specifications and **[docs/adr/](docs/adr/)** for the decisions behind them, each recording
+> languages past the launch six. See **[docs/metrics.md](https://github.com/mustafarslan/oxn/blob/master/docs/metrics.md)** for the metric
+> specifications and **[docs/adr/](https://github.com/mustafarslan/oxn/tree/master/docs/adr/)** for the decisions behind them, each recording
 > what was measured rather than what was intended. Commit subjects and ADR status lines are
 > numbered `P0`–`P12`; [the phase record](https://github.com/mustafarslan/oxn/blob/master/docs/phases.md)
 > says what each one delivered.
@@ -35,6 +39,9 @@ oxn baseline                     # accept today's debt; new violations still fai
 
 To run against unreleased changes, install from a checkout instead --
 `git clone https://github.com/mustafarslan/oxn && python -m pip install ./oxn`.
+
+What moved between releases is in **[CHANGELOG.md](https://github.com/mustafarslan/oxn/blob/master/CHANGELOG.md)**; `oxn version` says which
+one you have.
 
 If `oxn` is not on your `PATH` afterwards -- an unactivated virtualenv, or a `pipx` whose
 bin directory is not exported -- `python -m oxn` is the same program by another name, and
@@ -73,18 +80,18 @@ So OXN takes exactly two free dependencies where the work is genuine commodity �
 itself. The free tools become differential-test oracles in CI, which is what keeps
 "self-implemented" credible rather than merely asserted.
 
-The full rule and the classification of every tool considered: **[ADR-0001](docs/adr/0001-dependency-policy.md)**.
+The full rule and the classification of every tool considered: **[ADR-0001](https://github.com/mustafarslan/oxn/blob/master/docs/adr/0001-dependency-policy.md)**.
 
 ## Design decisions
 
 | | |
 |---|---|
-| [ADR-0001](docs/adr/0001-dependency-policy.md) | Dependency policy — free-only, self-implement the rest |
-| [ADR-0002](docs/adr/0002-resolution-strategy.md) | Name resolution — a tiered ladder with stamped outputs |
-| [ADR-0003](docs/adr/0003-enforcement-model.md) | Enforcement — hooks enforce, MCP informs, constraints are budgeted |
-| [ADR-0004](docs/adr/0004-freshness-model.md) | Freshness — how OXN answers quickly without a daemon |
-| [ADR-0005](docs/adr/0005-rule-engine.md) | Rule engine — relations and conjunctive rules, Datalog-shaped |
-| [ADR-0006](docs/adr/0006-retrieval-and-budgeting.md) | Retrieval — BM25 over decisions, budgeted, never blocking |
+| [ADR-0001](https://github.com/mustafarslan/oxn/blob/master/docs/adr/0001-dependency-policy.md) | Dependency policy — free-only, self-implement the rest |
+| [ADR-0002](https://github.com/mustafarslan/oxn/blob/master/docs/adr/0002-resolution-strategy.md) | Name resolution — a tiered ladder with stamped outputs |
+| [ADR-0003](https://github.com/mustafarslan/oxn/blob/master/docs/adr/0003-enforcement-model.md) | Enforcement — hooks enforce, MCP informs, constraints are budgeted |
+| [ADR-0004](https://github.com/mustafarslan/oxn/blob/master/docs/adr/0004-freshness-model.md) | Freshness — how OXN answers quickly without a daemon |
+| [ADR-0005](https://github.com/mustafarslan/oxn/blob/master/docs/adr/0005-rule-engine.md) | Rule engine — relations and conjunctive rules, Datalog-shaped |
+| [ADR-0006](https://github.com/mustafarslan/oxn/blob/master/docs/adr/0006-retrieval-and-budgeting.md) | Retrieval — BM25 over decisions, budgeted, never blocking |
 
 ## Development
 
@@ -171,7 +178,7 @@ That text goes to **stderr**, which is the stream Claude Code shows the agent on
 JSON goes to stdout for CI and for `check_code`. Getting that backwards is not cosmetic, and
 OXN had it backwards until 2026-09-05: the gate blocked every bad edit correctly and the
 agent received the string `No stderr output`
-([ADR-0003](docs/adr/0003-enforcement-model.md)'s amendment).
+([ADR-0003](https://github.com/mustafarslan/oxn/blob/master/docs/adr/0003-enforcement-model.md)'s amendment).
 
 **The loop is bounded.** LLM refactoring does not reliably converge (arXiv 2508.11958), so
 after `retry_budget` failed repairs of the *same* violation the hook stops asking and reports
@@ -298,7 +305,7 @@ any of this.
 ## The MCP server
 
 `oxn init` writes `.mcp.json`, so an agent gets four read-only tools. They inform; the hook
-is what enforces ([ADR-0003](docs/adr/0003-enforcement-model.md)).
+is what enforces ([ADR-0003](https://github.com/mustafarslan/oxn/blob/master/docs/adr/0003-enforcement-model.md)).
 
 | tool | what it answers |
 |---|---|
@@ -315,7 +322,7 @@ claude mcp add oxn -- oxn serve
 The protocol is hand-written against revision 2025-06-18 rather than taken from the MCP
 Python SDK, which pulls 28 packages and two compiled wheels for an OAuth flow a stdio server
 never performs — the measurement, and what would reverse it, are in
-[ADR-0001](docs/adr/0001-dependency-policy.md)'s amendment. The SDK is a CI oracle instead:
+[ADR-0001](https://github.com/mustafarslan/oxn/blob/master/docs/adr/0001-dependency-policy.md)'s amendment. The SDK is a CI oracle instead:
 `tests/test_oracle_mcp.py` drives `oxn serve` with the official client.
 
 **`oxn` has to be on the PATH of the shell your editor starts the server with**, which an
@@ -477,4 +484,4 @@ it on a real codebase is worth having.
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/mustafarslan/oxn/blob/master/LICENSE).
