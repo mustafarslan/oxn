@@ -5,6 +5,6 @@ after every agent edit. Keep it free of imports: see ADR-0002 for the latency bu
 (p95 <= 200 ms per file, of which a bare interpreter already costs ~15 ms).
 """
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 __all__ = ["__version__"]

@@ -13,17 +13,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.2] — 2026-09-19
+
 ### Fixed
 
-- Every link in the README is absolute. The README is the PyPI long description and PyPI does
-  not rewrite relative paths, so all fifteen -- the ADRs, the metric catalogue, the phase
-  record, the licence -- were 404s on the project's own front page. Fixed on `master`; it
-  reaches PyPI with the next release, because that metadata is per-version.
+- `oxn calibration` cited its own evidence at a path nobody who installed the package has.
+  Three printed strings named `benchmarks/dogfood-log.jsonl` -- the fitting data behind
+  `TRIVIAL_HELPER`, the trajectories behind `RETRY_BUDGET`, the labelled set that would move
+  the cognitive ceiling -- and that file is not distributed. The strings describe the log
+  now; every number they quote was already inline and none of them moved.
+- Every link in the README is absolute. The README is the PyPI long description and PyPI
+  does not rewrite relative paths, so the ADRs, the metric catalogue, the phase record and
+  the licence were unreachable from the project's own front page.
+- `docs/divergences.md` said it was generated from the tables the tests assert against. No
+  generator exists; it is hand-written and guarded by exact tuples in `tests/test_oracle_*.py`
+  that fail with *"revisit docs/divergences.md"* when a tool changes behaviour. The header
+  now says which, and notes that those tests run in the `--oracle` lane rather than on every
+  build.
 
 ### Added
 
 - README badges reading the current version, supported Pythons and licence from PyPI, so the
   file states no version number of its own.
+- A test asserting that nothing the tool prints cites a path `git ls-files` does not return.
 
 ## [0.1.1] — 2026-09-19
 
@@ -92,6 +104,7 @@ First public release.
 - No calibration parameter is fitted to labelled data yet; `oxn calibration` says so per
   parameter rather than presenting judgement as measurement.
 
-[Unreleased]: https://github.com/mustafarslan/oxn/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/mustafarslan/oxn/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/mustafarslan/oxn/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/mustafarslan/oxn/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/mustafarslan/oxn/releases/tag/v0.1.0
