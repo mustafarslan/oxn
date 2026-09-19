@@ -10,6 +10,7 @@ script is where correctness is actually established. It runs the same lanes:
     python scripts/check.py --corpus      # phase exit criteria on real repositories
     python scripts/check.py --llm         # tests that call a model through Ollama
     python scripts/check.py --e2e         # install the wheel and drive the `oxn` script
+    python scripts/check.py --release     # the hermetic set, before tagging a version
     python scripts/check.py --all         # everything
 
 Standard library only, and it never installs anything without saying so first.
@@ -199,6 +200,55 @@ def e2e_lane() -> bool:
     return lane.finish()
 
 
+def _declared_version() -> str:
+    """The version `tool.hatch.version` reads, which is the one both artifacts carry."""
+    for line in (ROOT / "src" / "oxn" / "__init__.py").read_text().splitlines():
+        if line.startswith("__version__"):
+            return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return ""
+
+
+def _git(*args: str) -> str:
+    result = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=False)
+    return result.stdout.strip()
+
+
+def _release_problems() -> list[str]:
+    """Everything about this tree that should stop a release, gathered rather than raised.
+
+    All of these are about the *tree*, not the code -- the lanes answer the code. A release
+    built from a dirty tree cannot be reproduced from the tag that claims to describe it,
+    and a version already tagged means the artifact about to be built is not the artifact
+    that tag already names.
+    """
+    problems: list[str] = []
+    version = _declared_version()
+    if not version:
+        return ["src/oxn/__init__.py declares no __version__"]
+
+    dirty = _git("status", "--porcelain")
+    if dirty:
+        problems.append(f"uncommitted changes in {len(dirty.splitlines())} path(s)")
+    if _git("tag", "--list", f"v{version}"):
+        problems.append(f"v{version} is already tagged -- bump __version__ before releasing")
+    return problems
+
+
+def release_lane() -> bool:
+    """The preflight the other lanes cannot do: is *this tree* one worth publishing?
+
+    Reported before the expensive lanes run, so a dirty tree costs a second rather than
+    the twenty minutes a matrix and two virtualenvs take. It is deliberately not part of
+    `--all`: a dirty working tree is the normal state of development and only a release
+    has any reason to object to it.
+    """
+    version = _declared_version()
+    lane = Lane(f"release preflight (v{version or '?'})")
+    for problem in _release_problems():
+        lane.failures.append(problem)
+    return lane.finish()
+
+
 def corpus_lane(*, fetch: bool) -> bool:
     """Phase exit criteria, measured on real repositories.
 
@@ -234,6 +284,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--e2e", action="store_true", help="install the wheel and drive the `oxn` script"
     )
+    parser.add_argument(
+        "--release",
+        action="store_true",
+        help="the hermetic set before tagging: preflight, fast, matrix, e2e",
+    )
     parser.add_argument("--all", action="store_true", help="every lane")
     parser.add_argument(
         "--install", action="store_true", help="fetch oracle tools and corpora as needed"
@@ -250,6 +305,14 @@ def _lanes(args: argparse.Namespace) -> list[bool]:
     the next.
     """
     results: list[bool] = []
+    # `--release` is the hermetic set: every lane that needs nothing but Python and git.
+    # The lanes it leaves out are left out on purpose -- `oracle` needs node and java,
+    # `corpus` needs 150k lines of fetched source and `llm` needs Ollama reachable, so a
+    # release gate that included them would be a gate that fails for reasons having
+    # nothing to do with the release.
+    if args.release:
+        results.append(release_lane())
+        args.matrix = args.e2e = True
     if not args.skip_fast:
         results.append(fast_lane())
     for flag, run in _OPTIONAL_LANES:

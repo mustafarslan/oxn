@@ -86,8 +86,24 @@ The full rule and the classification of every tool considered: **[ADR-0001](docs
 ```sh
 python -m pip install -e ".[dev]"
 python scripts/check.py     # the fast lane: lint, types, unit tests
+python scripts/check.py --release         # before tagging a version (see below)
 python scripts/check.py --all --install   # every lane, fetching what it needs
 ```
+
+`--release` is the lane to run before publishing. It is the *hermetic* set -- everything
+that needs nothing but Python and git -- and it is deliberately smaller than `--all`:
+
+| | |
+|---|---|
+| preflight | the tree is clean, `__version__` is declared, and that version is not already tagged |
+| fast | lint, types, unit tests, and OXN's own gate over `src`, `tests` and `scripts` |
+| matrix | the fast lane on every supported interpreter (needs `uv`) |
+| e2e | build the wheel **and the sdist**, install each into a fresh virtualenv, and drive the `oxn` script |
+
+`--all` additionally runs `oracle` (needs node and java), `corpus` (needs ~150k lines of
+fetched source) and `llm` (needs Ollama reachable). Those are excluded from `--release` on
+purpose: a release gate that fails because a toolchain is missing is a gate people learn to
+skip.
 
 OXN runs either as the `oxn` console script or as a module, which is what you want when the
 script is not on `PATH` -- an unactivated virtualenv, `uv run`, or a hook whose environment

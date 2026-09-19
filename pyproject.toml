@@ -35,7 +35,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.11", "types-PyYAML>=6.0"]
+dev = [
+    "pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.11", "types-PyYAML>=6.0",
+    # The e2e lane builds a wheel with `pip wheel`, which has no sdist equivalent.
+    # `tests/e2e/test_packaging.py` needs a real build frontend to produce the other
+    # published artifact; it falls back to `uv build` and skips if neither is present.
+    "build>=1.2",
+]
 # CI-only differential-test oracles. NEVER runtime dependencies -- see ADR-0001 and
 # docs/metrics.md section 9. Installed only in the CI oracle lane.
 oracle = [
