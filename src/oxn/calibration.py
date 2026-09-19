@@ -147,7 +147,8 @@ _CEILINGS: tuple[Parameter, ...] = (
             "in Go. LOC-weighted (Alves et al.) it already sits at P79-P98, so the "
             "corpora corroborate 12 rather than propose a replacement for it. "
             "What would move it is a labelled set of functions where the gate was wrong, "
-            "which `benchmarks/dogfood-log.jsonl` collects one repair at a time"
+            "which the dogfood harness's repair log -- kept locally, not distributed -- "
+            "collects one repair at a time"
         ),
     ),
     Parameter(
@@ -384,7 +385,8 @@ _ANTI_GAMING: tuple[Parameter, ...] = (
             "this number cannot by itself fail a build"
         ),
         fit_when=(
-            "benchmarks/dogfood-log.jsonl holds ~50 labelled extractions; at that point this "
+            "the dogfood harness's repair log (kept locally, not distributed) needs to hold ~50 "
+            "labelled extractions; at that point this "
             "is a grid search over one scalar against judge and human labels. Three known "
             "tripwire edges are its job, not the rule's: helpers written just above the "
             "threshold, helpers given a public name, and helpers given a second call site. "
@@ -536,7 +538,7 @@ _ENFORCEMENT: tuple[Parameter, ...] = (
             "try a different shape. arXiv 2508.11958 establishes that the loop needs a "
             "bound -- LLM refactoring often fails to reach the threshold at all -- but "
             "measures whether a repair lands, not how many attempts are worth paying for. "
-            "Measured since on the 24 repair trajectories in benchmarks/dogfood-log.jsonl, "
+            "Measured since on the 24 repair trajectories in the dogfood harness's repair log, "
             "which runs the loop this budget governs: 5 landed a repair, 4 of them at the "
             "first attempt and 1 at the second, none at the third. Six trajectories reached "
             "a third attempt and none converged, so at 3 this budget has never cut off a "

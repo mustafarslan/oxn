@@ -135,3 +135,38 @@ def test_nothing_printed_to_a_user_carries_a_phase_label() -> None:
     assert not offenders, "phase labels reach users through: " + "; ".join(
         f"{where} {labels}" for where, labels in sorted(offenders.items())
     )
+
+
+def _tracked_paths() -> set[str]:
+    """What `git ls-files` returns, which is what somebody who cloned the repo actually has."""
+    import subprocess
+
+    result = subprocess.run(
+        ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True
+    )
+    return set(result.stdout.split())
+
+
+def test_nothing_printed_to_a_user_cites_a_file_they_do_not_have() -> None:
+    """A citation to a path the reader cannot open is the roadmap problem in miniature.
+
+    `benchmarks/dogfood-log.jsonl` is the case this was written for: 2.3 MB of repair
+    trajectories, gitignored because most of it is raw model replies, and named in three
+    strings `oxn calibration` prints as the evidence behind a threshold. Someone who ran
+    `pip install oxn` was being pointed at a file that has never been distributed.
+
+    The rule is deliberately narrow -- a *path* in printed text must be one the reader has.
+    Describing the file in prose is fine and is what those three strings do now.
+    """
+    tracked = _tracked_paths()
+    pattern = re.compile(r"\b(?:benchmarks|docs|src|tests|scripts)/[\w./-]+\.\w+")
+
+    missing: dict[str, set[str]] = {}
+    for where, text in _printed_strings().items():
+        absent = {cited for cited in pattern.findall(text) if cited not in tracked}
+        if absent:
+            missing[where] = absent
+
+    assert not missing, "printed text cites files that are not in the repository: " + "; ".join(
+        f"{where} -> {sorted(paths)}" for where, paths in sorted(missing.items())
+    )

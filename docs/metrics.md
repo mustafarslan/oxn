@@ -1466,8 +1466,9 @@ two cases is what the new helpers are individually worth:
 
 So the deterministic rule is now *many new helpers, each of them trivial* â€” at least
 `MANY_HELPERS` (3) additions whose median score is at or below `TRIVIAL_HELPER` (2). Both figures
-are calibrated on this single pair and are expected to move as `benchmarks/dogfood-log.jsonl`
-accumulates real extractions; both live candidates are kept as regression fixtures in
+are calibrated on this single pair and are expected to move as the dogfood harness's repair
+log accumulates real extractions -- that log is kept locally rather than distributed, because
+most of its bulk is raw model replies; both live candidates are kept as regression fixtures in
 `tests/test_dogfood.py`.
 
 #### Measured 2026-08-31: the repair harness converges on a 35-point function and not on a 37-point one
@@ -1500,7 +1501,7 @@ the actor never produced a complete function. The difference is not the score â€
 five locals, which the model spent 130,000 characters failing to hold in mind at once.
 
 That is a result about **this actor on this shape of function**, not a limit of the loop, and it is
-what `benchmarks/dogfood-log.jsonl` exists to accumulate. It also sets the honest expectation for
+what the dogfood harness's repair log exists to accumulate. It also sets the honest expectation for
 P10: convergence is per-target, and the retry budget from arXiv 2508.11958 is not a formality.
 
 #### Measured 2026-08-31: the gate itself had no such rule, and the evasion worked
