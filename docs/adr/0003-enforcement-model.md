@@ -11,11 +11,11 @@ applies-to: ["src/oxn/check.py", "src/oxn/init.py", "src/oxn/cli.py", "src/oxn/_
 
 ## Status
 
-Accepted — 2026-08-28. Supersedes the enforcement design in `idea.md` §4.
+Accepted — 2026-08-28. Supersedes the enforcement design in the original blueprint.
 
 ## Context
 
-`idea.md` §1.1 argues correctly that soft probabilistic constraints cannot enforce hard invariants —
+The project's founding argument holds that soft probabilistic constraints cannot enforce hard invariants —
 a model fine-tuned on clean code will still emit a cyclomatic complexity of 15 under prompt
 pressure. It then, in §4, enforces via a CLAUDE.md instruction: *"Always call
 `verify_code_quality(file_path)`."* That relocates the same weakness rather than removing it. An
@@ -61,7 +61,7 @@ refactoring frequently fails to get under complexity thresholds. A `retry_budget
 caps remediation attempts; on exhaustion OXN reports clearly rather than looping forever.
 
 **5. CLAUDE.md injection is non-destructive.** `oxn init` writes between managed markers and
-preserves existing content. (`idea.md`'s blueprint calls `write_text` and destroys the file.)
+preserves existing content. (The original blueprint called `write_text`, which destroys the file.)
 
 ## Consequences
 
@@ -99,7 +99,7 @@ PostToolUse:Write hook blocking error: No stderr output
 
 The gate was working perfectly and communicating nothing. An agent could see that *something*
 had been rejected and had no way to learn what, which is the exact failure mode
-`idea.md` §4 was rewritten to avoid: enforcement that the model cannot act on is enforcement
+the original blueprint was rewritten to avoid: enforcement that the model cannot act on is enforcement
 that changes nothing about the next edit.
 
 Two things are worth recording about how it survived. It is invisible from inside the test

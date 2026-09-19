@@ -31,13 +31,13 @@ should be shown, and three 2026 results say showing them all is not neutral but 
 So the question is not "how do we surface the constraints" but **which subset, ranked how, in what
 shape** — and how we would ever know the ranking is any good.
 
-That last clause is where the ROADMAP's exit criterion has a hole worth naming before any code is
+That last clause is where the phase's exit criterion has a hole worth naming before any code is
 written. It asks for "retrieval precision@3 against hand-labelled task → ADR pairs". OXN's own
 corpus is **six** decisions. Three picks out of six is half the corpus; a ranker that returns the
 three longest documents scores respectably. And a label written by the person who wrote the ranker,
 by reading an ADR title and paraphrasing it into a task, measures paraphrase rather than retrieval —
 the same circularity this project already refused in P10's threshold fitting. Section 5 fixes both,
-and the ROADMAP is amended to match.
+and the exit criterion is amended to match.
 
 ## Decision
 
@@ -75,7 +75,7 @@ The index is built lazily in `oxn.context`, by callers the hook never reaches.
 
 ### 3. BM25 is Okapi, self-implemented, stdlib only
 
-`math`, `re`, `collections`; no dependency, consistent with ADR-0001 and with the ROADMAP's estimate
+`math`, `re`, `collections`; no dependency, consistent with ADR-0001 and with the estimate
 of ~60 lines. `k1 = 1.5` and `b = 0.75` are the standard defaults and enter `thresholds.py` with the
 same honesty as the other nine tunables: `Evidence.LITERATURE`, zero observations, fitted when
 section 5's labels exist. A parameter that hides in a scoring function is the folklore

@@ -143,7 +143,7 @@ function outer() {
 
 
 def test_idea_md_example_scores_6() -> None:
-    """The worked example in this project's own idea.md, in both launch languages."""
+    """The worked example from this project's original design, in both launch languages."""
     python = (
         "def example(a, b):\n"
         "    if a > 0:\n"

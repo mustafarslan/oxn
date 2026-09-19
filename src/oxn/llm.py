@@ -1,6 +1,6 @@
 """A minimal Ollama client, for the parts of OXN that genuinely need a model.
 
-**Most of OXN must never call one.** ``idea.md`` §1.1 is the project's founding argument:
+**Most of OXN must never call one.** The project's founding argument is this:
 computing a metric with a language model gets you an approximation of something a parser
 knows exactly. Every metric in this codebase is deterministic, and that is the point.
 

@@ -146,7 +146,7 @@ def test_no_label_names_a_decision_that_governs_everything(labels) -> None:
 
 
 def test_the_bundle_stays_under_budget_on_every_labelled_task(pairs) -> None:
-    """The ROADMAP's "bundle size stays under budget on all corpus tasks" (P8), asserted
+    """ADR-0006's "bundle size stays under budget on all corpus tasks", asserted
     against the 53 real tasks rather than a handful invented for the occasion.
 
     The cap is trivially satisfiable by a `[:limit]`, so what this actually guards is the

@@ -111,7 +111,7 @@ def test_budgeting_caps_the_breakdown_without_closing_the_channel(harness) -> No
     """Constraint budgeting is the hypothesis: fewer constraints, not none.
 
     An arm that showed nothing would be `claude-md` with extra steps, and the negative result
-    ROADMAP calls publishable -- "budgeting does not mitigate constraint decay" -- needs the
+    the build plan calls publishable -- "budgeting does not mitigate constraint decay" -- needs the
     channel open to mean anything.
     """
     budgeted = harness.arm("hybrid-budget")

@@ -1,8 +1,7 @@
 # OXN Metric & Algorithm Catalogue
 
-**Status:** design spec. **Companion to** [`../ROADMAP.md`](../ROADMAP.md) — the roadmap says *when*,
-this document says *what and how*.
-**Supersedes:** `idea.md` §3 (the radon subprocess shim) and §7 (the aspirational tree-sitter engine).
+**Status:** design spec — *what and how*, per metric.
+**Supersedes:** the original blueprint's radon subprocess shim and its aspirational tree-sitter engine.
 **Binding decisions:** [ADR-0001 dependency policy](adr/0001-dependency-policy.md),
 [ADR-0002 resolution strategy](adr/0002-resolution-strategy.md),
 [ADR-0003 enforcement model](adr/0003-enforcement-model.md).
@@ -55,7 +54,7 @@ Three architectural consequences that recur throughout:
    *lookup*, not a compilation. This is the decisive argument for SCIP over LSP as the primary
    precision layer.
 
-**Tension to manage:** `idea.md` §5 promises "zero background daemons." Index refresh must therefore
+**Tension to manage:** the original design promises "zero background daemons." Index refresh must therefore
 be debounced work inside processes that already exist (the MCP server, an explicit `oxn index`, a CI
 job) — never a daemon. Staleness is surfaced, never hidden.
 
@@ -299,7 +298,7 @@ raises nesting count), **Fundamental** (no nesting increment), **Hybrid** (no ne
 raises nesting count).
 
 **Correction, verified against the primary source (v1.7, 29 Aug 2023).** "Ignore shorthand" concerns
-**null-coalescing operators** and the method structure itself — *not* comprehensions. `idea.md`'s
+**null-coalescing operators** and the method structure itself — *not* comprehensions. The original design's
 paraphrase ("list comprehensions without filters") does not appear in the specification, which is
 silent on comprehensions entirely. OXN's comprehension rules are therefore derived empirically
 against complexipy (§3.2.1) rather than claimed from the spec.
@@ -1206,7 +1205,7 @@ oracle only** — the measured 146 ms import cost makes networkx unaffordable in
 | **(a) Hand-rolled Python graph predicates** | 0 deps | Low — each rule is code; recursion hand-written per rule; rules not user-authorable | µs–ms | **MVP primary** |
 | **(b) In-house Datalog: semi-naive evaluation + stratified negation** (~500–800 LOC) | 0 deps | High for our domain — recursion free (`reaches(X,Y) :- depends(X,Z), reaches(Z,Y).`), negation for "no import except via ports"; least-fixpoint semantics, fully deterministic | ms on 10²–10³-node graphs | **Later-phase primary** |
 | **(c) clingo / ASP** | **MIT**, pip wheel ~20–40 MB | Highest — choice rules plus optimisation, giving *"the minimal set of edges to remove to break all cycles"*, a genuinely valuable repair suggestion | grounding fine at our scale | **Optional extra `oxn[asp]`** — shipped, and scoped by measurement: see below |
-| **(d) Z3** | **MIT**, `z3-solver` wheel | Wrong tool for graph rules; right tool for state-machine and invariant verification | — | **Optional extra `oxn[smt]`** — this is `idea.md` §8's `verify_state_invariants` |
+| **(d) Z3** | **MIT**, `z3-solver` wheel | Wrong tool for graph rules; right tool for state-machine and invariant verification | — | **Optional extra `oxn[smt]`** — this is the original design's `verify_state_invariants` |
 
 **What (c) actually turned out to be worth, measured 2026-09-14.** The repair suggestion is
 real and is now what `oxn arch` reports — the fewest component edges that break each ring, with
@@ -1262,7 +1261,7 @@ include every example from the Cognitive Complexity white paper v1.7 (`sumOfPrim
 `getWords` = 1, the try/catch `myMethod` = 9, `myMethod2` = 2 and 4, `overriddenSymbolFrom` = 19,
 `addVersion` = 35, `toRegexp` = 20, `model.js save` = 20), the boolean-sequence examples (+3 and +2),
 the Python-decorator exception trio (1, 2, 1), the JS declarative-outer-function pair (1, 3), and
-**`idea.md`'s own example scoring exactly 6**.
+**the original design's own worked example scoring exactly 6**.
 
 ### 9.2 Differential vs free oracles — characterisation, not equality
 One **authoritative oracle per metric per language**, plus a generated **divergence table**
@@ -1345,7 +1344,7 @@ rating via calibrated boundaries. Report the profile alongside the rating so the
 - **Mode A (default): fixed literature thresholds.** CC ≤ 10 (McCabe 1976's own suggestion; NIST
   SP 500-235 discusses 10/15); cognitive ≤ 15 (**SonarQube's own default for methods**); params ≤ 5;
   max nesting ≤ 4; function ≤ 60 SLOC; file ≤ 500 SLOC.
-  **Open question:** `idea.md` proposes `max_cognitive_complexity: 8`, nearly twice as strict as
+  **Open question:** the original design proposed `max_cognitive_complexity: 8`, nearly twice as strict as
   SonarSource's own default of 15. That should be a deliberate documented choice, not an accident —
   and it interacts badly with §10.5.
 - **Mode B: self-calibration / ratchet — recommended for agent governance.** Derive the "high"
@@ -1389,7 +1388,14 @@ rating via calibrated boundaries. Report the profile alongside the rating so the
   complexity ranges 7 to 23 across the six, so a fitted gate tracks whichever repositories were
   benchmarked. What
   the corpora contribute instead is each ceiling's *exceedance*, recorded in `oxn.calibration` and
-  frozen in `benchmarks/ceiling-observations.json`. See ROADMAP P10.
+  frozen in `benchmarks/ceiling-observations.json`.
+
+  **Every calibration parameter is provisional: 15 of 15 are provisional.** That is the honest
+  state of the surface and not a placeholder -- a parameter stops being provisional when it is
+  fitted to labelled data, and `TRIVIAL_HELPER` and `MANY_HELPERS` are the two waiting on
+  exactly that. The sentence is asserted by `tests/test_check.py` against `oxn calibration`'s
+  own output, because a count written into prose rots the same way any other number does: this
+  one read "9 of 9" three parameters after the ninth.
 
 #### Shipped 2026-09-09: profiles, and why the rating is not in them
 
@@ -1726,7 +1732,7 @@ table above is meaningless without it.
 4. **Launch languages for the first metric milestone.** *Decided and shipped:* Python, TypeScript
    and JavaScript have full profiles; Go, Rust and Java have verified grammars and land as profiles
    in P6, alongside their gocognit and rust-code-analysis oracles.
-5. **Cognitive complexity ceiling.** *Decided: 12.* `idea.md` proposed 8 and SonarSource's own
+5. **Cognitive complexity ceiling.** *Decided: 12.* The original design proposed 8 and SonarSource's own
    default is 15; 8 flags a great deal of reasonable code, 15 lets agent-written functions through
    while still being hard to read. Recorded with its reasoning in `src/oxn/thresholds.py`. It is
    only safe paired with the anti-gaming aggregates of §10.5 — a per-function ceiling alone teaches

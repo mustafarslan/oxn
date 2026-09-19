@@ -64,7 +64,6 @@ oxn = "oxn.cli:main"
 
 [project.urls]
 Repository = "https://github.com/mustafarslan/oxn"
-Roadmap = "https://github.com/mustafarslan/oxn/blob/master/ROADMAP.md"
 
 [tool.hatch.version]
 path = "src/oxn/__init__.py"
@@ -73,7 +72,7 @@ path = "src/oxn/__init__.py"
 packages = ["src/oxn"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "docs", "scripts", "benchmarks", "ROADMAP.md", "README.md", "LICENSE"]
+include = ["src", "tests", "docs", "scripts", "benchmarks", "README.md", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

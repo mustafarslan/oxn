@@ -10,7 +10,7 @@
 retry_budget: 3
 
 ceilings:
-  cognitive_complexity: 12   # the headline gate; chosen over SonarSource's 15, idea.md's 8
+  cognitive_complexity: 12   # the headline gate; chosen over SonarSource's 15 and the original design's 8
   cyclomatic_complexity: 10
   max_nesting_depth: 4
   parameter_count: 5

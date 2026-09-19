@@ -3,7 +3,7 @@
 Two things are asserted here, and the first is the reason the second was worth building.
 
 **The payload has to reach the agent.** For the whole of P9, `oxn check --json` wrote its
-findings — the increment trail that the ROADMAP calls "the payload is the product" — to
+findings — the increment trail this project calls "the payload is the product" — to
 *stdout*, and exited 2. Claude Code's hook contract shows **stderr** to Claude on exit 2 and
 relegates stdout to transcript mode, so what a rejected edit actually delivered was the
 string `No stderr output`. The gate blocked perfectly and explained nothing. Every test in

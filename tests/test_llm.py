@@ -4,7 +4,7 @@ Configured by `OXN_OLLAMA_HOST` and `OXN_OLLAMA_MODEL`, defaulting to a local Ol
 `kimi-k3:cloud`. Marked `llm` and skipped when the model will not answer -- unreachable,
 throttled, or absent -- so the default lane never depends on a model being up.
 
-**Why so few tests live here.** OXN's metrics are deterministic by design -- `idea.md` §1.1
+**Why so few tests live here.** OXN's metrics are deterministic by design -- the founding argument
 argues that computing a metric with a model yields an approximation of something a parser
 knows exactly, and the whole project rests on that. So a model is not used to *check* a
 metric; it is used to check the claims that are genuinely about a model's behaviour.

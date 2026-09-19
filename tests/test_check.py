@@ -299,12 +299,16 @@ def test_every_gated_threshold_states_its_provenance() -> None:
             )
 
 
-def test_the_roadmap_states_the_parameter_count_it_actually_has() -> None:
+def test_the_spec_states_the_parameter_count_it_actually_has() -> None:
     """A count written into prose is a number like any other, and it rots the same way.
 
     This sentence read "9 of 9 are provisional" three parameters after the ninth. The
     calibration surface exists so numbers can be argued with rather than believed, which
     does not work if the document describing it is describing an older version of it.
+
+    The claim used to live in the roadmap. It moved to `docs/metrics.md` with the document
+    itself, and the guard moved with it rather than being dropped -- a test deleted because
+    its subject moved is how the rot this test exists to catch gets back in.
     """
     from pathlib import Path
 
@@ -312,8 +316,11 @@ def test_the_roadmap_states_the_parameter_count_it_actually_has() -> None:
 
     values = parameters()
     provisional = sum(1 for parameter in values if parameter.is_provisional)
-    roadmap = (Path(__file__).resolve().parent.parent / "ROADMAP.md").read_text()
-    assert f"**{provisional} of {len(values)} are provisional**" in roadmap
+    spec = (Path(__file__).resolve().parent.parent / "docs" / "metrics.md").read_text()
+    assert (
+        f"**Every calibration parameter is provisional: {provisional} of "
+        f"{len(values)} are provisional.**" in spec
+    )
 
 
 def test_a_measured_parameter_says_how_many_observations_back_it() -> None:

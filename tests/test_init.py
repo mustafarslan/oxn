@@ -1,6 +1,6 @@
 """`oxn init` must never cost a developer something they wrote.
 
-The failure mode this guards is specific and was in `idea.md`'s original blueprint:
+The failure mode this guards is specific and was in the project's original blueprint:
 overwriting `CLAUDE.md` on first run. In an agent-assisted repository that file is often the
 most valuable text in the tree, and a tool that destroys it once is a tool nobody installs
 twice. Every test here is about *not* destroying something.

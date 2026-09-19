@@ -1,7 +1,7 @@
 """`oxn init` — wire OXN into a repository without taking anything away.
 
 Every write here is **additive and idempotent**. That is not politeness; it is the
-difference between a tool a person tries once and a tool they leave installed. `idea.md`'s
+difference between a tool a person tries once and a tool they leave installed. The original
 blueprint proposed overwriting `CLAUDE.md` wholesale, which would destroy hand-written
 project instructions on first run — the single most valuable file in an agent-assisted
 repository. So:

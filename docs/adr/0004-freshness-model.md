@@ -36,7 +36,7 @@ The hook's budget is 200 ms p95. A watcher would buy back at most ~200 ms on the
 least frequent path — and buy it with a process to supervise, a staleness race between
 watcher and hook, and a new failure mode when the watcher dies quietly.
 
-**The stated design.** `idea.md` §5 promises "zero background daemons", and ADR-0002's
+**The stated design.** The original blueprint promises "zero background daemons", and ADR-0002's
 cold-process argument is *why* SCIP beat LSP as the precision layer. Reversing that for
 200 ms would be trading a clear architectural property for a marginal gain.
 

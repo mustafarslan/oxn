@@ -528,7 +528,7 @@ def test_typescript_l2_and_l0_l1_accuracy(tmp_path) -> None:
     figure -- "a module-level call has no caller to hang an edge on" -- stopped being true when
     `join._map_calls` began attributing such a call to the file's own entity. The explanation
     outlived the defect it explained, in both this row and JavaScript's, and got repeated into
-    the ROADMAP. The gap is `scip-typescript`'s occurrence coverage and nothing else.
+    the resolution table. The gap is `scip-typescript`'s occurrence coverage and nothing else.
 
     **And 76.2% is of the files the indexer covered, which here is 1,020 of 1,913.** Ingest
     walks the *index's* documents, so a file with no document contributes no call sites --

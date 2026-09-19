@@ -29,7 +29,7 @@ attributing to advice what was really just more samples.
 **Constraint budgeting is the hypothesis, not the control.** Constraint decay is the risk
 that more constraints make an agent worse; budgeting is the proposed mitigation, and it caps
 how much of the breakdown the actor sees at once. It is the arm that can produce the negative
-result ROADMAP calls publishable, which is why it is separate from `hybrid` rather than a
+result the build plan calls publishable, which is why it is separate from `hybrid` rather than a
 flag on it.
 """
 

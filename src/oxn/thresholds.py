@@ -15,7 +15,8 @@ from typing import Final
 
 #: Cognitive complexity ceiling for one function.
 #:
-#: **12, chosen deliberately.** `idea.md` proposed 8; SonarSource's own default is 15. 8 is
+#: **12, chosen deliberately.** The original design proposed 8; SonarSource's own default
+#: is 15. 8 is
 #: nearly twice as strict as the metric's authors recommend and would flag a great deal of
 #: reasonable code; 15 is permissive enough that agent-written functions routinely pass it
 #: while still being hard to read. 12 sits between them, closer to the published default
@@ -37,8 +38,8 @@ MAX_PARAMETERS: Final[int] = 5
 MAX_NESTING_DEPTH: Final[int] = 4
 
 #: Function and file length, in source lines. Conventional rather than derived. P10 measured
-#: what they cost rather than replacing them: see `oxn.calibration`, and ROADMAP's P10
-#: amendment for why a corpus percentile is not a ceiling.
+#: what they cost rather than replacing them: see `oxn.calibration`, and `docs/metrics.md`
+#: section 10.3 for why a corpus percentile is not a ceiling.
 MAX_FUNCTION_SLOC: Final[int] = 60
 MAX_FILE_SLOC: Final[int] = 500
 

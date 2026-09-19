@@ -664,7 +664,7 @@ this is the only divergence class.
 
 ## Tests that call a language model
 
-Almost none. `idea.md` §1.1 is the project's founding argument: computing a metric with a
+Almost none. The project's founding argument is that computing a metric with a
 model gets you an approximation of something a parser knows exactly. So a model is never
 used to *check* a metric — it is used to check the claims that are genuinely about a model's
 behaviour.

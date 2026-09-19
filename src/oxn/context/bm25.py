@@ -1,7 +1,7 @@
 """Okapi BM25, in the standard library, over a corpus small enough to fit in memory.
 
 Roughly sixty lines of arithmetic, as [ADR-0001](../../../docs/adr/0001-dependency-policy.md)
-requires and the ROADMAP estimated: a decision corpus is tens of documents, so the ranking
+requires and the build plan estimated: a decision corpus is tens of documents, so the ranking
 problem here is nothing like web search and an embedding model would be a network fetch
 (ADR-0001 rule 4) bought for a corpus that fits in a dictionary.
 

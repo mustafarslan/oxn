@@ -29,7 +29,7 @@ That criterion is not a refactor for its own sake. It is what makes two claims t
 - **A project must be able to state an invariant OXN's authors never anticipated.** Today that
   means editing `check.py`.
 
-The ROADMAP adds a constraint that shapes everything below: start with a hand-rolled evaluator, but
+The build plan adds a constraint that shapes everything below: start with a hand-rolled evaluator, but
 design the rule surface so an in-house semi-naive Datalog engine can back it later **without
 changing rule syntax**. That is easy to violate on day one and expensive to repair afterwards, so
 this ADR fixes the surface before any evaluator exists.

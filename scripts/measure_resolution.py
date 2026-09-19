@@ -5,7 +5,7 @@
 
 **This exists because the figures kept going stale in a particular way.** The per-language
 precision, recall and call-coverage numbers live in `tests/test_oracle_scip.py` docstrings and
-in ROADMAP's table, and the tests assert *floors* rather than the figures -- so a change that
+in the resolution table, and the tests assert *floors* rather than the figures -- so a change that
 moves a number by five points passes every test and leaves six documents claiming the old one.
 It happened three times in one week: the receiver fallback fell and the headline coverage was
 corrected while the per-cause split beneath it was not; the split's explanation outlived the

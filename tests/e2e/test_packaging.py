@@ -49,8 +49,8 @@ MUST_NOT_SHIP = (
 #: No single file in a release may be larger than this. The path list above only catches
 #: leaks someone predicted; this catches the shape instead -- a stray binary, a committed
 #: database, a vendored blob -- whatever directory it arrives from. The largest legitimate
-#: files are prose and recorded measurements: ROADMAP.md at 132 KB, docs/metrics.md at 120
-#: KB, benchmarks/retrieval-corpus-oxn.json at 108 KB. 300 KB leaves those room and still
+#: files are prose and recorded measurements: docs/metrics.md at 120 KB and
+#: benchmarks/retrieval-corpus-oxn.json at 108 KB. 300 KB leaves those room and still
 #: rejects the 984 KB cache that prompted it.
 LARGEST_FILE_BYTES = 300 * 1024
 
