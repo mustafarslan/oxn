@@ -149,7 +149,7 @@ def calibration(
     """List every tunable threshold with the evidence behind it.
 
     A number with no stated provenance is folklore, and folklore is what makes developers
-    distrust a gate. This is also the surface P10's calibration work optimises over.
+    distrust a gate. This is also the surface the calibration work optimises over.
     """
     from oxn.calibration import gate_status, summary
     from oxn.calibration import parameters as _parameters
@@ -424,7 +424,7 @@ def context(
 ) -> None:
     """Show the constraints that govern a task -- ranked, capped, and never a gate.
 
-    This is the human view of what P9's MCP `get_architectural_context` will serve. It
+    This is the human view of what the MCP server's `get_architectural_context` serves. It
     cannot pass or fail anything: ADR-0006 keeps retrieval out of the gate entirely.
     """
     from oxn import thresholds

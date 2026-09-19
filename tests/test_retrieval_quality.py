@@ -227,7 +227,7 @@ def test_the_bundle_cap_counts_the_tasks_it_was_priced_over(pairs) -> None:
     blocked by the experiment its `fit_when` named.
 
     `observations` counts a parameter's cost at its current value, not what it was fitted to,
-    and a cost needs no experiment -- P11's cancellation blocked the fit and nothing else.
+    and a cost needs no experiment -- the stalled agent-arms run blocked the fit and nothing else.
     Priced over these 53 tasks the cap binds on **every one**, hiding a median 9 of this
     project's 16 constraints.
 

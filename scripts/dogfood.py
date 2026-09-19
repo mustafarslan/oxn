@@ -2,7 +2,7 @@
 """Make OXN repair its own violations, and record whether it works.
 
 OXN gates coding agents on complexity, and for most of its life it violated its own
-ceilings -- `_walk` scored 52 against a limit of 12 -- while P7 builds the gate itself,
+ceilings -- `_walk` scored 52 against a limit of 12 -- while the gate itself was built,
 whose exit criterion would otherwise be verified against a codebase failing its own rules.
 Rather than hand-refactor, this drove the loop OXN exists to create, on OXN:
 
@@ -27,7 +27,7 @@ docs/metrics.md §10.5 predicts an agent will do.
 **As of 2026-08-31 there is nothing left to repair**: no function in `src` exceeds any
 ceiling and the baseline is empty, so `plan` returns nothing and `repair` says so. That is
 the outcome this harness existed to reach, and it leaves the harness with a second job --
-P10 needs roughly fifty labelled extractions to fit `TRIVIAL_HELPER`, which now have to
+Fitting `TRIVIAL_HELPER` needs roughly fifty labelled extractions, which now have to
 come from a lowered `--ceiling` or from other repositories rather than from OXN's own debt.
 
 Nothing here touches the working tree. Every attempt runs in a throwaway copy, and the loop
@@ -331,7 +331,7 @@ def _parser() -> argparse.ArgumentParser:
         "--backend",
         default="ollama",
         choices=_backend_names(),
-        help="what drives the loop. `claude-code` is the arm P11 says the result depends on",
+        help="what drives the loop. `claude-code` is the arm that decides what a result means",
     )
     parser.add_argument(
         "--model",

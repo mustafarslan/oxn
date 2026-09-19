@@ -18,7 +18,9 @@ no paid tooling.
 > leaves is breadth rather than scaffolding -- more corpora behind the ceilings, more
 > languages past the launch six. See **[docs/metrics.md](docs/metrics.md)** for the metric
 > specifications and **[docs/adr/](docs/adr/)** for the decisions behind them, each recording
-> what was measured rather than what was intended.
+> what was measured rather than what was intended. Commit subjects and ADR status lines are
+> numbered `P0`–`P12`; [the phase record](https://github.com/mustafarslan/oxn/blob/master/docs/phases.md)
+> says what each one delivered.
 
 ## Install, and the first five minutes
 

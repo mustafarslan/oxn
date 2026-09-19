@@ -203,8 +203,8 @@ _CEILINGS: tuple[Parameter, ...] = (
         fit_when=(
             "answered rather than open: 0 unique catches of 144 over seven corpora. What would "
             "reopen it is a fix-rate -- whether an agent shown `max_nesting_depth 6` repairs "
-            "more often than one shown only `cognitive_complexity 21` -- which is a P11 "
-            "measurement and not a corpus one."
+            "more often than one shown only `cognitive_complexity 21` -- which is an "
+            "agent-outcome measurement and not a corpus one."
         ),
     ),
     Parameter(
@@ -501,9 +501,12 @@ _RETRIEVAL: tuple[Parameter, ...] = (
             "thirty-two sees a filter"
         ),
         fit_when=(
-            "**not P11, which is cancelled.** That was the whole of this entry's plan and it "
-            "is no longer running, so the honest statement is that nothing currently "
-            "scheduled will fit this number. What would is a task-level outcome -- whether an "
+            "**the agent-arms experiment, which is blocked on inference budget rather than "
+            "on design.** The arms, the beds and the grid driver are built and tested; what "
+            "stopped the run was the endpoint, which returned `HTTP 429 -- rate limited` on "
+            "39 of 44 attempts before the run was deliberately halted. That is a thing to "
+            "wait out rather than a thing abandoned, and until it is waited out nothing has "
+            "fit this number. What would is a task-level outcome -- whether an "
             "agent shown seven constraints complies more often than one shown sixteen -- and "
             "the measurement above is what makes that worth arranging rather than assuming: a "
             "cap that binds on 100% of tasks and hides more than half the set is doing "
@@ -543,7 +546,8 @@ _ENFORCEMENT: tuple[Parameter, ...] = (
             "there are enough trajectories to take a quantile. The measurement above is the "
             "right one and n=5 successes is far too few to set a number by; what it wants is "
             "more of them, from varied agents on varied repositories rather than this one -- "
-            "P11's grid. The hook *ledger* cannot supply them, and an earlier version of this "
+            "a grid of varied agents over varied repositories. The hook *ledger* cannot supply "
+            "them, and an earlier version of this "
             "entry wrongly said it already did: `retry.charge` rewrites each path with only "
             "what the current run found, so a violation is forgotten at the moment it is "
             "repaired, which is precisely the event a fit needs. `.oxn/cache/repairs.jsonl` "
@@ -593,7 +597,7 @@ def summary() -> dict[str, object]:
         "total": len(values),
         "note": (
             "No parameter here is corpus-calibrated, and the ceilings are not going to be. "
-            "P10 measured the five threshold corpora: LOC-weighted (Alves et al.) the "
+            "The five threshold corpora were measured: LOC-weighted (Alves et al.) the "
             "ceilings already sit at P79-P100, so the distributions corroborate them, but "
             "the weighted p90 ranges 7 to 23 across five repositories -- a fitted gate "
             "tracks the corpus set. What the corpora give instead is exceedance, the "

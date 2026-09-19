@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Measure where OXN's gated ceilings sit in the distribution of real code.
 
-P10 asks for the ceilings to stop being `judgement n=0`. The roadmap words that as fitting
+The ceilings were to stop being `judgement n=0`, and the build plan (not in this
+repository) worded that as fitting
 them to *corpus percentiles*, and the measurement below is the argument for not doing that.
 
 **An unweighted percentile of these distributions is not a ceiling.** Metric distributions

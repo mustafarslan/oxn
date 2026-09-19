@@ -1,6 +1,6 @@
 """The grid: every arm over one bed's targets, run once so the flags cannot drift.
 
-The harness runs *one* configuration per invocation, and P11's table needs twelve. Doing that
+The harness runs *one* configuration per invocation, and the arm table needs twelve. Doing that
 by hand is twelve chances to vary something that was supposed to be held constant, and the
 pilots showed what that costs: the first arm table read "none 100%, hybrid 0%" because the
 two invocations had silently been handed different targets.

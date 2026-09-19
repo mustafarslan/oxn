@@ -30,7 +30,8 @@ from the first commit after an extraction, by design. Naming it `--check` would 
 invited exactly the wiring the paragraph below argues against, and a flag name beats a
 paragraph. **Regenerating is not maintenance, it is changing the benchmark.**
 
-The trap is specific, and it was measured rather than imagined. Immediately after P8 landed,
+The trap is specific, and it was measured rather than imagined. Immediately after the
+retrieval system landed,
 regenerating would have added three pairs -- three commits *about the retrieval system* --
 which score P@1 1.000 between them and would lift the headline from 0.377 to 0.411. They
 score perfectly because their subjects and ADR-0006's body were written by the same author
