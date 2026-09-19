@@ -1,7 +1,7 @@
 {
-  "note": "Accepted debt: these violations do not fail the build, but they may not get worse, and a new one anywhere fails. Regenerate with `oxn baseline`.",
-  "oxn_version": "0.0.1",
+  "oxn_version": "0.1.0",
   "scope": "repository",
+  "note": "Accepted debt: these violations do not fail the build, but they may not get worse, and a new one anywhere fails. Regenerate with `oxn baseline`.",
   "violations": {
     "methods_per_class|src/oxn/graph/store.py|src.oxn.graph.store.GraphStore": 26.0,
     "weighted_methods_per_class|src/oxn/graph/indexer.py|src.oxn.graph.indexer.Indexer": 28.0,

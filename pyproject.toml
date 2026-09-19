@@ -64,6 +64,9 @@ oxn = "oxn.cli:main"
 
 [project.urls]
 Repository = "https://github.com/mustafarslan/oxn"
+Documentation = "https://github.com/mustafarslan/oxn#readme"
+Changelog = "https://github.com/mustafarslan/oxn/blob/master/CHANGELOG.md"
+Issues = "https://github.com/mustafarslan/oxn/issues"
 
 [tool.hatch.version]
 path = "src/oxn/__init__.py"
@@ -72,7 +75,7 @@ path = "src/oxn/__init__.py"
 packages = ["src/oxn"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "docs", "scripts", "benchmarks", "README.md", "LICENSE"]
+include = ["src", "tests", "docs", "scripts", "benchmarks", "README.md", "CHANGELOG.md", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
