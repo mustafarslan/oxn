@@ -100,7 +100,7 @@ that needs nothing but Python and git -- and it is deliberately smaller than `--
 
 | | |
 |---|---|
-| preflight | the tree is clean, `__version__` is declared, and that version is not already tagged |
+| preflight | the tree is clean, `__version__` is declared, and no tag for that version points at code other than `HEAD` |
 | fast | lint, types, unit tests, and OXN's own gate over `src`, `tests` and `scripts` |
 | matrix | the fast lane on every supported interpreter (needs `uv`) |
 | e2e | build the wheel **and the sdist**, install each into a fresh virtualenv, and drive the `oxn` script |

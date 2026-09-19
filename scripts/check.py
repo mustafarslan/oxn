@@ -229,8 +229,16 @@ def _release_problems() -> list[str]:
     dirty = _git("status", "--porcelain")
     if dirty:
         problems.append(f"uncommitted changes in {len(dirty.splitlines())} path(s)")
-    if _git("tag", "--list", f"v{version}"):
-        problems.append(f"v{version} is already tagged -- bump __version__ before releasing")
+
+    # The tag existing is not the problem; the tag naming *different code* is. Refusing on
+    # mere existence made it impossible to re-verify the commit you had just tagged, which
+    # is exactly what you want to do before pushing it -- found by hitting it during 0.1.0.
+    tagged = _git("rev-list", "-1", f"v{version}")
+    if tagged and tagged != _git("rev-parse", "HEAD"):
+        problems.append(
+            f"v{version} is already tagged at {tagged[:8]}, which is not HEAD -- "
+            "bump __version__, or move the tag if it was placed by mistake"
+        )
     return problems
 
 
