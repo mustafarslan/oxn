@@ -13,6 +13,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- Every link in the README is absolute. The README is the PyPI long description and PyPI does
+  not rewrite relative paths, so all fifteen -- the ADRs, the metric catalogue, the phase
+  record, the licence -- were 404s on the project's own front page. Fixed on `master`; it
+  reaches PyPI with the next release, because that metadata is per-version.
+
+### Added
+
+- README badges reading the current version, supported Pythons and licence from PyPI, so the
+  file states no version number of its own.
+
 ## [0.1.1] — 2026-09-19
 
 ### Fixed
