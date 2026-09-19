@@ -85,16 +85,21 @@ def test_a_finding_says_it_is_new_and_carries_its_trail(
 def test_debt_the_branch_did_not_introduce_is_not_reported_as_new(
     installed: Installed, pull_request: Path
 ) -> None:
-    """The distinction the comment lives on: inherited debt is not this author's doing."""
+    """The distinction the comment lives on: inherited debt is not this author's doing.
+
+    Asserted positively. "`new` is not among the origins" is also true of a review that
+    found nothing at all, and a test that passes on an empty list is a test that would go
+    on passing if `review` stopped reporting baselined findings entirely.
+    """
     assert installed.run("baseline", cwd=pull_request).returncode == 0
     _git(pull_request, "add", "-A")
     _git(pull_request, "commit", "-qm", "accept the debt")
 
-    findings = _json(installed.run("review", "--base", "main", "--json", cwd=pull_request))[
-        "findings"
-    ]
-    origins = {finding["origin"] for finding in findings}
-    assert "new" not in origins, f"baselined debt is still being reported as new: {origins}"
+    report = _json(installed.run("review", "--base", "main", "--json", cwd=pull_request))
+    findings = report["findings"]
+    assert findings, "accepted debt vanished from the review instead of being marked accepted"
+    assert {finding["origin"] for finding in findings} == {"baselined"}
+    assert report["counts"]["new"] == 0 and report["counts"]["baselined"] == len(findings)
 
 
 def test_the_measurement_is_stamped_with_what_produced_it(

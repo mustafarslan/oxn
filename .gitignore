@@ -13,6 +13,10 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+# complexipy writes this one in the oracle lane, and it was the single non-source
+# directory reaching the sdist -- hatchling excludes what git ignores, so this is
+# the fix for both at once. See tests/e2e/test_packaging.py.
+.complexipy_cache/
 .coverage
 htmlcov/
 

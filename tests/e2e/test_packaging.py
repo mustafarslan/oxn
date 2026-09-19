@@ -29,7 +29,16 @@ pytestmark = pytest.mark.e2e
 #: Paths that must never reach a release. Fetched third-party corpora, caches written by
 #: the oracle tools, and the virtualenvs the matrix lane builds -- all gitignored, all
 #: sitting inside directories `tool.hatch.build.targets.sdist` names explicitly.
-MUST_NOT_SHIP = ("benchmarks/corpora/", ".venv/", ".venvs/", ".git/", "tests/oracles/node_modules/")
+MUST_NOT_SHIP = (
+    "benchmarks/corpora/",
+    ".venv/",
+    ".venvs/",
+    ".git/",
+    "tests/oracles/node_modules/",
+    # The one that was actually getting through on 2026-09-19: complexipy writes it
+    # during the oracle lane and nothing ignored it, so hatchling packed it.
+    ".complexipy_cache/",
+)
 
 #: A release that is mostly other people's code is a packaging bug, and a size ceiling is
 #: the one assertion that catches every future variant of it at once. The sdist measured
