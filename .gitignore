@@ -22,8 +22,11 @@ htmlcov/
 
 # OXN working state. The cache is a build artifact; the baseline/ratchet is NOT --
 # it belongs in version control so the "don't make it worse" gate is shared.
-.oxn/cache/
-.oxn/index/
+# Anchored patterns would only match at the root. A stray `src/.oxn/cache/graph.db`
+# was committed on 2026-09-04 and went unnoticed until it turned up as the largest
+# file in the v0.1.0 sdist, so these match an `.oxn/` at any depth.
+**/.oxn/cache/
+**/.oxn/index/
 !.oxn/baseline.json
 
 # Benchmark corpora are fetched, never vendored (see benchmarks/manifest.yaml).

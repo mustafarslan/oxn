@@ -38,7 +38,21 @@ MUST_NOT_SHIP = (
     # The one that was actually getting through on 2026-09-19: complexipy writes it
     # during the oracle lane and nothing ignored it, so hatchling packed it.
     ".complexipy_cache/",
+    # OXN's own analysis cache. A `src/.oxn/cache/graph.db` was committed on 2026-09-04
+    # and shipped in every artifact built after it, because `.gitignore` anchored the rule
+    # at the root and the file was tracked anyway -- and gitignore does not apply to
+    # tracked files. Found in the v0.1.0 release scan as the largest file in the archive.
+    ".oxn/cache/",
+    ".oxn/index/",
 )
+
+#: No single file in a release may be larger than this. The path list above only catches
+#: leaks someone predicted; this catches the shape instead -- a stray binary, a committed
+#: database, a vendored blob -- whatever directory it arrives from. The largest legitimate
+#: files are prose and recorded measurements: ROADMAP.md at 132 KB, docs/metrics.md at 120
+#: KB, benchmarks/retrieval-corpus-oxn.json at 108 KB. 300 KB leaves those room and still
+#: rejects the 984 KB cache that prompted it.
+LARGEST_FILE_BYTES = 300 * 1024
 
 #: A release that is mostly other people's code is a packaging bug, and a size ceiling is
 #: the one assertion that catches every future variant of it at once. The sdist measured
@@ -85,11 +99,22 @@ def _members(archive: Path) -> list[str]:
         return [name.split("/", 1)[1] for name in bundle.getnames() if "/" in name]
 
 
+def _under(path: str, forbidden: str) -> bool:
+    """Is `path` inside a `forbidden` directory at *any* depth?
+
+    Anchoring this at the root is the bug that let the cache through in the first place:
+    `.gitignore` said `.oxn/cache/`, which matches only at the top level, and the file was
+    at `src/.oxn/cache/graph.db`. The first version of this very check repeated the mistake
+    with `startswith`, and passed on the leak it was written for.
+    """
+    return path.startswith(forbidden) or f"/{forbidden}" in f"/{path}"
+
+
 def test_the_sdist_ships_none_of_the_fetched_trees(sdist: Path) -> None:
     """`include` names `benchmarks`, and `benchmarks/corpora` is 2 GB of other people's code."""
     shipped = _members(sdist)
     for forbidden in MUST_NOT_SHIP:
-        leaked = [name for name in shipped if name.startswith(forbidden)]
+        leaked = [name for name in shipped if _under(name, forbidden)]
         assert not leaked, f"{forbidden} reached the sdist ({len(leaked)} paths, e.g. {leaked[0]})"
 
 
@@ -109,6 +134,26 @@ def test_the_sdist_carries_what_it_claims_to(sdist: Path) -> None:
         assert promised in shipped, (
             f"`include` names it and the sdist does not carry it: {promised}"
         )
+
+
+def test_no_single_file_in_the_release_is_a_blob(sdist: Path) -> None:
+    """The guard for the leak nobody predicted.
+
+    `MUST_NOT_SHIP` is a list of paths someone thought of. This asserts the property those
+    paths are a proxy for: a source distribution is text, and anything much larger than the
+    longest document in it is something that got in by accident.
+    """
+    with tarfile.open(sdist) as bundle:
+        oversized = {
+            member.name.split("/", 1)[1]: member.size
+            for member in bundle.getmembers()
+            if member.isfile() and member.size > LARGEST_FILE_BYTES
+        }
+    assert not oversized, (
+        "files over the "
+        f"{LARGEST_FILE_BYTES // 1024} KB per-file ceiling reached the sdist: "
+        + ", ".join(f"{name} ({size // 1024} KB)" for name, size in sorted(oversized.items()))
+    )
 
 
 def test_the_sdist_installs_and_answers(sdist: Path, tmp_path: Path) -> None:
