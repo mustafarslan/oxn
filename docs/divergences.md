@@ -5,8 +5,20 @@ deliberately does not depend on are used as **differential-test oracles in CI**,
 "self-implemented" a checkable claim rather than an assertion.
 
 Those tools disagree with each other. This file records every known divergence, whether OXN is right
-or merely different, and how each was established. It is generated from the same tables the tests
-assert against, so it cannot quietly drift from the code.
+or merely different, and how each was established.
+
+**It is written by hand, and guarded rather than generated.** An earlier version of this paragraph
+claimed the file was generated from the tables the tests assert against; no generator exists, and
+saying otherwise invited exactly the drift the sentence promised to prevent. What is true is the
+guard: each divergence below is also pinned as an exact tuple in `tests/test_oracle_*.py` --
+`(source, radon, lizard, oxn)` and its equivalents -- and those tests fail with *"revisit
+docs/divergences.md"* the moment a tool changes its behaviour. So this file cannot drift silently
+past the oracles; it can drift past them loudly, and then a person updates it.
+
+One limit worth stating, since the guard is the whole claim: those tests carry
+`pytestmark = pytest.mark.oracle` and `importorskip` their tools, so they run in the `oracle` lane
+(`python scripts/check.py --oracle`) and not on every build. A divergence that has gone stale stays
+stale until that lane runs.
 
 All measurements: 2026-08-30, on `tree-sitter-language-pack` 1.15.8, radon 6.0.1, lizard 1.24.0,
 complexipy (latest), eslint-plugin-sonarjs 4.2.0.
