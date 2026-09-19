@@ -362,5 +362,10 @@ The floor tests still read the live ADRs, deliberately. They are the check that 
 server works on OXN's *current* decisions, and they assert inequalities, so an ADR edit cannot
 make them fail spuriously.
 
-Frozen at `9fc42b9`, where the frozen corpus reproduces the live numbers exactly — which is
-also the check that the fixture is faithful. This amendment is the first edit it ignores.
+Frozen at `bca8801`, and **no longer reproducing the live numbers** — which is the fixture doing
+its job rather than failing at it. Four of the five decisions have grown since the freeze
+(ADR-0002 by 16 KB, ADR-0005 by 10 KB), so the live corpus now measures 0.566/0.739 against the
+frozen 0.623/0.760. The gap is the gold documents getting longer under a fixed query set, which
+is the exact confound the freeze exists to hold still; it is not a ranker regression, and it is
+not a reason to re-freeze. See `scripts/freeze_retrieval_corpus.py` for why moving the benchmark
+is a deliberate act rather than maintenance.

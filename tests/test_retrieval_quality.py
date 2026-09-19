@@ -44,7 +44,7 @@ ROOT = Path(__file__).resolve().parent.parent
 LABELS = ROOT / "benchmarks" / "retrieval-labels-oxn.json"
 CORPUS = ROOT / "benchmarks" / "retrieval-corpus-oxn.json"
 
-#: Measured on 53 pairs over five decisions, against the corpus frozen at `9fc42b9`.
+#: Measured on 53 pairs over five decisions, against the corpus frozen at `bca8801`.
 #:
 #: **This list used to be seventeen entries long and is closed.** Every one of them was an
 #: ADR edit rather than a ranker change -- 0.377/0.579 at the start, 0.623/0.760 at the end,
