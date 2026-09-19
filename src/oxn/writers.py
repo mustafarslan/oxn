@@ -1,6 +1,7 @@
 """Who turns a measurement into a sentence, and the refusal that keeps them honest.
 
-`scripts/actors.py` had this shape first, for P11's arms, and the roadmap points at it as the
+`scripts/actors.py` had this shape first, for the arms, and the build plan (not in this
+repository) pointed at it as the
 prior art. It could not simply be extended: a GitHub Actions job runs `pip install oxn` and
 gets `src/oxn/`, so a review that imports from `scripts/` cannot run where reviews happen.
 The protocol lives here and that file keeps its registry of repair actors.

@@ -306,7 +306,7 @@ def test_the_spec_states_the_parameter_count_it_actually_has() -> None:
     calibration surface exists so numbers can be argued with rather than believed, which
     does not work if the document describing it is describing an older version of it.
 
-    The claim used to live in the roadmap. It moved to `docs/metrics.md` with the document
+    The claim used to live in the build plan. It moved to `docs/metrics.md` with the document
     itself, and the guard moved with it rather than being dropped -- a test deleted because
     its subject moved is how the rot this test exists to catch gets back in.
     """

@@ -86,7 +86,7 @@ and callbacks. This ships in the user-facing docs, not just here.
 exact, which is what lets OXN detect the Modular Mirage rather than merely gesture at it. The hook
 stays fast. Honesty about precision is structural rather than a documentation footnote.
 
-**Negative.** The resolution phase is the largest single investment in the roadmap (4–6 focused
+**Negative.** The resolution phase is the largest single investment in the build plan (4–6 focused
 weeks, and it could double). L2 requires per-language toolchains, so it is an opt-in `oxn index`
 step, never a hard install requirement. Two code paths per resolved metric means more tests.
 
@@ -225,7 +225,7 @@ result rather than reporting an index of nothing.
 
 The module docstring in `graph/resolve.py` has listed "``package.json`` ``exports`` maps,
 workspace globs, symlinked monorepo packages" among the things "reported as **external and
-unresolved** rather than guessed at" since P4, and the roadmap carried "monorepo support" as
+unresolved** rather than guessed at" since P4, and the build plan carried "monorepo support" as
 open on that basis. Measuring it first changed what the work was.
 
 **On `typescript-nest` — a real npm-workspaces monorepo and the pinned corpus — all 1,651
@@ -457,7 +457,7 @@ descriptors for methods on anonymous type literals; 1 `<get>` accessor. All desc
 decoration rather than disagreement, and at 0.36% none justifies a speculative strip of the
 kind that would need its own retraction.
 
-`scip-typescript` was not installed on this machine when the roadmap began claiming it as
+`scip-typescript` was not installed on this machine when the build plan began claiming it as
 available, which is the third install hint in two days to be wrong until someone ran it.
 
 ## Amendment, 2026-09-06 (seventh) — the import table, in the three languages that had none

@@ -520,7 +520,7 @@ def run_classes(
     return payload
 
 
-#: Named by the roadmap, not implemented: see the `writers` module docstring on why a client
+#: Named by the build plan, not implemented: see the `writers` module docstring on why a client
 #: that has never made a request is not evidence of support.
 UNKNOWN_WRITER = (
     "no writer backend named {name!r}. `ollama` is the only one, and choosing a *model* is what "

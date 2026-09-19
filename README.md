@@ -127,7 +127,7 @@ Lanes, in increasing cost:
 | default | lint, types and the deterministic test suite -- no network, no toolchains |
 | `--matrix` | the default lane on Python 3.10 through 3.14 |
 | `--oracle` | differential tests against the third-party tools OXN deliberately does not depend on; needs Node, a JDK and Go |
-| `--corpus` | phase exit criteria measured on real repositories |
+| `--corpus` | exit criteria measured on real repositories |
 | `--llm` | the few tests that need a language model, via Ollama |
 | `--e2e` | builds a wheel, installs it into a fresh virtualenv and drives the `oxn` script |
 

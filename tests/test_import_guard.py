@@ -6,7 +6,7 @@ a bare interpreter costs ~14 ms, ``import typer`` adds ~23 ms, ``import rich.con
 ~15 ms and ``import networkx`` ~146 ms.
 
 These tests fail the build the moment someone puts a heavy import at module level. They
-are the reason the roadmap can promise a latency budget at all.
+are the reason a latency budget can be promised at all.
 """
 
 from __future__ import annotations

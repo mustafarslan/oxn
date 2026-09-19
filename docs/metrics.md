@@ -989,7 +989,7 @@ MIT wheel, but *is* licence-clean as a CI-only subprocess oracle, since there is
 **Verdict: SELF-IMPLEMENT (HYBRID).** ~400 LOC over one `git log` subprocess: zero dependencies, no
 JVM, no GitPython. code-maat and PyDriller are the differential oracles.
 **Effort/Risk:** S–M (3–4 d) / Low. **This tier needs no parser, no resolver and no grammar work, so
-it ships early** — see the roadmap phase ordering.
+it ships early** — see [the phase record](phases.md).
 
 ---
 

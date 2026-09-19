@@ -6,7 +6,7 @@ survive contact with the distributions: they have median 0, so the 95th percenti
 cognitive complexity is 2 in TypeScript and 9 in Go. The ceilings therefore did not move, and
 what they gained instead is an *exceedance* figure quoted in `calibration.py`.
 
-A number quoted in prose rots exactly like the roadmap sentence that read "9 of 9 are
+A number quoted in prose rots exactly like the build-plan sentence that read "9 of 9 are
 provisional" three parameters after the ninth. These tests hold the quoted figures to the
 frozen measurement, which is why the measurement is a committed file rather than something
 the corpora have to be present to reproduce.

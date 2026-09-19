@@ -7,7 +7,7 @@ script is where correctness is actually established. It runs the same lanes:
     python scripts/check.py               # fast lane: lint, types, unit tests
     python scripts/check.py --matrix      # the fast lane on every supported Python
     python scripts/check.py --oracle      # differential tests vs third-party tools
-    python scripts/check.py --corpus      # phase exit criteria on real repositories
+    python scripts/check.py --corpus      # exit criteria on real repositories
     python scripts/check.py --llm         # tests that call a model through Ollama
     python scripts/check.py --e2e         # install the wheel and drive the `oxn` script
     python scripts/check.py --release     # the hermetic set, before tagging a version
@@ -257,7 +257,7 @@ def corpus_lane(*, fetch: bool) -> bool:
     fixture is the wrong instrument -- the evaluator's quadratic first join was invisible
     on twelve files and took thirteen minutes on 1,913.
     """
-    lane = Lane("corpus (phase exit criteria)")
+    lane = Lane("corpus (exit criteria)")
     if fetch:
         lane.run(
             PYTHON,
