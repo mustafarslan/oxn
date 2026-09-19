@@ -1730,8 +1730,8 @@ table above is meaningless without it.
    at `.oxn/cache/graph.db` and is gitignored as a build artifact; `.oxn/baseline.json` is
    explicitly un-ignored, because the ratchet is shared state, not a derived one.
 4. **Launch languages for the first metric milestone.** *Decided and shipped:* Python, TypeScript
-   and JavaScript have full profiles; Go, Rust and Java have verified grammars and land as profiles
-   in P6, alongside their gocognit and rust-code-analysis oracles.
+   and JavaScript have full profiles; Go, Rust and Java **shipped** as profiles in P6, alongside
+   their gocognit and rust-code-analysis oracles. All six are launch languages.
 5. **Cognitive complexity ceiling.** *Decided: 12.* The original design proposed 8 and SonarSource's own
    default is 15; 8 flags a great deal of reasonable code, 15 lets agent-written functions through
    while still being hard to read. Recorded with its reasoning in `src/oxn/thresholds.py`. It is

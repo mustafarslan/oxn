@@ -386,8 +386,11 @@ One limit worth knowing: the writer is never shown the diff.
 
 OXN gates coding agents on complexity, and used to violate its own ceilings.
 `scripts/dogfood.py` drives the loop OXN exists to create, on OXN itself — a loop that has
-now run out of work here: **`src`, `scripts` and `tests` report zero violations and the
-baseline is empty**, so `plan` returns nothing unless you lower `--ceiling`.
+now run out of work here: **`src`, `scripts` and `tests` report zero violations**, so `plan`
+returns nothing unless you lower `--ceiling`. The baseline is not empty — it carries four
+accepted class-aggregate violations, three of them `GraphStore` and `Indexer` being large
+data-access classes rather than complex ones. They are recorded debt, not a clean sheet, and
+`oxn check` prints them as `4 baselined` on every run.
 
 ```sh
 python scripts/dogfood.py plan               # what is over the ceiling, and why

@@ -14,10 +14,10 @@ where it sits here indefinitely.
 ## Status
 
 Proposed — 2026-09-18. Extends the hotspot ranking [docs/metrics.md §5.4](../metrics.md) already
-defines and is bounded by [ADR-0001](0001-dependency-policy.md)'s dependency rule,
-[ADR-0002](0002-resolution-strategy.md)'s hook budget and [ADR-0004](0004-freshness-model.md)'s
+defines and is bounded by [ADR-0001](../adr/0001-dependency-policy.md)'s dependency rule,
+[ADR-0002](../adr/0002-resolution-strategy.md)'s hook budget and [ADR-0004](../adr/0004-freshness-model.md)'s
 staleness model. None of them is changed. Nothing here gates, so
-[ADR-0003](0003-enforcement-model.md)'s two channels are untouched.
+[ADR-0003](../adr/0003-enforcement-model.md)'s two channels are untouched.
 
 ## Context
 

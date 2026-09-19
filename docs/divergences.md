@@ -49,7 +49,7 @@ enumerated rule:
     lizard == oxn − (asserts) + (finally clauses)
     radon  == oxn + (loop-else clauses) − (extra match cases beyond the first)
 
-Both formulas are asserted in `tests/test_oracles.py`. If an oracle changes behaviour, that test
+Both formulas are asserted in the `tests/test_oracle_*.py` lane. If an oracle changes behaviour, those tests
 fails and this document gets revisited.
 
 **Harness consequence.** radon reports nested functions under `block.closures` rather than at top

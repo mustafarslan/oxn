@@ -15,11 +15,12 @@ Accepted — 2026-08-28. Supersedes the enforcement design in the original bluep
 
 ## Context
 
-The project's founding argument holds that soft probabilistic constraints cannot enforce hard invariants —
-a model fine-tuned on clean code will still emit a cyclomatic complexity of 15 under prompt
-pressure. It then, in §4, enforces via a CLAUDE.md instruction: *"Always call
-`verify_code_quality(file_path)`."* That relocates the same weakness rather than removing it. An
-MCP tool the model may choose not to call is a soft constraint wearing a deterministic costume.
+The project's founding argument holds that soft probabilistic constraints cannot enforce hard
+invariants — a model fine-tuned on clean code will still emit a cyclomatic complexity of 15
+under prompt pressure. The original design then proposed enforcing through a CLAUDE.md
+instruction: *"Always call `verify_code_quality(file_path)`."* That relocates the same weakness
+rather than removing it. An MCP tool the model may choose not to call is a soft constraint
+wearing a deterministic costume.
 
 Three 2026 results sharpen the problem considerably:
 
@@ -147,3 +148,23 @@ decision 1 as a later hardening — is the only thing that could enforce it.
 neither should ever halt: three commits touching the same accepted debt is not a failed
 repair loop. `retry_budget: 0` disables the bound explicitly, which is the right setting for
 CI, where there is no agent to escalate to.
+
+## Amendment, 2026-09-19 — the budgeting hypothesis moved once, and is still untested
+
+The **Open** item above says P10 tests whether constraint budgeting mitigates constraint decay.
+That was true when it was written and stopped being true a week later: [ADR-0006](0006-retrieval-and-budgeting.md)
+reassigned the test to P11 on 2026-09-04 — *"whether budgeting mitigates constraint decay needs
+the arms … and that is P11"* — and did not amend this line. Two ADRs then named different phases
+for the same experiment, which is recorded here rather than silently corrected above, because the
+line was accurate on its date and the drift is the thing worth knowing.
+
+**Where it actually stands.** The harness exists: six arms, six runnable beds, the measures and
+the grid driver all shipped (`e0825df`, `a938cc6`, `98f3c3f`, `3cdd56e`). The twelve-cell grid has
+never been driven to a table. The blocker is inference budget rather than design — `7453420`
+records 39 of 44 attempts in one run returning `HTTP 429 -- rate limited, retry later`, and the
+run being halted deliberately once the endpoint began refusing.
+
+So the hypothesis is **unproven and nothing has measured it**, which is what `oxn calibration`
+says about `MAX_BUNDLE_CONSTRAINTS` and what [the phase record](../phases.md) says about P11. The
+three now agree. Nothing in this repository reports an effect of OXN on an agent, and ADR-0006's
+standing rule — that the mechanism must not be reported as if it were the effect — still holds.
