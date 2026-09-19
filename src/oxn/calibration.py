@@ -306,7 +306,7 @@ _CEILINGS: tuple[Parameter, ...] = (
             "cyclomatic 6 -- and it reads exactly like the God Class above until LCOM4 is "
             "asked: LCOM4 2, whose second component is `__enter__`, a one-line `return "
             "self`. Every other method touches `self._conn` or routes through "
-            "`_transaction`, so it is one thing with 26 doors. Splitting it by subject "
+            "`transaction`, so it is one thing with 26 doors. Splitting it by subject "
             "buys nothing: the parts would share the connection, and a facade over them "
             "returns the same count. **LCOM4 is the discriminator between the two shapes**, "
             "and a count on its own cannot tell them apart -- which is why these two "

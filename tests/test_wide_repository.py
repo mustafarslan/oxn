@@ -99,7 +99,7 @@ def test_the_god_class_breaks_into_its_collaborators() -> None:
 def test_graph_store_reads_as_a_repository_and_not_as_a_god_class() -> None:
     """OXN's own baselined class, and the reason it is not split.
 
-    26 methods, all but one reaching `self._conn` -- directly, or through `_transaction`,
+    26 methods, all but one reaching `self._conn` -- directly, or through `transaction`,
     which is what makes LCOM4 rather than LCOM3 the right reading. The odd one out is
     `__enter__`, a one-line `return self` that touches nothing and calls nothing.
 

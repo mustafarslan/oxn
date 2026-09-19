@@ -106,7 +106,7 @@ def drop_unresolved_references(store: GraphStore) -> int:
     35,332 reference edges resolved to nothing**, mostly the standard library, and keeping
     them would have tripled the cache for rows with no reader.
     """
-    with store._transaction() as conn:  # noqa: SLF001
+    with store.transaction() as conn:
         cursor = conn.execute(
             "DELETE FROM edges WHERE kind = ? AND dst_id IS NULL",
             (EdgeKind.REFERENCES.value,),

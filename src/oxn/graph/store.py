@@ -177,7 +177,7 @@ class GraphStore:
     the verdict. Measured, it is a query catalogue rather than an accumulation of
     responsibilities: LCOM4 reads 2, and the second component is `__enter__`, a one-line
     `return self` that touches nothing. Every other method reaches `self._conn`, directly or
-    through `_transaction`.
+    through `transaction`.
 
     So there is no seam here to cut along. Partitioning by subject would produce parts that
     all share the one connection, and a facade over them returns the same method count with
@@ -265,7 +265,7 @@ class GraphStore:
 
     def put_file(self, parsed: ParsedFile, profile_version: int, grammar_version: str) -> None:
         """Replace one file's contribution atomically."""
-        with self._transaction() as conn:
+        with self.transaction() as conn:
             conn.execute("DELETE FROM files WHERE path = ?", (parsed.path,))
             conn.execute(
                 "INSERT INTO files (path, language, content_sha, size_bytes, profile_version,"
@@ -322,7 +322,7 @@ class GraphStore:
 
     def put_symbols(self, path: str, symbols: dict[str, str]) -> None:
         """Record ``SCIP symbol -> entity id`` for one file."""
-        with self._transaction() as conn:
+        with self.transaction() as conn:
             conn.execute("DELETE FROM symbols WHERE file_path = ?", (path,))
             conn.executemany(
                 "INSERT OR REPLACE INTO symbols (symbol, entity_id, file_path) VALUES (?, ?, ?)",
@@ -331,7 +331,7 @@ class GraphStore:
 
     def put_edges(self, path: str, edges: list[Edge]) -> None:
         """Replace the non-containment edges belonging to one file."""
-        with self._transaction() as conn:
+        with self.transaction() as conn:
             conn.execute("DELETE FROM edges WHERE file_path = ?", (path,))
             conn.executemany(
                 "INSERT INTO edges (src_id, kind, dst_id, dst_ref, provenance, resolution,"
@@ -358,7 +358,7 @@ class GraphStore:
         Run after every file is indexed: an edge often points at a symbol defined in a file
         that had not been seen when the edge was created.
         """
-        with self._transaction() as conn:
+        with self.transaction() as conn:
             cursor = conn.execute(
                 "UPDATE edges SET dst_id ="
                 " (SELECT entity_id FROM symbols s WHERE s.symbol = edges.dst_ref)"
@@ -394,7 +394,7 @@ class GraphStore:
             for entity in measured
             for key, value in entity.values.items()
         ]
-        with self._transaction() as conn:
+        with self.transaction() as conn:
             conn.execute("DELETE FROM metrics WHERE file_path = ?", (path,))
             conn.executemany(
                 "INSERT INTO metrics (entity_id, metric_key, value, exactness, resolution,"
@@ -404,7 +404,7 @@ class GraphStore:
 
     def put_file_metrics(self, values: dict[str, dict[str, float]]) -> None:
         """Replace file-scoped measurements for the paths named."""
-        with self._transaction() as conn:
+        with self.transaction() as conn:
             for path, metrics in values.items():
                 conn.execute("DELETE FROM file_metrics WHERE path = ?", (path,))
                 conn.executemany(
@@ -527,7 +527,7 @@ class GraphStore:
 
     def forget(self, path: str) -> None:
         """Drop a file that no longer exists in the working tree."""
-        with self._transaction() as conn:
+        with self.transaction() as conn:
             conn.execute("DELETE FROM files WHERE path = ?", (path,))
 
     def known_paths(self) -> set[str]:
@@ -549,7 +549,22 @@ class GraphStore:
         }
 
     @contextmanager
-    def _transaction(self) -> Iterator[sqlite3.Connection]:
+    def transaction(self) -> Iterator[sqlite3.Connection]:
+        """A scoped write: commit on success, roll back on any exception.
+
+        **Public, because two callers outside this class already needed it** and were
+        reaching past the underscore with `# noqa: SLF001` to get it -- `scip.aliases`
+        retargeting an edge after alias resolution, and `graph.rows` dropping unresolved
+        references. Both are single-statement edge mutations, and the honest options were
+        to add a method per statement or to admit that handing out a scoped transaction is
+        part of what a repository does. The first would have taken NOM from 26 to 28,
+        against a baseline recorded at 26 -- the ratchet refusing an encapsulation
+        improvement, which is worth noticing about a ratchet.
+
+        So the surface is declared rather than leaked. A caller holding this is inside the
+        store's transaction, not around it: do not nest, and do not hold it across a read
+        that another writer could interleave with.
+        """
         try:
             yield self._conn
         except Exception:

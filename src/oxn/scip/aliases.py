@@ -175,7 +175,7 @@ def _write(indexer: Indexer, rowid: int, entity_id: str, confidence: float) -> N
     section 2.3 promises exactness per rung, so a row that quietly kept L2 would be claiming
     compiler-grade evidence for a name-based answer.
     """
-    with indexer.store._transaction() as conn:  # noqa: SLF001
+    with indexer.store.transaction() as conn:
         conn.execute(
             "UPDATE edges SET dst_id = ?, resolution = ?, confidence = ?,"
             " attrs = json_set(attrs, '$.via', 'import_alias') WHERE rowid = ?",
