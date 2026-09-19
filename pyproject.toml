@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "oxn"
-description = "Local neuro-symbolic architecture and quality gatekeeper for LLM coding agents"
+description = "Oxygen (oxn) - a local architecture and quality gatekeeper for LLM coding agents"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"

@@ -1,10 +1,11 @@
-# oxn
+# Oxygen
 
 A local architecture and quality gatekeeper for LLM coding agents.
 
-**oxn** is short for *oxygen* — the thing you never notice until it runs out. Architectural
-quality behaves the same way: invisible while it holds, and the only thing that matters once
-it is gone. Agents burn through it faster than people do.
+The project is **Oxygen**; `oxn` is what you type — the command, the package and the import
+name. Oxygen is the thing you never notice until it runs out, and architectural quality
+behaves the same way: invisible while it holds, and the only thing that matters once it is
+gone. Agents burn through it faster than people do.
 
 OXN computes software architecture and quality metrics itself — from one normalized code
 graph, uniformly across languages — and uses them to hold coding agents to a project's
@@ -21,18 +22,17 @@ no paid tooling.
 
 ## Install, and the first five minutes
 
-OXN is **not on PyPI yet** -- it is pre-alpha and the repository is private, so
-`pip install oxn` will not find it. Install from a checkout:
-
 ```sh
-git clone https://github.com/mustafarslan/oxn && cd oxn
-python -m pip install .          # `pipx install .` to keep it off your project's path
+python -m pip install oxn        # `pipx install oxn` to keep it off your project's path
 
-cd ../your-project
+cd your-project
 oxn init                         # writes oxn.yaml, the hook, the MCP entry, a CLAUDE.md section
 oxn check                        # where you stand today
 oxn baseline                     # accept today's debt; new violations still fail
 ```
+
+To run against unreleased changes, install from a checkout instead --
+`git clone https://github.com/mustafarslan/oxn && python -m pip install ./oxn`.
 
 If `oxn` is not on your `PATH` afterwards -- an unactivated virtualenv, or a `pipx` whose
 bin directory is not exported -- `python -m oxn` is the same program by another name, and
