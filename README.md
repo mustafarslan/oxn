@@ -208,6 +208,26 @@ Exit 1 and exit 2 are deliberately different numbers: a gate that could not star
 never be read as a gate that passed. The retry budget does not apply in CI — it is keyed
 on the agent `session_id` a hook sends and a pipeline does not — so CI always reports.
 
+## Where every threshold came from
+
+`oxn calibration` lists the fifteen tunable numbers with the evidence behind each. A value
+with no stated provenance is folklore, and folklore is what makes people distrust a gate.
+
+```sh
+oxn calibration                      # one line each: value, how it was arrived at, n
+oxn calibration MAX_NESTING_DEPTH    # one parameter, with its full reasoning
+oxn calibration --verbose            # all of them, in full
+oxn calibration --show provisional   # or: fitted, gated, off
+```
+
+Two markers describe **your** project rather than OXN: `off here` when the rule is switched
+off in your `oxn.yaml`, and `set to N` when you changed the number. That second one matters
+more than it looks — every provenance line describes OXN's default, so in a project that
+declared its own ceiling the reasoning on screen is explaining a number that is not in force.
+
+Nothing here is fitted to labelled data yet, and each entry says so along with what would
+have to exist before it could be. `--json` gives the same surface as data.
+
 ## The health view, which never gates
 
 `oxn health` is the other output, and it decides nothing. Per declared ceiling it reports the

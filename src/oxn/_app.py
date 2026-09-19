@@ -144,41 +144,42 @@ def init(
 
 @app.command()
 def calibration(
+    name: str = typer.Argument("", help="One parameter to show in full, e.g. MAX_NESTING_DEPTH."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Full provenance for each."),
+    show: str = typer.Option(
+        "", "--show", help="Filter by state: provisional | fitted | gated | off."
+    ),
     json_output: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
     """List every tunable threshold with the evidence behind it.
 
     A number with no stated provenance is folklore, and folklore is what makes developers
     distrust a gate. This is also the surface the calibration work optimises over.
+
+    One line per parameter by default; pass `--verbose`, or name one, for the reasoning.
+    Markers say what *this* project did to a parameter -- switched the rule off, or set a
+    different number -- because a default that has been overridden is not what governs you.
     """
-    from oxn.calibration import gate_status, summary
-    from oxn.calibration import parameters as _parameters
+    from oxn.calibrate import Selection, UnknownParameter, run_calibration
     from oxn.config import Config
+    from oxn.render import Output
 
-    console = _console()
-    report = summary()
-    active = gate_status(Config.load(Path.cwd()))
-    report["disabled"] = sorted(name for name, on in active.items() if not on)
-    if json_output:
-        import json
+    states = {"provisional", "fitted", "gated", "off"}
+    if show and show not in states:
+        raise typer.BadParameter(f"--show must be one of {', '.join(sorted(states))}")
 
-        console.print_json(json.dumps(report))
-        return
-
-    for parameter in _parameters():
-        marker = (
-            "[yellow]provisional[/yellow]" if parameter.is_provisional else "[green]fitted[/green]"
-        )
-        state = "" if active.get(parameter.name, True) else "  [red]off in this project[/red]"
-        console.print(
-            f"[bold]{parameter.name}[/bold] = {parameter.value:g}  "
-            f"{marker} {parameter.evidence.value} n={parameter.observations}{state}"
-        )
-        console.print(f"  [dim]{parameter.provenance}[/dim]")
-        if parameter.fit_when:
-            console.print(f"  [dim]fit when: {parameter.fit_when}[/dim]")
-    console.print(f"\n[dim]{report['provisional']}/{report['total']} provisional[/dim]")
-    console.print(f"[dim]{report['note']}[/dim]")
+    selection = Selection(
+        name=name,
+        verbose=verbose,
+        **{state: show == state for state in sorted(states)},
+    )
+    output = Output(console=None if json_output else _console())
+    try:
+        run_calibration(output, selection, Config.load(Path.cwd()))
+    except UnknownParameter as unknown:
+        raise typer.BadParameter(
+            f"no parameter named {unknown.name!r}. Known: {', '.join(unknown.known)}"
+        ) from unknown
 
 
 @app.command()

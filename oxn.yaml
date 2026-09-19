@@ -59,7 +59,7 @@ layers:
   # layer added to silence a diagnostic, rather than to answer it, is the failure this whole
   # section exists to catch.
   scripts: ["scripts/*"]
-  surfaces: ["src/oxn/cli.py", "src/oxn/_app.py", "src/oxn/__main__.py", "src/oxn/report.py", "src/oxn/calls.py", "src/oxn/check.py", "src/oxn/review.py", "src/oxn/writers.py", "src/oxn/init.py", "src/oxn/server.py", "src/oxn/health.py", "src/oxn/doctor.py", "src/oxn/calibration.py"]
+  surfaces: ["src/oxn/cli.py", "src/oxn/_app.py", "src/oxn/__main__.py", "src/oxn/report.py", "src/oxn/calls.py", "src/oxn/check.py", "src/oxn/review.py", "src/oxn/writers.py", "src/oxn/init.py", "src/oxn/server.py", "src/oxn/health.py", "src/oxn/doctor.py", "src/oxn/calibration.py", "src/oxn/calibrate.py"]
   orchestration: ["src/oxn/graph/indexer.py"]
   # `sources.py` is graph, not orchestration: finding source files is not orchestrating
   # anything, and every tier needs the walk. It lived beside `Indexer` until this contract

@@ -25,6 +25,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- `oxn calibration` is readable. It printed 276 lines of unbroken prose for fifteen
+  parameters; it now prints one line each, with `--verbose` or a parameter name for the
+  reasoning. New: `oxn calibration <NAME>` for a single entry, `--show
+  provisional|fitted|gated|off` to filter, and markers saying where **your** project has
+  switched a rule off or set a different number. `--json` gains an `overridden` key and
+  keeps every key it had.
 - [`docs/phases.md`](docs/phases.md), which defines the `P0`–`P12` increment labels used in
   commit subjects and ADR status lines throughout the repository.
 
