@@ -13,6 +13,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- `tree-sitter` is now required below 0.26 (`>=0.25,<0.26`). py-tree-sitter 0.26.0 segfaults when `start_point`
+  and `end_byte` are read on every node of a recursive walk over `named_children` of a large tree. oxn walks with an
+  explicit stack, and `oxn check` over Django's source ran clean and byte-identical under 0.26.0 and 0.25.2, so oxn
+  is not known to be affected; the bound keeps an install from picking up a parser version with an open crash.
+
 ## [0.1.2] — 2026-09-19
 
 ### Fixed
