@@ -162,10 +162,12 @@ def test_the_sdist_installs_and_answers(sdist: Path, tmp_path: Path) -> None:
     This builds the package a second time, from the archive rather than the checkout, which
     is the step that catches a `pyproject.toml` referencing a file the sdist left out.
     """
+    import os
     import venv
 
     prefix = tmp_path / "from-sdist"
-    venv.EnvBuilder(with_pip=True, clear=True).create(prefix)
+    # Linked, as in the wheel lane's fixture: a copied uv standalone interpreter aborts.
+    venv.EnvBuilder(with_pip=True, clear=True, symlinks=os.name != "nt").create(prefix)
     python = prefix / "bin" / "python"
 
     install = subprocess.run(

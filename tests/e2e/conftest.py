@@ -48,7 +48,9 @@ def installed(tmp_path_factory: pytest.TempPathFactory) -> Installed:
     wheel = _build_wheel(workspace / "wheelhouse")
 
     prefix = workspace / "venv"
-    venv.EnvBuilder(with_pip=True, clear=True).create(prefix)
+    # Linked, as `python -m venv` does off Windows: a copied interpreter from a Python that
+    # loads libpython by a relative path (uv's standalone builds) cannot find it and aborts.
+    venv.EnvBuilder(with_pip=True, clear=True, symlinks=os.name != "nt").create(prefix)
     bin_dir = prefix / ("Scripts" if os.name == "nt" else "bin")
     python = bin_dir / ("python.exe" if os.name == "nt" else "python")
 
