@@ -13,6 +13,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-10-16
+
 ### Added
 
 - `oxn explain <path> <entity> <rule>` -- why one finding is a violation, from a shell: the increment trail, and
@@ -121,7 +123,8 @@ First public release.
 - No calibration parameter is fitted to labelled data yet; `oxn calibration` says so per
   parameter rather than presenting judgement as measurement.
 
-[Unreleased]: https://github.com/mustafarslan/oxn/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/mustafarslan/oxn/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/mustafarslan/oxn/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/mustafarslan/oxn/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/mustafarslan/oxn/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/mustafarslan/oxn/compare/v0.1.0...v0.1.1
