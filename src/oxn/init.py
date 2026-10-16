@@ -92,8 +92,9 @@ Run `oxn check` yourself at any time; `oxn check --deep` adds the architectural 
 
 OXN also serves MCP over stdio (`oxn serve`, wired in `.mcp.json`). It informs; it never
 blocks. Call `get_architectural_context` *before* writing code to see the constraints that
-govern the task, and `explain_violation` on anything the hook rejects -- it gives the
-increment trail and where that ceiling was declared.
+govern the task, and `explain_violation` on anything the hook rejects (from a shell:
+`oxn explain <path> <entity> <rule>`) -- it gives the increment trail and where that ceiling
+was declared.
 {MARKER_END}"""
 
 STARTER_CONFIG = f"""# OXN — architecture and quality invariants for this repository.

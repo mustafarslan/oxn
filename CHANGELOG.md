@@ -13,6 +13,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- `oxn explain <path> <entity> <rule>` -- why one finding is a violation, from a shell: the increment trail, and
+  every declaration of its ceiling, tightest first. It is the command for what the MCP tool `explain_violation`
+  serves, and both answer from one function (`--json` prints the same payload), so an agent without MCP, or a
+  person, gets the same explanation. The file is measured again, so a finding fixed since reads `resolved`. It
+  informs and never gates: both answers exit 0.
+
 ## [0.1.3] — 2026-10-16
 
 ### Changed

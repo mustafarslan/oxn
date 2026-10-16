@@ -530,6 +530,35 @@ UNKNOWN_WRITER = (
 )
 
 
+def explain_payload(path: str, entity: str, rule: str) -> dict[str, Any]:
+    """Re-measure one file, find that finding again, and say where its ceiling came from.
+
+    Re-measuring rather than trusting the arguments is the point: between `check` and this
+    call the file has probably been edited, and "that is no longer a violation" is a better
+    answer than an explanation of something that is no longer true. The MCP tool
+    `explain_violation` and `oxn explain` both answer from here, so they cannot drift.
+    """
+    from oxn.check import run_check
+    from oxn.config import Config
+    from oxn.context.bundle import declarations_of
+    from oxn.context.project import load_project
+
+    report = run_check([path])
+    key = f"{rule}|{path}|{entity}"
+    every = [*report.findings, *report.baselined, *report.regressed]
+    found = next((finding for finding in every if finding.key == key), None)
+    declared = declarations_of(load_project(Config.load()), rule, path)
+    return {
+        "status": "resolved" if found is None else "violation",
+        "key": key,
+        "finding": found.as_dict() if found else None,
+        "increments": list(found.explanation) if found else [],
+        # `relevance` is excluded rather than emitted as zero: there is no task text to rank
+        # against here, and a score of 0.0 reads as "irrelevant" rather than "not asked".
+        "declared_by": [constraint.model_dump(exclude={"relevance"}) for constraint in declared],
+    }
+
+
 def run_review_report(
     base: str,
     head: str,
