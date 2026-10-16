@@ -452,6 +452,50 @@ def context(
 
 
 @app.command()
+def explain(
+    path: str = typer.Argument(
+        ..., help="The `path` of the finding, as `oxn check --json` reported it."
+    ),
+    entity: str = typer.Argument(..., help="The `entity` of the finding: its qualified name."),
+    rule: str = typer.Argument(..., help="The `rule` of the finding, e.g. `cognitive_complexity`."),
+    json_output: bool = typer.Option(False, "--json", help="The explanation as JSON."),
+) -> None:
+    """Why one finding is a violation: what scored, and where its ceiling was declared.
+
+    The human view of what the MCP server's `explain_violation` serves, from the same
+    function. The file is measured again, so a violation fixed since reads `resolved`. It
+    informs and never gates: both answers exit 0, and only a failure to answer does not.
+    """
+    import json
+
+    from oxn.config import ConfigError
+    from oxn.report import explain_payload
+
+    try:
+        payload = explain_payload(path, entity, rule)
+    except ConfigError as error:
+        typer.echo(f"oxn: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2))
+        return
+    console = _console()
+    finding = payload["finding"]
+    if finding is None:
+        console.print(f"[bold]resolved[/bold]  {payload['key']} is no longer a violation")
+    else:
+        console.print(
+            f"[bold]violation[/bold]  {entity} has {rule} {finding['value']:g}, "
+            f"above the ceiling of {finding['ceiling']:g}  {path}"
+        )
+        for step in payload["increments"]:
+            console.print(f"  {step}")
+    console.print("\ndeclared by, tightest first:")
+    for constraint in payload["declared_by"]:
+        console.print(f"  {constraint['limit']:g}  {constraint['source']}")
+
+
+@app.command()
 def serve(
     root: str = typer.Option(
         "", "--root", help="The repository to serve. Defaults to $OXN_ROOT, else discovery."

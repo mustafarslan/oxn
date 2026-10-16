@@ -314,6 +314,10 @@ is what enforces ([ADR-0003](https://github.com/mustafarslan/oxn/blob/master/doc
 | `get_metrics` | how the code measures, ranked by one metric |
 | `explain_violation` | why one finding is a violation: the increment trail, and where its ceiling was declared |
 
+Each has a command for a person, or an agent without MCP, that answers from the same code:
+`oxn context`, `oxn check`, `oxn metrics`, and `oxn explain <path> <entity> <rule>` (`--json`
+prints exactly what `explain_violation` serves).
+
 ```sh
 oxn serve                    # speak MCP over stdio; stdout is the wire, so nothing is printed
 claude mcp add oxn -- oxn serve

@@ -223,49 +223,6 @@ def test_the_server_does_not_depend_on_the_protocol_sdk(module: str) -> None:
 
 # ---- explaining one finding -------------------------------------------------------------
 
-TANGLED = """def tangled(items, flag, mode):
-    total = 0
-    for item in items:
-        if flag:
-            if mode == "a":
-                for sub in item:
-                    if sub:
-                        total += sub
-            elif mode == "b":
-                total -= 1
-    return total
-"""
-
-ADR = """---
-id: ADR-0001
-title: The hot path stays simple
-status: accepted
-date: 2026-09-05
-tags: [complexity]
-applies-to: ["src/bad.py"]
-constraints:
-  ceilings: {cognitive_complexity: 5}
----
-# ADR-0001
-Because it is read on every request.
-"""
-
-
-@pytest.fixture
-def tightened(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A repository where all three ways of declaring a ceiling are in play at once."""
-    (tmp_path / "src").mkdir()
-    (tmp_path / "docs" / "adr").mkdir(parents=True)
-    (tmp_path / "oxn.yaml").write_text(
-        "ceilings:\n  cognitive_complexity: 12\n"
-        'layers:\n  hot: ["src/*.py"]\n'
-        "layer_ceilings:\n  hot:\n    cognitive_complexity: 8\n"
-    )
-    (tmp_path / "docs" / "adr" / "0001-tight.md").write_text(ADR)
-    (tmp_path / "src" / "bad.py").write_text(TANGLED)
-    monkeypatch.chdir(tmp_path)
-    return tmp_path
-
 
 def test_explain_violation_names_the_declaration_the_gate_actually_used(tightened: Path) -> None:
     """The chain, tightest first: a decision that tightened it, the layer override it

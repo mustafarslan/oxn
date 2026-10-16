@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -267,3 +268,64 @@ def test_an_open_pipe_that_never_closes_does_not_hang_the_hook(tmp_path) -> None
     assert process.returncode in (0, 2), process.stderr.read() if process.stderr else ""
     assert json.loads(stdout)["paths"] == ["one.py"], "no payload arrived; the tree is the answer"
     process.stdin.close() if process.stdin else None
+
+
+# ---- `oxn explain`: the human surface of `explain_violation` ------------------------------
+
+
+def _explain(cwd: Path, *extra: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "oxn",
+            "explain",
+            "src/bad.py",
+            "src.bad.tangled",
+            "cognitive_complexity",
+            *extra,
+        ],
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
+
+
+def test_explain_gives_the_increments_and_where_the_ceiling_was_declared(tightened: Path) -> None:
+    """The chain a person needs to fix it: what scored, and which declaration set the limit."""
+    result = _explain(tightened)
+    assert result.returncode == 0, result.stderr
+    assert "violation" in result.stdout
+    assert "+3 at line 5" in result.stdout
+    lines = result.stdout.splitlines()
+    declared = [line for line in lines if "docs/adr/0001-tight.md" in line or "oxn.yaml" in line]
+    assert "docs/adr/0001-tight.md" in declared[0], "tightest first"
+
+
+def test_explain_says_resolved_once_the_file_is_fixed_and_still_exits_zero(tightened: Path) -> None:
+    """It informs and never gates: a violation and a fixed one both exit 0."""
+    (tightened / "src" / "bad.py").write_text("def tangled(items):\n    return sum(items)\n")
+    result = _explain(tightened)
+    assert result.returncode == 0, result.stderr
+    assert "resolved" in result.stdout
+
+
+def test_explain_json_is_what_the_mcp_tool_serves(tightened: Path) -> None:
+    """Two surfaces over one function: they may not drift."""
+    from oxn.server import TOOLS
+
+    tool = next(tool for tool in TOOLS if tool.name == "explain_violation")
+    served = tool.run(
+        tool.request(path="src/bad.py", entity="src.bad.tangled", rule="cognitive_complexity")
+    )
+    result = _explain(tightened, "--json")
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == json.loads(json.dumps(served))
+
+
+def test_explain_without_a_configuration_is_an_error_not_an_answer(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "bad.py").write_text("def tangled(items):\n    return items\n")
+    (tmp_path / "oxn.yaml").write_text("ceilings: [not, a, mapping]\n")
+    result = _explain(tmp_path)
+    assert result.returncode == 1
