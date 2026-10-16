@@ -30,7 +30,10 @@ dependencies = [
     "pydantic>=2.7",                    # config schema
     "pyyaml>=6.0",                      # oxn.yaml
     "rich>=13.7",                       # terminal output; never on the hook fast path
-    "tree-sitter>=0.25",                # parsing (>=0.25 for the QueryCursor API)
+    # parsing: >=0.25 for the QueryCursor API; <0.26 because py-tree-sitter 0.26.0 segfaults when start_point and
+    # end_byte are read on every node of a recursive walk over named_children of a large tree. oxn walks with an
+    # explicit stack and was not seen to crash, but the cause upstream is not understood yet.
+    "tree-sitter>=0.25,<0.26",
     "tree-sitter-language-pack>=1.15",  # 371 grammars, MIT, fetched lazily on first use
 ]
 
