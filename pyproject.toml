@@ -112,3 +112,10 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 python_version = "3.10"
 packages = ["oxn"]
 strict = true
+
+# `clingo` is the optional `asp` extra and `.[dev]` does not install it, so a dev setup made
+# the way the README says failed mypy on the guarded import in `graph.asp`. Where clingo is
+# installed its own types are still checked; this only stops its absence being an error.
+[[tool.mypy.overrides]]
+module = ["clingo", "clingo.*"]
+ignore_missing_imports = true
