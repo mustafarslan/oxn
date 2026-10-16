@@ -13,6 +13,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- The block `oxn init` writes into `CLAUDE.md` now names rule `unparseable`. Since 0.1.0 a file oxn cannot parse
+  fails the gate and cannot be baselined, but only this repository's own `CLAUDE.md` said so; an agent working in a
+  repository set up with `oxn init` met the rule unannounced. The block's `shredding` paragraph names the class
+  ceilings it pointed at as "the class aggregates below", which the block never listed. A test now holds this
+  repository's block equal to what `oxn init` writes.
+- `oxn init` no longer adds `.oxn/cache/` and `.oxn/index/` to a `.gitignore` that already ignores them as
+  `**/.oxn/cache/` or `/.oxn/cache/`.
+
 ## [0.2.0] — 2026-10-16
 
 ### Added
