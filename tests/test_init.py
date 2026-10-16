@@ -9,8 +9,9 @@ twice. Every test here is about *not* destroying something.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
-from oxn.init import HOOK_COMMAND, MARKER_BEGIN, MARKER_END, run_init
+from oxn.init import CLAUDE_SECTION, HOOK_COMMAND, MARKER_BEGIN, MARKER_END, run_init
 
 
 def test_a_fresh_repository_gets_everything(tmp_path) -> None:
@@ -172,6 +173,28 @@ def test_an_existing_gitignore_keeps_its_entries(tmp_path) -> None:
     ignored = (tmp_path / ".gitignore").read_text()
     assert "*.pyc" in ignored
     assert ".oxn/cache/" in ignored
+
+
+def test_an_ignore_line_already_covered_at_any_depth_is_not_added_again(tmp_path) -> None:
+    """`**/.oxn/cache/` covers `.oxn/cache/`: adding the narrower line beside it is noise."""
+    written = "# any depth\n**/.oxn/cache/\n/.oxn/index/\n!.oxn/baseline.json\n"
+    (tmp_path / ".gitignore").write_text(written)
+    run_init(tmp_path)
+    assert (tmp_path / ".gitignore").read_text() == written
+
+
+def test_the_block_names_every_rule_that_blocks_without_a_ceiling() -> None:
+    """`unparseable` blocks and cannot be baselined; an agent that is not told meets it cold."""
+    assert "`unparseable`" in CLAUDE_SECTION
+    assert "`shredding`" in CLAUDE_SECTION
+
+
+def test_this_repository_s_claude_block_is_what_init_writes() -> None:
+    """The block here is `oxn init`'s output. When they differ, one of them is stale: on
+    2026-09-17 the `unparseable` bullet reached this file and never reached the template."""
+    text = (Path(__file__).resolve().parents[1] / "CLAUDE.md").read_text()
+    start, end = text.index(MARKER_BEGIN), text.index(MARKER_END) + len(MARKER_END)
+    assert text[start:end] == CLAUDE_SECTION
 
 
 def test_init_wires_the_repository_not_the_directory_it_was_run_from(tmp_path, monkeypatch) -> None:

@@ -80,7 +80,13 @@ invariant, and the JSON names the entity, the rule and the number.
   casing in Go, `pub` in Rust, `private` in Java and TypeScript, `#` or a module that does
   not export it in JavaScript. A CommonJS file is the one case the rule declines: anything
   can be published there by assigning to `module.exports`, so a helper cannot be shown to be
-  dedicated, and the class aggregates below are what catch a shred in that shape.
+  dedicated, and the class ceilings in `{CONFIG_NAME}` (`methods_per_class`,
+  `weighted_methods_per_class`) are what catch a shred in that shape.
+* A file OXN cannot **parse** fails the gate as rule `unparseable`, naming the first error
+  line. This is about *syntax*, not validity: tree-sitter is more permissive than a compiler,
+  so `f(bar=1, 2)` parses clean and only CPython objects. It blocks because every other pass
+  silently drops a file whose tree has an error node, so the alternative is a clean bill of
+  health over a tree with that file missing. It cannot be baselined.
 * `.oxn/baseline.json` records pre-existing debt. It may not grow: a baselined violation
   that gets worse fails the build exactly as a new one does.
 * The loop is bounded. After `retry_budget` failed repairs of the *same* violation, the
@@ -489,7 +495,10 @@ def _write_gitignore(base: Path, report: InitReport) -> None:
     path = base / ".gitignore"
     wanted = [".oxn/cache/", ".oxn/index/", "!.oxn/baseline.json"]
     existing = path.read_text() if path.exists() else ""
-    missing = [line for line in wanted if line not in existing.splitlines()]
+    # `**/.oxn/cache/` and `/.oxn/cache/` already cover `.oxn/cache/`: the narrower line
+    # beside them would only be noise, and a repository that wrote them chose the depth.
+    present = {line.strip().removeprefix("**/").removeprefix("/") for line in existing.splitlines()}
+    missing = [line for line in wanted if line not in present]
     if not missing:
         report.unchanged.append(".gitignore")
         return
