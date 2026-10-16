@@ -13,6 +13,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-10-17
+
 ### Fixed
 
 - The block `oxn init` writes into `CLAUDE.md` now names rule `unparseable`. Since 0.1.0 a file oxn cannot parse
@@ -133,7 +135,8 @@ First public release.
 - No calibration parameter is fitted to labelled data yet; `oxn calibration` says so per
   parameter rather than presenting judgement as measurement.
 
-[Unreleased]: https://github.com/mustafarslan/oxn/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/mustafarslan/oxn/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/mustafarslan/oxn/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/mustafarslan/oxn/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/mustafarslan/oxn/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/mustafarslan/oxn/compare/v0.1.1...v0.1.2
