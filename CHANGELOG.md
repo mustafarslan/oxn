@@ -13,6 +13,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.3] — 2026-10-16
+
 ### Changed
 
 - `tree-sitter` is now required below 0.26 (`>=0.25,<0.26`). py-tree-sitter 0.26.0 segfaults when `start_point`
@@ -111,7 +113,8 @@ First public release.
 - No calibration parameter is fitted to labelled data yet; `oxn calibration` says so per
   parameter rather than presenting judgement as measurement.
 
-[Unreleased]: https://github.com/mustafarslan/oxn/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/mustafarslan/oxn/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/mustafarslan/oxn/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/mustafarslan/oxn/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/mustafarslan/oxn/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/mustafarslan/oxn/releases/tag/v0.1.0
