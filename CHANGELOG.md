@@ -13,6 +13,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- `oxn seam --json [--scope GLOB]... [--commons GLOB]... [--lanes-max N] [--min-lane K]`: splits a scope into lanes that can be
+  worked on in parallel, or says why it should stay solo. It condenses dependency cycles (a cycle is never split), keeps a Go
+  package together, takes shared files imported from two or more otherwise-separate parts out as contracts, and merges lanes
+  under K files into their closest neighbour. The answer is `solo`, with every reason listed, when there are fewer than two
+  lanes, more than two cross-lane edges per lane, a shared file inside a cycle, code in a language oxn can't parse, or more
+  than 5 % of imports unresolved. Same input, same bytes. It writes nothing.
+- `oxn arch --json --edges` lists the dependency graph's edges as sorted `[source, target]` pairs.
+
 ## [0.2.1] — 2026-10-17
 
 ### Fixed
