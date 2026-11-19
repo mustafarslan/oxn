@@ -244,10 +244,15 @@ INDEXERS: dict[str, Indexer] = {
 #: language that is simply missing from `INDEXERS` looks like an oversight, and `oxn doctor`
 #: has to be able to say "L2 is not available here, and this is what it would take".
 #:
-#: Empty as of 2026-09-06: every launch language has an indexer OXN can invoke. Kept because
-#: the *distinction* is what `doctor` needs -- "not installed" and "not supported" are
-#: different answers, and only one of them is fixed by running a command.
-UNWIRED: dict[str, str] = {}
+#: Empty from 2026-09-06 until Swift arrived: every other launch language has an indexer OXN
+#: can invoke. Kept because the *distinction* is what `doctor` needs -- "not installed" and
+#: "not supported" are different answers, and only one of them is fixed by running a command.
+UNWIRED: dict[str, str] = {
+    "swift": (
+        "no SCIP indexer for Swift is wired: Swift's own index-store would need a reader, "
+        "so Swift gets the tree-sitter tiers (L0/L1) only"
+    ),
+}
 
 
 def resolve_indexer(language: str) -> Indexer:

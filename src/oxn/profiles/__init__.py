@@ -12,12 +12,13 @@ from oxn.profiles.go import GO
 from oxn.profiles.java import JAVA
 from oxn.profiles.python import PYTHON
 from oxn.profiles.rust import RUST
+from oxn.profiles.swift import SWIFT
 from oxn.profiles.typescript import JAVASCRIPT, TSX, TYPESCRIPT
 
 #: Every language OXN can analyse. A profile, not a grammar, is what makes a language
 #: supported: the grammar alone cannot tell the graph builder what a function is.
 PROFILES: dict[str, LanguageProfile] = {
-    profile.name: profile for profile in (PYTHON, TYPESCRIPT, JAVASCRIPT, GO, RUST, JAVA)
+    profile.name: profile for profile in (PYTHON, TYPESCRIPT, JAVASCRIPT, GO, RUST, JAVA, SWIFT)
 }
 
 #: `TSX` is here and deliberately *not* in `PROFILES`: that registry is keyed by

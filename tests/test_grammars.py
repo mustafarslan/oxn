@@ -24,6 +24,7 @@ SNIPPETS: dict[str, str] = {
     "go": "package main\n\nfunc f(a int) int {\n\tif a > 0 {\n\t\treturn a\n\t}\n\treturn -a\n}\n",
     "rust": "fn f(a: i32) -> i32 {\n    if a > 0 { return a; }\n    -a\n}\n",
     "java": "class C {\n  int f(int a) {\n    if (a > 0) { return a; }\n    return -a;\n  }\n}\n",
+    "swift": "func f(a: Int) -> Int {\n    if a > 0 { return a }\n    return -a\n}\n",
 }
 
 

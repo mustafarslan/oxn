@@ -136,6 +136,7 @@ def _from_statement(node: Node, spec: ImportSpec) -> list[RawImport]:
         "go": _go_statement,
         "rust": _rust_statement,
         "java": _java_statement,
+        "swift": _swift_statement,
     }.get(spec.style)
     return handler(node, spec) if handler else []
 
@@ -160,6 +161,21 @@ def _go_statement(node: Node, spec: ImportSpec) -> list[RawImport]:
         kind = "side_effect" if alias_text == "_" else "value"
         found.append(RawImport(specifier, kind, spec_node.start_point[0] + 1 or line))
     return found
+
+
+def _swift_statement(node: Node, spec: ImportSpec) -> list[RawImport]:
+    """``import AeroCore``, ``@testable import X``, ``import struct Foo.Bar`` -- one module each.
+
+    Swift imports a *module*, and the module is the first component; ``Foo.Bar`` names a
+    declaration inside module ``Foo``. An attribute such as ``@testable`` changes visibility,
+    not the coupling, so every import is a plain value import.
+    """
+    del spec
+    identifier = next((child for child in node.named_children if child.type == "identifier"), None)
+    parts = [_text(part) for part in identifier.named_children] if identifier is not None else []
+    if not parts or not parts[0]:
+        return []
+    return [RawImport(parts[0], "value", node.start_point[0] + 1)]
 
 
 def _rust_statement(node: Node, spec: ImportSpec) -> list[RawImport]:

@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from oxn.metrics.cognitive import else_if_inner
+from oxn.metrics.cognitive import alternatives_of, else_if_inner
 
 if TYPE_CHECKING:  # pragma: no cover
     from tree_sitter import Node
@@ -206,11 +206,7 @@ def _continuations(node: Node, spec: CognitiveSpec) -> frozenset[int]:
     inner = else_if_inner(node, spec)
     if inner is not None:
         return frozenset({inner.id})
-    return frozenset(
-        child.id
-        for field_name in spec.same_nesting_fields
-        for child in node.children_by_field_name(field_name)
-    )
+    return frozenset(child.id for child in alternatives_of(node, spec))
 
 
 def exit_points(node: Node, profile: LanguageProfile) -> int:

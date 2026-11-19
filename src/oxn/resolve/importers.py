@@ -174,6 +174,15 @@ def _java_imported_names(node: Node) -> Iterator[tuple[str, str]]:
             yield name, _text(child.child_by_field_name("scope"))
 
 
+def _swift_imported_names(node: Node) -> Iterator[tuple[str, str]]:
+    """``(name, source)`` for a Swift import: the module's own name, which qualifies its members."""
+    identifier = next((child for child in node.named_children if child.type == "identifier"), None)
+    first = identifier.named_children[0] if identifier is not None and identifier.named_children else None
+    if first is not None and first.text:
+        module = first.text.decode("utf-8", "replace")
+        yield module, module
+
+
 #: Import shapes that are their own grammar rather than a variant of Python's or
 #: ECMAScript's. Data, not a branch: the alternative is an `if spec.style ==` chain that
 #: every new language has to be threaded through.
@@ -181,6 +190,7 @@ IMPORT_READERS: dict[str, Callable[[Node], Iterator[tuple[str, str]]]] = {
     "go": _go_imported_names,
     "rust": _rust_imported_names,
     "java": _java_imported_names,
+    "swift": _swift_imported_names,
 }
 
 
