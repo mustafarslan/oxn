@@ -129,3 +129,11 @@ def test_lanes_past_the_cap_join_the_nearest_folder() -> None:
     edges = {f"pkg{index}/sub/f{n}.py": set() for index in range(5) for n in range(3)}
     result = seam(_input(edges, lanes_max=2))
     assert len(result["lanes"]) <= 2
+
+
+def test_a_lopsided_split_stays_solo() -> None:
+    """One big lane and a small satellite is solo work, not a fan-out."""
+    edges = {**_pkg("core", 20, set()), **_pkg("tiny", 3, set())}
+    result = seam(_input(edges))
+    assert result["verdict"] == "solo"
+    assert any(reason.startswith("the largest lane holds 87%") for reason in result["reasons"]), result["reasons"]

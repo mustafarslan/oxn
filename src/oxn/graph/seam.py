@@ -30,6 +30,9 @@ from oxn.graph.algos import condensation
 MAX_CROSS_EDGES_PER_LANE = 2
 #: Unresolved imports above this share mean the graph can't be trusted to seam.
 MAX_UNRESOLVED_SHARE = 0.05
+#: A lane holding more than this share of the lane files leaves little to do in parallel: the
+#: split is solo work with small satellites (tower's own repository seamed to one lane of 95 %).
+MAX_LARGEST_LANE_SHARE = 0.8
 
 
 @dataclass(frozen=True)
@@ -273,6 +276,19 @@ def _globs(files: list[str], every: Iterable[str]) -> list[str]:
     return [glob for glob in globs if not any(glob != f + "**" and glob.startswith(f) for f in folders)]
 
 
+def _lopsided(plan: _Plan, contracts: Mapping[str, str]) -> str | None:
+    """The reason the split is lopsided, if the largest lane holds most of the lane files."""
+    count: dict[int, int] = {}
+    for node, lane in plan.lane_of.items():
+        if node not in contracts:
+            count[lane] = count.get(lane, 0) + 1
+    sizes = list(count.values())
+    total = sum(sizes)
+    if len(sizes) < 2 or max(sizes) / total <= MAX_LARGEST_LANE_SHARE:
+        return None
+    return f"the largest lane holds {max(sizes) / total:.0%} of the lane files (over {MAX_LARGEST_LANE_SHARE:.0%})"
+
+
 def _reasons(seam_input: SeamInput, plan: _Plan, lanes: int, cross: int) -> list[str]:
     """Step 7: every reason the answer is solo, in a fixed order."""
     reasons: list[str] = []
@@ -323,7 +339,7 @@ def seam(seam_input: SeamInput) -> dict[str, object]:
     contracts: dict[str, str] = {hub: "hub" for hub in plan.hubs if hub in seam_input.scope}
     cross = _cross_contracts(graph, plan, contracts)
     lanes = _lanes(plan, contracts)
-    reasons = _reasons(seam_input, plan, len(lanes), cross)
+    reasons = _reasons(seam_input, plan, len(lanes), cross) + [why for why in [_lopsided(plan, contracts)] if why]
     return {
         "v": 1,
         "verdict": "solo" if reasons else "fan_out",
