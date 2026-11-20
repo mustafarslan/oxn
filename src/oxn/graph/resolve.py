@@ -165,6 +165,8 @@ def resolve_import(
         targets = resolve_rust(source_path, raw, context)
     elif language == "java":
         targets = _resolve_java(raw, context)
+    elif language == "swift":
+        targets = _resolve_swift(raw, context)
     else:
         single = _resolve_ecmascript(source_path, raw, context)
         targets = (single,) if single is not None else ()
@@ -427,6 +429,28 @@ def _go_package_files(known: set[str], directory: str) -> Iterator[str]:
         parent = str(PurePosixPath(path).parent)
         if (parent if parent != "." else "") == directory:
             yield path
+
+
+# ---- Swift ------------------------------------------------------------------------------
+
+
+def _resolve_swift(raw: RawImport, context: ResolutionContext) -> tuple[str, ...]:
+    """The files a Swift import reaches: every Swift file of the module's SwiftPM target.
+
+    Swift imports a module, never a file, and a module is a target whose sources live in
+    ``Sources/<Module>/`` (at the root, or under a nested package such as
+    ``Packages/AeroCore/Sources/AeroCore/``). Like Go's package import, the honest target set is
+    all of them. A module with no such folder here -- ``Foundation``, ``SwiftUI``, a dependency
+    -- is external.
+    """
+    marker = f"Sources/{raw.specifier}/"
+    return tuple(
+        sorted(
+            path
+            for path in context.known
+            if path.endswith(".swift") and (path.startswith(marker) or f"/{marker}" in path)
+        )
+    )
 
 
 # ---- Java -------------------------------------------------------------------------------

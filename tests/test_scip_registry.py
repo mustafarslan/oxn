@@ -51,8 +51,9 @@ def test_every_launch_language_now_has_an_indexer() -> None:
     `UNWIRED` stays as a mechanism even while empty, because "not installed" and "not
     supported" are different answers to a user and only one is fixed by a command.
     """
-    assert set(INDEXERS) >= set(LAUNCH_LANGUAGES)
-    assert UNWIRED == {}
+    assert set(INDEXERS) >= set(LAUNCH_LANGUAGES) - {"swift"}
+    # Swift (DX-X2) arrived with the tree-sitter tiers only; its row in `UNWIRED` says why.
+    assert set(UNWIRED) == {"swift"}
 
 
 def test_java_does_not_guess_a_build_tool() -> None:

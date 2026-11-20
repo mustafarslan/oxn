@@ -81,6 +81,12 @@ class CognitiveSpec:
     labelled_jump_kinds: frozenset[str] = frozenset()
     #: Node kinds that appear as a jump's label child.
     jump_label_kinds: frozenset[str] = frozenset({"statement_identifier", "identifier", "number"})
+    #: Further node kinds that are boolean operators, for a grammar that gives ``&&`` and ``||``
+    #: kinds of their own (Swift's ``conjunction_expression`` and ``disjunction_expression``),
+    #: and the fields that hold such a node's operator and sides.
+    boolean_kinds: frozenset[str] = frozenset()
+    operator_field: str = "operator"
+    side_fields: tuple[str, str] = ("left", "right")
 
     #: Binary-operator node kind for the boolean-sequence rule.
     boolean_node: str | None = None
@@ -114,6 +120,8 @@ class CognitiveSpec:
     #:   ``else_clause`` which *contains* the next ``if``. The pair is one hybrid increment.
     #: * ``"direct"`` -- Go, Java: ``alternative`` holds the next ``if`` node itself, or a
     #:   bare block for a plain ``else``. There is no ``else`` node to match on at all.
+    #: * ``"keyword"`` -- Swift: no ``alternative`` field. The ``else`` token is followed by a
+    #:   sibling, the next ``if`` or the plain ``else``'s statements (`alternatives_of`).
     alternative_style: str = "clause"
     #: Kinds appearing in ``alternative`` that mean a plain ``else`` under ``"direct"``.
     plain_else_kinds: frozenset[str] = frozenset({"block", "statement_block"})

@@ -14,7 +14,7 @@ from oxn.languages import get_parser
 from oxn.metrics import cognitive_complexity, cyclomatic_complexity
 from oxn.profiles import PROFILES, get_profile
 
-LANGUAGES = ("python", "typescript", "javascript", "go", "rust", "java")
+LANGUAGES = ("python", "typescript", "javascript", "go", "rust", "java", "swift")
 
 
 def first_function(language: str, source: str):
@@ -76,6 +76,7 @@ NEST3 = {
     "go": "package m\nfunc f(a int, b int) { if a>0 { for i := 0; i<a; i++ { if b>i { g() } } } }\n",
     "rust": "fn f(a: i32, b: i32) { if a>0 { for i in 0..a { if b>i { g(); } } } }",
     "java": "class C { void f(int a, int b) { if (a>0) { for (int i=0;i<a;i++) { if (b>i) { g(); } } } } }",
+    "swift": "func f(a: Int, b: Int) { if a>0 { for i in 0..<a { if b>i { g() } } } }",
 }
 
 ELSE_IF_CHAIN = {
@@ -85,6 +86,7 @@ ELSE_IF_CHAIN = {
     "go": "package m\nfunc f(a int) { if a>0 { p() } else if a<0 { q() } else { r() } }\n",
     "rust": "fn f(a: i32) { if a>0 { p(); } else if a<0 { q(); } else { r(); } }",
     "java": "class C { void f(int a) { if (a>0) { p(); } else if (a<0) { q(); } else { r(); } } }",
+    "swift": "func f(a: Int) { if a>0 { p() } else if a<0 { q() } else { r() } }",
 }
 
 ELSE_IF_NESTED = {
@@ -94,6 +96,7 @@ ELSE_IF_NESTED = {
     "go": "package m\nfunc f(a int) { if a>0 { p() } else if a<0 { if a>1 { q() } } }\n",
     "rust": "fn f(a: i32) { if a>0 { p(); } else if a<0 { if a>1 { q(); } } }",
     "java": "class C { void f(int a) { if (a>0) { p(); } else if (a<0) { if (a>1) { q(); } } } }",
+    "swift": "func f(a: Int) { if a>0 { p() } else if a<0 { if a>1 { q() } } }",
 }
 
 BOOLEAN_RUNS = {
@@ -103,6 +106,7 @@ BOOLEAN_RUNS = {
     "go": "package m\nfunc f(a,b,c,d,e,g bool) { if a&&b&&c||d||e&&g { p() } }\n",
     "rust": "fn f(a:bool,b:bool,c:bool,d:bool,e:bool,g:bool) { if a&&b&&c||d||e&&g { p(); } }",
     "java": "class C { void f(boolean a,boolean b,boolean c,boolean d,boolean e,boolean g){ if(a&&b&&c||d||e&&g){p();} } }",
+    "swift": "func f(a: Bool, b: Bool, c: Bool, d: Bool, e: Bool, g: Bool) { if a&&b&&c||d||e&&g { p() } }",
 }
 
 LOOP_WITH_BRANCH = {
@@ -112,6 +116,7 @@ LOOP_WITH_BRANCH = {
     "go": "package m\nfunc f(xs []int) { for _, x := range xs { if x>0 { p() } } }\n",
     "rust": "fn f(xs: Vec<i32>) { for x in xs { if x>0 { p(); } } }",
     "java": "class C { void f(int[] xs){ for (int x : xs) { if (x>0) { p(); } } } }",
+    "swift": "func f(xs: [Int]) { for x in xs { if x>0 { p() } } }",
 }
 
 MATRIX = [
@@ -204,6 +209,7 @@ def test_java_switch_counts_cases_but_not_default() -> None:
         ("go", 'package m\n\nimport (\n\t"fmt"\n\talias "os"\n)\n'),
         ("rust", "use std::collections::HashMap;\nuse std::fmt::{self, Display};\n"),
         ("java", "import java.util.List;\nimport static java.lang.Math.max;\n"),
+        ("swift", "import Foundation\n@testable import AeroCore\n"),
     ],
 )
 def test_imports_are_extracted_for_every_language(language: str, source: str) -> None:
@@ -225,6 +231,7 @@ def test_scopes_build_without_error_for_every_language(language: str) -> None:
         "go": "package m\nfunc f(a int) int { b := a; return b }\n",
         "rust": "fn f(a: i32) -> i32 { let b = a; b }",
         "java": "class C { int f(int a) { int b = a; return b; } }",
+        "swift": "func f(a: Int) -> Int { let b = a; return b }",
     }
     profile = get_profile(language)
     root = get_parser(language).parse(sources[language].encode()).root_node
@@ -263,6 +270,7 @@ EARLY_RETURNS = {
     "go": "package m\nfunc f(a, b bool) int { if a { return 1 }\n if b { return 2 }\n return 3 }\n",
     "rust": "fn f(a: bool, b: bool) -> i32 { if a { return 1; } if b { return 2; } 3 }",
     "java": "class C { int f(boolean a, boolean b){ if(a){ return 1; } if(b){ return 2; } return 3; } }",
+    "swift": "func f(a: Bool, b: Bool) -> Int { if a { return 1 }\n if b { return 2 }\n return 3 }\n",
 }
 
 STRUCTURAL_MATRIX = [
@@ -359,6 +367,7 @@ FIVE_ARGUMENTS = {
         "m.rs",
         "struct A;\nimpl A { fn go(&self, a: i32, b: i32, c: i32, d: i32, e: i32) -> i32 { a } }\n",
     ),
+    "swift": ("m.swift", "struct A { func go(a: Int, b: Int, c: Int, d: Int, e: Int) -> Int { return a } }\n"),
 }
 
 
@@ -454,6 +463,13 @@ NESTED = {
         "        for x in b {\n            while c {\n                if d {\n"
         "                    return x;\n                }\n            }\n"
         "        }\n    }\n    0\n}\n",
+    ),
+    "swift": (
+        "m.swift",
+        "func f(a: Bool, b: [Int], c: Bool, d: Bool) -> Int {\n    if a {\n"
+        "        for x in b {\n            while c {\n                if d {\n"
+        "                    return x\n                }\n            }\n"
+        "        }\n    }\n    return 0\n}\n",
     ),
 }
 

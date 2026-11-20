@@ -23,6 +23,7 @@ LAUNCH_LANGUAGES: dict[str, str] = {
     "go": "go",
     "rust": "rust",
     "java": "java",
+    "swift": "swift",
 }
 
 

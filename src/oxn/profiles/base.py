@@ -257,7 +257,7 @@ class LanguageProfile:
         Receiver identification reads the *actual* first parameter rather than assuming
         ``self`` -- docs/metrics.md section 6.1 makes this the crux of correct LCOM.
         """
-        params = node.child_by_field_name(self.params_field)
+        params = parameter_container(node, self.params_field)
         if params is None:
             return []
         names: list[str] = []
@@ -268,6 +268,17 @@ class LanguageProfile:
                 continue
             names.extend(_declared_names(child))
         return names
+
+
+def parameter_container(node: Node, field: str) -> Node | None:
+    """The node whose children are a callable's parameters.
+
+    Module-level for the same reason as `receiver_type`: `LanguageProfile` sits at its class
+    ceilings. Most grammars hold them in a field (``parameters``); Swift has none, and a
+    ``function_declaration``'s parameters are its own direct children, so an empty field means
+    the callable itself.
+    """
+    return node.child_by_field_name(field) if field else node
 
 
 #: Fields under which a declaration holds the name it binds. `name` covers a TypeScript
@@ -516,7 +527,9 @@ def _declared_names(node: Node) -> list[str]:
     `_first_identifier` answer: a Python `identifier`, a TypeScript `required_parameter`
     (named under `pattern`) and a Rust `parameter` all yield exactly one.
     """
-    named = node.children_by_field_name("name")
+    # Swift files a parameter's *type* under `name` too (`a: Int` is two `name` fields, the
+    # second a `user_type`), so a type node is never a declared name.
+    named = [child for child in node.children_by_field_name("name") if not child.type.endswith("_type")]
     if len(named) > 1:
         return [child.text.decode("utf-8", "replace") for child in named if child.text]
     return [_first_identifier(node)]

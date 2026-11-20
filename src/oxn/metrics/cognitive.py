@@ -169,6 +169,32 @@ def else_if_inner(node: Node, spec: CognitiveSpec) -> Node | None:
     return _sole_if(node, spec)
 
 
+def alternatives_of(node: Node, spec: CognitiveSpec) -> list[Node]:
+    """The branches in an ``if``'s ``else`` slot, in each grammar's own spelling.
+
+    Public because `metrics.size` must ask the same question. Under ``"keyword"`` (Swift) the
+    grammar has no ``alternative`` field: the ``else`` token is followed by a sibling, the next
+    ``if`` or the plain ``else``'s statements, so the branches are the named children after
+    that ``else`` node. Every other style names them with ``same_nesting_fields``.
+    """
+    if spec.alternative_style != "keyword":
+        return [
+            child
+            for field_name in spec.same_nesting_fields
+            for child in node.children_by_field_name(field_name)
+        ]
+    if node.type != spec.if_kind:
+        return []
+    after_else = False
+    branches: list[Node] = []
+    for child in node.children:
+        if child.type == "else":  # a named node in tree-sitter-swift, so matched by kind alone
+            after_else = True
+        elif after_else and child.is_named:
+            branches.append(child)
+    return branches
+
+
 def _else_if(context: _Context, site: _Site) -> bool:
     """`else if` where the grammar spells it as an else_clause wrapping an if_statement."""
     inner = else_if_inner(site.node, context.spec)
@@ -276,11 +302,7 @@ def _score_expression(context: _Context, site: _Site) -> None:
     spec = context.spec
     # The operator must be checked, not just the node kind: in TypeScript a
     # `binary_expression` is also `a > 0`, which is not a logical operator at all.
-    if (
-        site.kind == spec.boolean_node
-        and site.node.id not in context.counted_bools
-        and _operator_of(site.node) in spec.boolean_operators
-    ):
+    if _is_boolean(site.node, spec) and site.node.id not in context.counted_bools:
         context.result.add(
             site.node,
             _score_boolean_sequence(site.node, spec, context.counted_bools),
@@ -348,11 +370,7 @@ def _descend_conditional(
     Fields named in ``same_nesting_fields`` hold the alternative branches. Nesting them
     under their own ``if`` would double-count every ``else if`` chain in a codebase.
     """
-    alternatives = [
-        child
-        for field_name in context.spec.same_nesting_fields
-        for child in node.children_by_field_name(field_name)
-    ]
+    alternatives = alternatives_of(node, context.spec)
     alternative_ids = {child.id for child in alternatives}
 
     for child in node.named_children:
@@ -379,9 +397,9 @@ def _visit_alternative(
     transliteration tests enforce.
     """
     spec = context.spec
-    if spec.alternative_style == "direct":
+    if spec.alternative_style in {"direct", "keyword"}:
         if node.type == spec.if_kind:
-            # Go and Java: `else if` is the next `if` sitting directly in the slot.
+            # Go and Java: `else if` is the next `if` sitting directly in the slot (Swift: right after `else`).
             context.result.add(node, 1, "hybrid", "`else if` (hybrid: no nesting increment)")
             _descend_conditional(
                 context, node, nesting=nesting + 1, suppress_nesting=suppress_nesting
@@ -442,30 +460,35 @@ def _flatten_boolean(
     node: Node, spec: CognitiveSpec, operators: list[str], leaves: list[Node], counted: set[int]
 ) -> None:
     counted.add(node.id)
-    operator_node = node.child_by_field_name("operator")
-    operator = (
-        operator_node.text.decode("utf-8", "replace")
-        if operator_node is not None and operator_node.text
-        else ""
-    )
-
-    for field_name in ("left", "right"):
+    operator = _operator_of(node, spec)
+    left_field = spec.side_fields[0]
+    for field_name in spec.side_fields:
         side = node.child_by_field_name(field_name)
         if side is None:
             continue
-        if side.type == spec.boolean_node and _operator_of(side) in spec.boolean_operators:
+        if _is_boolean(side, spec):
             _flatten_boolean(side, spec, operators, leaves, counted)
         else:
             leaves.append(side)
-        if field_name == "left":
+        if field_name == left_field:
             operators.append(operator)
 
 
-def _operator_of(node: Node) -> str:
-    operator = node.child_by_field_name("operator")
+def _operator_of(node: Node, spec: CognitiveSpec) -> str:
+    operator = node.child_by_field_name(spec.operator_field)
     return (
         operator.text.decode("utf-8", "replace") if operator is not None and operator.text else ""
     )
+
+
+def _is_boolean(node: Node, spec: CognitiveSpec) -> bool:
+    """A logical operator node: the profile's ``boolean_node`` or one of its ``boolean_kinds``.
+
+    The operator is checked, not just the kind: in TypeScript a ``binary_expression`` is
+    also ``a > 0``, which is not a logical operator at all.
+    """
+    kind_matches = node.type == spec.boolean_node or node.type in spec.boolean_kinds
+    return kind_matches and _operator_of(node, spec) in spec.boolean_operators
 
 
 def _find_boolean_nodes(node: Node, spec: CognitiveSpec, counted: set[int]) -> list[Node]:
@@ -474,11 +497,7 @@ def _find_boolean_nodes(node: Node, spec: CognitiveSpec, counted: set[int]) -> l
     stack = [node]
     while stack:
         current = stack.pop()
-        if (
-            current.type == spec.boolean_node
-            and current.id not in counted
-            and _operator_of(current) in spec.boolean_operators
-        ):
+        if _is_boolean(current, spec) and current.id not in counted:
             found.append(current)
             continue
         stack.extend(current.named_children)

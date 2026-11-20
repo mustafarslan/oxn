@@ -137,3 +137,14 @@ def test_a_lopsided_split_stays_solo() -> None:
     result = seam(_input(edges))
     assert result["verdict"] == "solo"
     assert any(reason.startswith("the largest lane holds 87%") for reason in result["reasons"]), result["reasons"]
+
+
+def test_a_language_oxn_parses_is_never_reported_unparsed(tmp_path) -> None:
+    """Swift arrived after `UNPARSED_CODE`; a profile, not that table, decides what OXN parses."""
+    from oxn.seam_cli import UNPARSED_CODE, _unparsed
+    from oxn.profiles import profile_for_path
+
+    (tmp_path / "a.swift").write_text("func f() {}\n")
+    (tmp_path / "b.kt").write_text("fun f() {}\n")
+    assert _unparsed(tmp_path, []) == {"kotlin"}
+    assert not [ext for ext in UNPARSED_CODE if profile_for_path("x" + ext) is not None]

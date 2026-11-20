@@ -23,6 +23,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   than 5 % of imports unresolved, or a lopsided split (the largest lane holding over 80 % of the lane files). Same input,
   same bytes. It writes nothing.
 - `oxn arch --json --edges` lists the dependency graph's edges as sorted `[source, target]` pairs.
+- Swift. `.swift` files are parsed (tree-sitter-swift) and measured like the other languages, and `import Module` resolves
+  to every Swift file of that module's SwiftPM target (`Sources/<Module>/`, at the root or in a nested package); modules
+  with no such folder (Foundation, SwiftUI, dependencies) are external. On a real Swift app of 575 files, all 1,494
+  imports resolve. Swift has no SCIP indexer wired, so it gets the tree-sitter tiers only. A Swift file tree-sitter
+  can't parse fails the gate as rule `unparseable`, as in every language.
 
 ## [0.2.1] — 2026-10-17
 
