@@ -19,7 +19,7 @@ from oxn.profiles import profile_for_path
 #: Source suffixes OXN has no profile for. A file with one of these in scope means the graph is
 #: missing part of the code, so the answer must be solo. Text, data and config files are not code.
 UNPARSED_CODE: dict[str, str] = {
-    ".swift": "swift", ".kt": "kotlin", ".kts": "kotlin", ".m": "objective-c", ".mm": "objective-c",
+    ".kt": "kotlin", ".kts": "kotlin", ".m": "objective-c", ".mm": "objective-c",
     ".c": "c", ".h": "c", ".cc": "c++", ".cpp": "c++", ".hpp": "c++", ".cs": "c#", ".rb": "ruby",
     ".php": "php", ".scala": "scala", ".dart": "dart", ".ex": "elixir", ".exs": "elixir", ".lua": "lua",
 }
@@ -27,6 +27,13 @@ UNPARSED_CODE: dict[str, str] = {
 
 def _in_scope(path: str, scope: list[str]) -> bool:
     return not scope or any(fnmatch(path, pattern) for pattern in scope)
+
+
+def _parsed(name: str) -> bool:
+    """A language OXN has a profile for is parsed, whatever `UNPARSED_CODE` lists (Swift arrived after it)."""
+    from oxn.profiles import profile_for_path
+
+    return profile_for_path(name) is not None
 
 
 def _unparsed(root: Path, scope: list[str]) -> set[str]:
@@ -37,7 +44,7 @@ def _unparsed(root: Path, scope: list[str]) -> set[str]:
         for name in files:
             relative = os.path.relpath(os.path.join(folder, name), root).replace(os.sep, "/")
             language = UNPARSED_CODE.get(Path(name).suffix)
-            if language and _in_scope(relative, scope):
+            if language and not _parsed(name) and _in_scope(relative, scope):
                 found.add(language)
     return found
 
