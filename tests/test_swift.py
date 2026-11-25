@@ -1,4 +1,5 @@
-"""Swift (DX-X2): the profile's metrics against the same logic in Go and Java, and module imports as edges."""
+"""Swift (DX-X2): the profile's metrics against the same logic in Go and Java, and module imports
+as edges."""
 
 from __future__ import annotations
 
@@ -48,7 +49,8 @@ func f(x int) int {
 
 
 def test_an_else_if_chain_scores_as_in_go() -> None:
-    """`if` +1, `else if` +1, the nested `if` +2 (nesting 1), `else` +1: the same 5 in both grammars."""
+    """`if` +1, `else if` +1, the nested `if` +2 (nesting 1), `else` +1: the same 5 in both
+    grammars."""
     assert score("go", GO_ELSE_IF.strip()) == 5
     assert score("swift", SWIFT_ELSE_IF.strip()) == 5
 
@@ -84,10 +86,16 @@ def swift_tree(root: Path) -> Path:
     app = root / "App"
     for folder in (core, util, app):
         folder.mkdir(parents=True)
-    (core / "Model.swift").write_text("import Foundation\nimport Util\n\npublic struct Model { public init() {} }\n")
+    (core / "Model.swift").write_text(
+        "import Foundation\nimport Util\n\npublic struct Model { public init() {} }\n"
+    )
     (core / "Store.swift").write_text("public final class Store { public init() {} }\n")
-    (util / "Clock.swift").write_text("public enum Clock { public static func now() -> Int { 0 } }\n")
-    (app / "Main.swift").write_text("import SwiftUI\n@testable import Core\n\nlet store = Store()\n")
+    (util / "Clock.swift").write_text(
+        "public enum Clock { public static func now() -> Int { 0 } }\n"
+    )
+    (app / "Main.swift").write_text(
+        "import SwiftUI\n@testable import Core\n\nlet store = Store()\n"
+    )
     return root
 
 
@@ -99,5 +107,7 @@ def test_a_module_import_reaches_every_file_of_its_target(tmp_path: Path) -> Non
         "Packages/Core/Sources/Core/Model.swift",
         "Packages/Core/Sources/Core/Store.swift",
     }
-    assert graph.files["Packages/Core/Sources/Core/Model.swift"] == {"Packages/Core/Sources/Util/Clock.swift"}
+    assert graph.files["Packages/Core/Sources/Core/Model.swift"] == {
+        "Packages/Core/Sources/Util/Clock.swift"
+    }
     assert graph.unresolved == [], "Foundation and SwiftUI are external, not unresolved"

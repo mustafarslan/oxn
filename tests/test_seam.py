@@ -39,7 +39,13 @@ def test_two_packages_sharing_types_give_a_contract_lane_and_two_lanes() -> None
 
 
 def test_a_cyclic_repository_stays_solo() -> None:
-    edges = {"a.py": {"b.py"}, "b.py": {"c.py"}, "c.py": {"a.py"}, "d.py": {"a.py"}, "e.py": {"d.py"}}
+    edges = {
+        "a.py": {"b.py"},
+        "b.py": {"c.py"},
+        "c.py": {"a.py"},
+        "d.py": {"a.py"},
+        "e.py": {"d.py"},
+    }
     result = seam(_input(edges))
     assert result["verdict"] == "solo"
     assert any(reason.startswith("fewer than 2 lanes") for reason in result["reasons"])
@@ -53,14 +59,23 @@ def test_a_swift_scope_stays_solo() -> None:
 
 
 def test_an_unresolved_graph_and_a_hub_in_a_cycle_stay_solo() -> None:
-    edges = {**_pkg("pkga", 3, {"t1.py"}), **_pkg("pkgb", 3, {"t1.py"}), "t1.py": {"t2.py"}, "t2.py": {"t1.py"}}
+    edges = {
+        **_pkg("pkga", 3, {"t1.py"}),
+        **_pkg("pkgb", 3, {"t1.py"}),
+        "t1.py": {"t2.py"},
+        "t2.py": {"t1.py"},
+    }
     result = seam(_input(edges, unresolved_share=0.2))
     assert "a hub is inside a dependency cycle" in result["reasons"]
     assert any(reason.startswith("unresolved import share") for reason in result["reasons"])
 
 
 def test_commons_are_left_out_of_the_graph() -> None:
-    edges = {**_pkg("pkga", 3, {"shared/util.py"}), **_pkg("pkgb", 3, {"shared/util.py"}), "shared/util.py": set()}
+    edges = {
+        **_pkg("pkga", 3, {"shared/util.py"}),
+        **_pkg("pkgb", 3, {"shared/util.py"}),
+        "shared/util.py": set(),
+    }
     result = seam(_input(edges, commons=("shared/*",)))
     assert result["contracts"] == []
     assert [lane["name"] for lane in result["lanes"]] == ["pkga", "pkgb"]
@@ -94,7 +109,12 @@ def _owners(result: dict, scope: frozenset[str], contracts: set[str]) -> dict[st
 
 
 def _cross_edges(edges: dict[str, set[str]], owner: dict[str, str]) -> list[tuple[str, str]]:
-    return [(s, t) for s, targets in edges.items() for t in targets if s in owner and t in owner and owner[s] != owner[t]]
+    return [
+        (s, t)
+        for s, targets in edges.items()
+        for t in targets
+        if s in owner and t in owner and owner[s] != owner[t]
+    ]
 
 
 def test_properties_on_random_graphs() -> None:
@@ -106,12 +126,14 @@ def test_properties_on_random_graphs() -> None:
         # Same input, same bytes.
         assert json.dumps(result, sort_keys=True) == json.dumps(seam(seam_input), sort_keys=True)
         contracts = {contract["path"] for contract in result["contracts"]}
-        # No file in two lanes (`_owners`), and every cross-lane edge lands on a contract (so none is left between lanes).
+        # No file in two lanes (`_owners`), and every cross-lane edge lands on a contract (so none
+        # is left between lanes).
         assert _cross_edges(edges, _owners(result, seam_input.scope, contracts)) == []
 
 
 def test_a_go_package_is_one_unit() -> None:
-    """Go files of one package import none of each other, yet every importer of the package imports them all."""
+    """Go files of one package import none of each other, yet every importer of the package imports
+    them all."""
     event = {f"event/f{index}.go": set() for index in range(3)}
     every = set(event)
     edges = {
@@ -136,13 +158,15 @@ def test_a_lopsided_split_stays_solo() -> None:
     edges = {**_pkg("core", 20, set()), **_pkg("tiny", 3, set())}
     result = seam(_input(edges))
     assert result["verdict"] == "solo"
-    assert any(reason.startswith("the largest lane holds 87%") for reason in result["reasons"]), result["reasons"]
+    assert any(reason.startswith("the largest lane holds 87%") for reason in result["reasons"]), (
+        result["reasons"]
+    )
 
 
 def test_a_language_oxn_parses_is_never_reported_unparsed(tmp_path) -> None:
     """Swift arrived after `UNPARSED_CODE`; a profile, not that table, decides what OXN parses."""
-    from oxn.seam_cli import UNPARSED_CODE, _unparsed
     from oxn.profiles import profile_for_path
+    from oxn.seam_cli import UNPARSED_CODE, _unparsed
 
     (tmp_path / "a.swift").write_text("func f() {}\n")
     (tmp_path / "b.kt").write_text("fun f() {}\n")

@@ -177,7 +177,11 @@ def _java_imported_names(node: Node) -> Iterator[tuple[str, str]]:
 def _swift_imported_names(node: Node) -> Iterator[tuple[str, str]]:
     """``(name, source)`` for a Swift import: the module's own name, which qualifies its members."""
     identifier = next((child for child in node.named_children if child.type == "identifier"), None)
-    first = identifier.named_children[0] if identifier is not None and identifier.named_children else None
+    first = (
+        identifier.named_children[0]
+        if identifier is not None and identifier.named_children
+        else None
+    )
     if first is not None and first.text:
         module = first.text.decode("utf-8", "replace")
         yield module, module

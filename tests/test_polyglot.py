@@ -367,7 +367,10 @@ FIVE_ARGUMENTS = {
         "m.rs",
         "struct A;\nimpl A { fn go(&self, a: i32, b: i32, c: i32, d: i32, e: i32) -> i32 { a } }\n",
     ),
-    "swift": ("m.swift", "struct A { func go(a: Int, b: Int, c: Int, d: Int, e: Int) -> Int { return a } }\n"),
+    "swift": (
+        "m.swift",
+        "struct A { func go(a: Int, b: Int, c: Int, d: Int, e: Int) -> Int { return a } }\n",
+    ),
 }
 
 

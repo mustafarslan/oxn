@@ -529,7 +529,9 @@ def _declared_names(node: Node) -> list[str]:
     """
     # Swift files a parameter's *type* under `name` too (`a: Int` is two `name` fields, the
     # second a `user_type`), so a type node is never a declared name.
-    named = [child for child in node.children_by_field_name("name") if not child.type.endswith("_type")]
+    named = [
+        child for child in node.children_by_field_name("name") if not child.type.endswith("_type")
+    ]
     if len(named) > 1:
         return [child.text.decode("utf-8", "replace") for child in named if child.text]
     return [_first_identifier(node)]

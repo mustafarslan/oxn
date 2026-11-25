@@ -263,7 +263,9 @@ def arch(
     show_unresolved: bool = typer.Option(
         False, "--unresolved", help="List imports that could not be resolved."
     ),
-    show_edges: bool = typer.Option(False, "--edges", help="List the graph's edges as [source, target] pairs."),
+    show_edges: bool = typer.Option(
+        False, "--edges", help="List the graph's edges as [source, target] pairs."
+    ),
 ) -> None:
     """Report the dependency graph: cycles, Martin metrics, Lakos levels, smells.
 
@@ -519,11 +521,21 @@ def serve(
 
 @app.command()
 def seam(
-    scope: list[str] = typer.Option([], "--scope", help="Path globs to seam; the whole repository by default."),
-    commons: list[str] = typer.Option([], "--commons", help="Shared path globs (tower's commons): left out of the graph."),
-    lanes_max: int = typer.Option(8, "--lanes-max", help="At most this many lanes; smaller ones are merged in."),
-    min_lane: int = typer.Option(3, "--min-lane", help="A lane under this many files joins its closest neighbour."),
-    json_output: bool = typer.Option(True, "--json/--no-json", help="Machine-readable output (the only form)."),
+    scope: list[str] = typer.Option(
+        [], "--scope", help="Path globs to seam; the whole repository by default."
+    ),
+    commons: list[str] = typer.Option(
+        [], "--commons", help="Shared path globs (tower's commons): left out of the graph."
+    ),
+    lanes_max: int = typer.Option(
+        8, "--lanes-max", help="At most this many lanes; smaller ones are merged in."
+    ),
+    min_lane: int = typer.Option(
+        3, "--min-lane", help="A lane under this many files joins its closest neighbour."
+    ),
+    json_output: bool = typer.Option(
+        True, "--json/--no-json", help="Machine-readable output (the only form)."
+    ),
 ) -> None:
     """Split a scope into lanes that can be worked on in parallel, or say why it should stay solo.
 

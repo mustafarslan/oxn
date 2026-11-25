@@ -44,7 +44,14 @@ SWIFT_METRICS = MetricSpec(
     ),
     cognitive=CognitiveSpec(
         structural=frozenset(
-            {"if_statement", "guard_statement", "switch_statement", "catch_block", "ternary_expression"} | _LOOPS
+            {
+                "if_statement",
+                "guard_statement",
+                "switch_statement",
+                "catch_block",
+                "ternary_expression",
+            }
+            | _LOOPS
         ),
         hybrid=frozenset(),
         nesting_only=frozenset({"function_declaration", "lambda_literal", "init_declaration"}),
@@ -118,7 +125,9 @@ SWIFT_METRICS = MetricSpec(
             "class_declaration": "class",
             "protocol_declaration": "class",
         },
-        declaration_kinds=frozenset({"function_declaration", "class_declaration", "protocol_declaration"}),
+        declaration_kinds=frozenset(
+            {"function_declaration", "class_declaration", "protocol_declaration"}
+        ),
         identifier_kind="simple_identifier",
         attribute_kind="navigation_expression",
     ),
@@ -133,7 +142,13 @@ SWIFT = LanguageProfile(
     privacy_rules=("modifier",),
     private_marker="modifiers",
     function_like=frozenset(
-        {"function_declaration", "init_declaration", "deinit_declaration", "lambda_literal", "protocol_function_declaration"}
+        {
+            "function_declaration",
+            "init_declaration",
+            "deinit_declaration",
+            "lambda_literal",
+            "protocol_function_declaration",
+        }
     ),
     class_like=frozenset({"class_declaration", "protocol_declaration"}),
     wrappers={},
@@ -143,7 +158,9 @@ SWIFT = LanguageProfile(
     parameter_kinds=frozenset({"parameter"}),
     receiver_kinds=frozenset(),
     comment_kinds=frozenset({"comment", "multiline_comment"}),
-    string_kinds=frozenset({"line_string_literal", "multi_line_string_literal", "raw_string_literal"}),
+    string_kinds=frozenset(
+        {"line_string_literal", "multi_line_string_literal", "raw_string_literal"}
+    ),
     abstract_markers=frozenset(),
     abstract_kinds=frozenset({"protocol_declaration"}),
     metrics=SWIFT_METRICS,

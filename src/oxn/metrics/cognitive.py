@@ -399,7 +399,8 @@ def _visit_alternative(
     spec = context.spec
     if spec.alternative_style in {"direct", "keyword"}:
         if node.type == spec.if_kind:
-            # Go and Java: `else if` is the next `if` sitting directly in the slot (Swift: right after `else`).
+            # Go and Java: `else if` is the next `if` sitting directly in the slot (Swift: right
+            # after `else`).
             context.result.add(node, 1, "hybrid", "`else if` (hybrid: no nesting increment)")
             _descend_conditional(
                 context, node, nesting=nesting + 1, suppress_nesting=suppress_nesting

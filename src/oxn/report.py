@@ -310,7 +310,8 @@ def run_arch(
     show_unresolved: bool = False,
     show_edges: bool = False,
 ) -> dict[str, Any]:
-    """Build the dependency graph for ``paths`` and report its architecture; ``show_edges`` adds its edges, sorted."""
+    """Build the dependency graph for ``paths`` and report its architecture; ``show_edges`` adds
+    its edges, sorted."""
     from oxn.graph.architecture import analyse
     from oxn.graph.depgraph import build_dependency_graph
 
@@ -355,7 +356,9 @@ def run_arch(
 
     payload = _arch_payload(graph, report, show_unresolved=show_unresolved)
     if show_edges:
-        payload["edges"] = sorted([source, target] for source, targets in graph.components.items() for target in targets)
+        payload["edges"] = sorted(
+            [source, target] for source, targets in graph.components.items() for target in targets
+        )
 
     _emit_arch(payload, output)
     return payload

@@ -19,9 +19,23 @@ from oxn.profiles import profile_for_path
 #: Source suffixes OXN has no profile for. A file with one of these in scope means the graph is
 #: missing part of the code, so the answer must be solo. Text, data and config files are not code.
 UNPARSED_CODE: dict[str, str] = {
-    ".kt": "kotlin", ".kts": "kotlin", ".m": "objective-c", ".mm": "objective-c",
-    ".c": "c", ".h": "c", ".cc": "c++", ".cpp": "c++", ".hpp": "c++", ".cs": "c#", ".rb": "ruby",
-    ".php": "php", ".scala": "scala", ".dart": "dart", ".ex": "elixir", ".exs": "elixir", ".lua": "lua",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    ".m": "objective-c",
+    ".mm": "objective-c",
+    ".c": "c",
+    ".h": "c",
+    ".cc": "c++",
+    ".cpp": "c++",
+    ".hpp": "c++",
+    ".cs": "c#",
+    ".rb": "ruby",
+    ".php": "php",
+    ".scala": "scala",
+    ".dart": "dart",
+    ".ex": "elixir",
+    ".exs": "elixir",
+    ".lua": "lua",
 }
 
 
@@ -30,7 +44,8 @@ def _in_scope(path: str, scope: list[str]) -> bool:
 
 
 def _parsed(name: str) -> bool:
-    """A language OXN has a profile for is parsed, whatever `UNPARSED_CODE` lists (Swift arrived after it)."""
+    """A language OXN has a profile for is parsed, whatever `UNPARSED_CODE` lists (Swift arrived
+    after it)."""
     from oxn.profiles import profile_for_path
 
     return profile_for_path(name) is not None
@@ -50,19 +65,24 @@ def _unparsed(root: Path, scope: list[str]) -> set[str]:
 
 
 def _file_graph() -> tuple[Path, dict[str, frozenset[str]], list[str]]:
-    """The repository's root, its file-level import graph, and the source of each unresolved import."""
+    """The repository's root, its file-level import graph, and the source of each unresolved
+    import."""
     from oxn.graph.depgraph import build_dependency_graph
     from oxn.report import _indexer
 
     with _indexer() as indexer:
         root = Path(indexer.root)
         indexer.index([root])
-        graph = build_dependency_graph(indexer.root, indexer.sources([root]), component_of=lambda path: path)
+        graph = build_dependency_graph(
+            indexer.root, indexer.sources([root]), component_of=lambda path: path
+        )
     edges = {source: frozenset(targets) for source, targets in graph.files.items()}
     return root, edges, [item.source for item in graph.unresolved]
 
 
-def _unresolved_share(in_scope: frozenset[str], edges: dict[str, frozenset[str]], unresolved: list[str]) -> float:
+def _unresolved_share(
+    in_scope: frozenset[str], edges: dict[str, frozenset[str]], unresolved: list[str]
+) -> float:
     """Unresolved imports out of all imports made by the scope's files."""
     missing = sum(1 for source in unresolved if source in in_scope)
     total = missing + sum(len(edges.get(path, ())) for path in in_scope)

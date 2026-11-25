@@ -59,8 +59,11 @@ class _Plan:
     cyclic: set[str] = field(default_factory=set)
 
 
-def _undirected(edges: Mapping[str, Iterable[str]], keep: set[str], unit: Mapping[str, str]) -> dict[str, set[str]]:
-    """Both directions of every edge whose ends are both kept, and each kept file joined to its unit's anchor."""
+def _undirected(
+    edges: Mapping[str, Iterable[str]], keep: set[str], unit: Mapping[str, str]
+) -> dict[str, set[str]]:
+    """Both directions of every edge whose ends are both kept, and each kept file joined to its
+    unit's anchor."""
     graph: dict[str, set[str]] = {node: set() for node in keep}
     pairs = [(node, unit.get(node, node)) for node in keep]
     pairs += [(source, target) for source in keep for target in edges.get(source, ())]
@@ -113,9 +116,11 @@ def _package(path: str) -> str | None:
 
 
 def _units(graph: Mapping[str, frozenset[str]], plan: _Plan) -> dict[str, str]:
-    """Step 3: each file's unit, named by its smallest member: a dependency cycle, joined with its Go package.
+    """Step 3: each file's unit, named by its smallest member: a dependency cycle, joined with its
+    Go package.
 
-    A unit moves as one. ``plan.cyclic`` records the units that hold a real cycle, which a hub must not be in.
+    A unit moves as one. ``plan.cyclic`` records the units that hold a real cycle, which a hub must
+    not be in.
     """
     membership, _, components = condensation(graph)
     root: dict[str, str] = {}
@@ -149,7 +154,12 @@ def _importers(graph: Mapping[str, frozenset[str]], unit: Mapping[str, str]) -> 
     return importers
 
 
-def _splits(graph: Mapping[str, frozenset[str]], unit: Mapping[str, str], gone: set[str], importers: set[str]) -> bool:
+def _splits(
+    graph: Mapping[str, frozenset[str]],
+    unit: Mapping[str, str],
+    gone: set[str],
+    importers: set[str],
+) -> bool:
     """Whether ``importers`` fall in two or more parts once the units in ``gone`` are taken out."""
     part = _components(_undirected(graph, {node for node in graph if unit[node] not in gone}, unit))
     return len({part[source] for source in importers if source in part}) >= 2
@@ -164,14 +174,20 @@ def _find_hubs(graph: Mapping[str, frozenset[str]], unit: Mapping[str, str], pla
     found: set[str] = set()
     grew = True
     while grew:
-        new = {c for c in sorted(set(importers) - found) if _splits(graph, unit, found | {c}, importers[c])}
+        new = {
+            c
+            for c in sorted(set(importers) - found)
+            if _splits(graph, unit, found | {c}, importers[c])
+        }
         found |= new
         grew = bool(new)
     plan.hubs = {node: len(importers[unit[node]]) for node in graph if unit[node] in found}
     plan.hub_in_cycle = bool(found & plan.cyclic)
 
 
-def _edges_between(graph: Mapping[str, frozenset[str]], lane_of: Mapping[str, int]) -> dict[tuple[int, int], int]:
+def _edges_between(
+    graph: Mapping[str, frozenset[str]], lane_of: Mapping[str, int]
+) -> dict[tuple[int, int], int]:
     """How many file edges join each pair of lanes, either way."""
     counts: dict[tuple[int, int], int] = {}
     for source, targets in graph.items():
@@ -184,7 +200,8 @@ def _edges_between(graph: Mapping[str, frozenset[str]], lane_of: Mapping[str, in
 
 
 def _nearest_by_path(lane_of: Mapping[str, int], small: int) -> int | None:
-    """The other lane whose first file shares the longest folder prefix with ``small``'s: for lanes with no edge between them."""
+    """The other lane whose first file shares the longest folder prefix with ``small``'s: for lanes
+    with no edge between them."""
     firsts: dict[int, str] = {}
     for node in sorted(lane_of):
         firsts.setdefault(lane_of[node], node)
@@ -203,10 +220,16 @@ def _nearest_by_path(lane_of: Mapping[str, int], small: int) -> int | None:
 
 
 def _merge_one(graph: Mapping[str, frozenset[str]], lane_of: dict[str, int], small: int) -> bool:
-    """Fold lane ``small`` into the neighbour it shares the most edges with, else the nearest folder's lane; False if it is the only one."""
+    """Fold lane ``small`` into the neighbour it shares the most edges with, else the nearest
+    folder's lane; False if it is the only one."""
     counts = _edges_between(graph, lane_of)
     neighbours = sorted(
-        ((count, -other) for (a, b), count in counts.items() for other in (a, b) if small in (a, b) and other != small),
+        (
+            (count, -other)
+            for (a, b), count in counts.items()
+            for other in (a, b)
+            if small in (a, b) and other != small
+        ),
         reverse=True,
     )
     into = -neighbours[0][1] if neighbours else _nearest_by_path(lane_of, small)
@@ -227,15 +250,21 @@ def _lane_sizes(lane_of: Mapping[str, int]) -> list[tuple[int, int]]:
 
 
 def _next_merge(lane_of: Mapping[str, int], seam_input: SeamInput, stuck: set[int]) -> int | None:
-    """The smallest lane that must merge: under ``min_lane`` files, or any while there are more lanes than ``lanes_max``."""
+    """The smallest lane that must merge: under ``min_lane`` files, or any while there are more
+    lanes than ``lanes_max``."""
     lanes = _lane_sizes(lane_of)
     over = len(lanes) > max(seam_input.lanes_max, 1)
-    candidates = [lane for size, lane in lanes if (over or size < seam_input.min_lane) and lane not in stuck]
+    candidates = [
+        lane for size, lane in lanes if (over or size < seam_input.min_lane) and lane not in stuck
+    ]
     return candidates[0] if candidates else None
 
 
-def _form_lanes(graph: Mapping[str, frozenset[str]], seam_input: SeamInput, plan: _Plan, unit: Mapping[str, str]) -> None:
-    """Step 5: components of the scope without hubs, then small lanes (and lanes past the cap) merged in.
+def _form_lanes(
+    graph: Mapping[str, frozenset[str]], seam_input: SeamInput, plan: _Plan, unit: Mapping[str, str]
+) -> None:
+    """Step 5: components of the scope without hubs, then small lanes (and lanes past the cap)
+    merged in.
 
     A lane with no edge to any other joins the lane of the nearest folder.
     """
@@ -261,7 +290,8 @@ def _lane_name(files: list[str], taken: set[str]) -> str:
 
 
 def _widest(path: str, others: set[str]) -> str:
-    """The top-most ``folder/**`` above ``path`` that holds none of ``others``, else ``path`` itself."""
+    """The top-most ``folder/**`` above ``path`` that holds none of ``others``, else ``path``
+    itself."""
     best, folder = path, dirname(path)
     while folder and not any(other.startswith(folder + "/") for other in others):
         best, folder = folder + "/**", dirname(folder)
@@ -269,11 +299,14 @@ def _widest(path: str, others: set[str]) -> str:
 
 
 def _globs(files: list[str], every: Iterable[str]) -> list[str]:
-    """``folder/**`` for each top-most folder whose scope files are all this lane's; files otherwise."""
+    """``folder/**`` for each top-most folder whose scope files are all this lane's; files
+    otherwise."""
     others = set(every) - set(files)
     globs = sorted({_widest(path, others) for path in files})
     folders = [glob[:-2] for glob in globs if glob.endswith("/**")]
-    return [glob for glob in globs if not any(glob != f + "**" and glob.startswith(f) for f in folders)]
+    return [
+        glob for glob in globs if not any(glob != f + "**" and glob.startswith(f) for f in folders)
+    ]
 
 
 def _lopsided(plan: _Plan, contracts: Mapping[str, str]) -> str | None:
@@ -286,7 +319,10 @@ def _lopsided(plan: _Plan, contracts: Mapping[str, str]) -> str | None:
     total = sum(sizes)
     if len(sizes) < 2 or max(sizes) / total <= MAX_LARGEST_LANE_SHARE:
         return None
-    return f"the largest lane holds {max(sizes) / total:.0%} of the lane files (over {MAX_LARGEST_LANE_SHARE:.0%})"
+    return (
+        f"the largest lane holds {max(sizes) / total:.0%} of the lane files (over "
+        f"{MAX_LARGEST_LANE_SHARE:.0%})"
+    )
 
 
 def _reasons(seam_input: SeamInput, plan: _Plan, lanes: int, cross: int) -> list[str]:
@@ -295,17 +331,26 @@ def _reasons(seam_input: SeamInput, plan: _Plan, lanes: int, cross: int) -> list
     if lanes < 2:
         reasons.append(f"fewer than 2 lanes ({lanes})")
     if lanes and cross / lanes > MAX_CROSS_EDGES_PER_LANE:
-        reasons.append(f"{cross} cross-lane edges for {lanes} lanes (over {MAX_CROSS_EDGES_PER_LANE} per lane)")
+        reasons.append(
+            f"{cross} cross-lane edges for {lanes} lanes (over {MAX_CROSS_EDGES_PER_LANE} per lane)"
+        )
     if plan.hub_in_cycle:
         reasons.append("a hub is inside a dependency cycle")
     if seam_input.languages_unparsed:
-        reasons.append("unparsed languages in scope: " + ", ".join(sorted(seam_input.languages_unparsed)))
+        reasons.append(
+            "unparsed languages in scope: " + ", ".join(sorted(seam_input.languages_unparsed))
+        )
     if seam_input.unresolved_share > MAX_UNRESOLVED_SHARE:
-        reasons.append(f"unresolved import share {seam_input.unresolved_share:.2f} is over {MAX_UNRESOLVED_SHARE}")
+        reasons.append(
+            f"unresolved import share {seam_input.unresolved_share:.2f} is over "
+            f"{MAX_UNRESOLVED_SHARE}"
+        )
     return reasons
 
 
-def _cross_contracts(graph: Mapping[str, frozenset[str]], plan: _Plan, contracts: dict[str, str]) -> int:
+def _cross_contracts(
+    graph: Mapping[str, frozenset[str]], plan: _Plan, contracts: dict[str, str]
+) -> int:
     """Step 6: every cross-lane edge's target becomes a contract; the number of such edges."""
     cross = 0
     for source, targets in graph.items():
@@ -318,7 +363,8 @@ def _cross_contracts(graph: Mapping[str, frozenset[str]], plan: _Plan, contracts
 
 
 def _lanes(plan: _Plan, contracts: Mapping[str, str]) -> list[dict[str, object]]:
-    """The lanes as Aero reads them: a name, the globs that cover them, and the contract lane they wait for."""
+    """The lanes as Aero reads them: a name, the globs that cover them, and the contract lane they
+    wait for."""
     by_lane: dict[int, list[str]] = {}
     for node, lane in plan.lane_of.items():
         if node not in contracts:
@@ -326,7 +372,14 @@ def _lanes(plan: _Plan, contracts: Mapping[str, str]) -> list[dict[str, object]]
     taken: set[str] = set()
     depends = ["contract"] if contracts else []
     groups = sorted((sorted(files) for files in by_lane.values()), key=lambda files: files[0])
-    return [{"name": _lane_name(files, taken), "globs": _globs(files, plan.lane_of), "depends_on": depends} for files in groups]
+    return [
+        {
+            "name": _lane_name(files, taken),
+            "globs": _globs(files, plan.lane_of),
+            "depends_on": depends,
+        }
+        for files in groups
+    ]
 
 
 def seam(seam_input: SeamInput) -> dict[str, object]:
@@ -339,7 +392,9 @@ def seam(seam_input: SeamInput) -> dict[str, object]:
     contracts: dict[str, str] = {hub: "hub" for hub in plan.hubs if hub in seam_input.scope}
     cross = _cross_contracts(graph, plan, contracts)
     lanes = _lanes(plan, contracts)
-    reasons = _reasons(seam_input, plan, len(lanes), cross) + [why for why in [_lopsided(plan, contracts)] if why]
+    reasons = _reasons(seam_input, plan, len(lanes), cross) + [
+        why for why in [_lopsided(plan, contracts)] if why
+    ]
     return {
         "v": 1,
         "verdict": "solo" if reasons else "fan_out",
